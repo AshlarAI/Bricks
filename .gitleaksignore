@@ -1,0 +1,2 @@
+# Allowlisted synthetic test fixture (already in scripts/secret-allowlist.txt)
+crates/bricks-agentrl/src/scrub.rs:generic-api-key:79

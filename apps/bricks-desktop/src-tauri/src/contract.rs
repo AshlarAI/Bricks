@@ -305,6 +305,47 @@ pub enum DesktopEvent {
     /// A run was started from a typed command (e.g. `/skill debug …`):
     /// presentation label for its user message.
     RunLabeled { session_id: String, label: RunLabel },
+    /// Application updater state changed.
+    UpdateStateChanged { state: UpdateStatus },
+}
+
+// ─── Application Updater ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct UpdateMetadata {
+    pub current_version: String,
+    pub version: String,
+    /// ISO-8601 publication date if provided by the release manifest.
+    pub pub_date: Option<String>,
+    /// Markdown release notes from the release manifest.
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate {
+        current_version: String,
+    },
+    Available {
+        info: UpdateMetadata,
+    },
+    Downloading {
+        info: UpdateMetadata,
+        #[ts(type = "number")]
+        downloaded_bytes: u64,
+        #[ts(type = "number | null")]
+        total_bytes: Option<u64>,
+    },
+    Ready {
+        info: UpdateMetadata,
+    },
+    Error {
+        message: String,
+        info: Option<UpdateMetadata>,
+    },
 }
 
 // ─── Attachments ─────────────────────────────────────────────────────────────
@@ -631,6 +672,8 @@ pub struct Preferences {
     pub language: Language,
     /// Conversations pinned above the projects, most recently pinned first.
     pub pinned_sessions: Vec<String>,
+    /// Release version explicitly skipped by the user for background update notices.
+    pub skipped_update_version: Option<String>,
 }
 
 impl Default for Preferences {
@@ -655,6 +698,7 @@ impl Default for Preferences {
             keep_awake: false,
             language: Language::En,
             pinned_sessions: Vec::new(),
+            skipped_update_version: None,
         }
     }
 }

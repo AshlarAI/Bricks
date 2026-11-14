@@ -2,5 +2,6 @@
 import type { ChangeRecord } from "./ChangeRecord";
 import type { RunLabel } from "./RunLabel";
 import type { SessionItem } from "./SessionItem";
+import type { UpdateStatus } from "./UpdateStatus";
 
-export type DesktopEvent = { "kind": "engine", project_id: string | null, envelope: import('../engine').Envelope, } | { "kind": "session_state", session_id: string, open: boolean, running: boolean, } | { "kind": "session_updated", session: SessionItem, } | { "kind": "session_deleted", session_id: string, } | { "kind": "change_recorded", record: ChangeRecord, } | { "kind": "lagged", session_id: string, } | { "kind": "run_labeled", session_id: string, label: RunLabel, };
+export type DesktopEvent = { "kind": "engine", project_id: string | null, envelope: import('../engine').Envelope, } | { "kind": "session_state", session_id: string, open: boolean, running: boolean, } | { "kind": "session_updated", session: SessionItem, } | { "kind": "session_deleted", session_id: string, } | { "kind": "change_recorded", record: ChangeRecord, } | { "kind": "lagged", session_id: string, } | { "kind": "run_labeled", session_id: string, label: RunLabel, } | { "kind": "update_state_changed", state: UpdateStatus, };

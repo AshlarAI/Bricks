@@ -126,6 +126,10 @@ fn sanitize(mut p: Preferences) -> Preferences {
     p.pinned_sessions
         .retain(|id| !id.trim().is_empty() && seen.insert(id.clone()));
     p.pinned_sessions.truncate(PINNED_MAX);
+    p.skipped_update_version = p
+        .skipped_update_version
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     p
 }
 

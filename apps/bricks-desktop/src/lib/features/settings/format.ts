@@ -53,11 +53,12 @@ export function providersFilePath(bricksHome: string): string {
 	return `${bricksHome.replace(/[\\/]+$/, '')}${sep}providers.toml`;
 }
 
-/** `1.0.0-alpha.1` as people read it: `Bricks 1.0 Alpha`. */
+/** `1.0.0-alpha.1` -> `Bricks 1.0 Alpha`; CalVer `26.11.14` -> `Bricks 26.11.14`. */
 export function versionLabel(version: string): string {
-	const parts = /^(\d+)\.(\d+)\.\d+(?:-([a-z]+))?/i.exec(version);
+	const parts = /^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+))?/i.exec(version);
 	if (!parts) return `Bricks ${version}`;
-	const [, major, minor, stage] = parts;
+	const [, major, minor, patch, stage] = parts;
+	const base = Number(major) >= 20 ? `${major}.${minor}.${patch}` : `${major}.${minor}`;
 	const suffix = stage ? ` ${stage[0].toUpperCase()}${stage.slice(1)}` : '';
-	return `Bricks ${major}.${minor}${suffix}`;
+	return `Bricks ${base}${suffix}`;
 }

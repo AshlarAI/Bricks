@@ -2,9 +2,13 @@
 	// Left panel: projects with their conversations, the conversations without a project, and search.
 	// Entry point mounted by App.svelte with no props. All state lives in `app`.
 	import { t } from '$lib/i18n/i18n.svelte';
+	import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import Settings from '@lucide/svelte/icons/settings';
 	import { Button } from '$lib/components/ui/button';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { hasActionableUpdate, updateTooltipLabel } from '$lib/features/updates/updates';
 	import { app } from '$lib/state/app.svelte';
 	import { ui } from '$lib/state/ui.svelte';
 	import ConversationList from './ConversationList.svelte';
@@ -14,6 +18,8 @@
 	let adding = $state(false);
 
 	const chats = $derived(app.chatsProject);
+	const showUpdateButton = $derived(hasActionableUpdate(app.updateStatus));
+	const updateTooltip = $derived(updateTooltipLabel(app.updateStatus));
 
 	async function addProject() {
 		if (adding) return;
@@ -77,15 +83,38 @@
 		</div>
 	</div>
 
-	<div class="px-2 pt-2 pb-1">
+	<div class="flex items-center gap-1.5 px-2 pt-2 pb-1">
 		<Button
 			variant="ghost"
-			class="w-full justify-start text-ui"
+			class="min-w-0 flex-1 justify-start text-ui"
 			aria-label={t('common.bricksSettings')}
 			onclick={() => (ui.settingsOpen = true)}
 		>
 			<Settings aria-hidden="true" data-icon="inline-start" />
 			{t('navigation.settings')}
 		</Button>
+		{#if showUpdateButton}
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="default"
+							size="icon-sm"
+							class="shrink-0 rounded-full bg-emerald-600 text-white hover:bg-emerald-600/90 dark:bg-emerald-600 dark:hover:bg-emerald-500 [&_svg]:size-3.5"
+							aria-label={updateTooltip}
+							onclick={() => (ui.updateDialogOpen = true)}
+						>
+							{#if app.updateStatus.phase === 'downloading'}
+								<Spinner aria-hidden="true" />
+							{:else}
+								<ArrowDownToLine aria-hidden="true" />
+							{/if}
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content side="top" sideOffset={6}>{updateTooltip}</Tooltip.Content>
+			</Tooltip.Root>
+		{/if}
 	</div>
 </aside>

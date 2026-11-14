@@ -37,6 +37,8 @@ import type { ProjectFileWindow } from './bindings/ProjectFileWindow'
 import type { PermissionsDefault } from './bindings/PermissionsDefault'
 import type { ComputerUseStatus } from './bindings/ComputerUseStatus'
 import type { ComputerUsePermission } from './bindings/ComputerUsePermission'
+import type { UpdateMetadata } from './bindings/UpdateMetadata'
+import type { UpdateStatus } from './bindings/UpdateStatus'
 import type { Command, ModelChoice, SessionPolicy, Snapshot } from './engine'
 
 export type * from './bindings/AppIcon'
@@ -84,6 +86,8 @@ export type * from './bindings/SearchMatch'
 export type * from './bindings/SessionItem'
 export type * from './bindings/SessionSearchHit'
 export type * from './bindings/Theme'
+export type * from './bindings/UpdateMetadata'
+export type * from './bindings/UpdateStatus'
 
 /** A failed command, as the Rust side reports it. */
 export class IpcError extends Error {
@@ -127,6 +131,12 @@ export const appIconShow = (dark: boolean) => call<void>('app_icon_show', { dark
 export const permissionsDefaultGet = () => call<PermissionsDefault>('permissions_default_get')
 export const permissionsDefaultSet = (policy: SessionPolicy) =>
   call<void>('permissions_default_set', { policy })
+export const updateState = () => call<UpdateStatus>('update_state')
+export const updateCheck = () => call<UpdateStatus>('update_check')
+export const updateDownload = () => call<UpdateStatus>('update_download')
+export const updateCancel = () => call<UpdateStatus>('update_cancel')
+export const updateIgnore = (version: string) => call<UpdateStatus>('update_ignore', { version })
+export const updateInstall = () => call<void>('update_install')
 
 // ─── Extensions: Computer Use ────────────────────────────────────────────────
 

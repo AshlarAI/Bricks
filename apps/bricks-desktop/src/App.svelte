@@ -32,6 +32,7 @@
   import SearchDialog from '$lib/features/navigation/SearchDialog.svelte'
   import TerminalPanel from '$lib/features/terminal/TerminalPanel.svelte'
   import SettingsDialog from '$lib/features/settings/SettingsDialog.svelte'
+  import UpdateDialog from '$lib/features/updates/UpdateDialog.svelte'
   import FolderMissingDialog from '$lib/features/navigation/FolderMissingDialog.svelte'
   import InspectorHost from '$lib/features/commands/InspectorHost.svelte'
   import { ui } from '$lib/state/ui.svelte'
@@ -280,6 +281,7 @@
     </AppShell>
   {/if}
   <SettingsDialog bind:open={ui.settingsOpen} />
+  <UpdateDialog bind:open={ui.updateDialogOpen} />
   <FolderMissingDialog />
   <InspectorHost />
   <Toaster richColors />

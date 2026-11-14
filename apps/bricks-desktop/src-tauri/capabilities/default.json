@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Bricks main window",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "opener:default", "core:window:allow-start-dragging"]
+  "permissions": ["core:default", "dialog:default", "opener:default", "updater:default", "core:window:allow-start-dragging"]
 }

@@ -34,6 +34,8 @@ class UiStore {
   picker = $state<ComposerPicker>(null)
   /** The settings dialog (opened from the left panel footer). */
   settingsOpen = $state(false)
+  /** The application update dialog (opened from the sidebar badge or settings). */
+  updateDialogOpen = $state(false)
   /** The section the settings open on, taken (and reset) by the dialog. */
   settingsSection = $state<string | null>(null)
 

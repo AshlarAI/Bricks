@@ -20,11 +20,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(external_links::init())
         .setup(|app| {
             engine::setup(app)?;
             pty::setup(app)?;
             app.manage(services::keep_awake::KeepAwake::default());
+            app.manage(services::updater::UpdaterService::new());
+            services::updater::start(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 webview_menu::install(&window);
             }
@@ -42,6 +45,13 @@ pub fn run() {
             commands::app::permissions_default_set,
             commands::app::events_subscribe,
             commands::app::events_unsubscribe,
+            // Auto-updater
+            commands::updater::update_state,
+            commands::updater::update_check,
+            commands::updater::update_download,
+            commands::updater::update_cancel,
+            commands::updater::update_ignore,
+            commands::updater::update_install,
             // Extensions: Computer Use (Cua Driver)
             commands::mcp::mcp_servers,
             commands::mcp::mcp_add,

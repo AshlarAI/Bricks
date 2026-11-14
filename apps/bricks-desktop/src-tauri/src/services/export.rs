@@ -59,6 +59,8 @@ fn export_bindings() {
         HistoryRole,
         HistoryBlock,
         DesktopEvent,
+        UpdateMetadata,
+        UpdateStatus,
         SavedAttachment,
         AttachmentKind,
         AttachmentScope,

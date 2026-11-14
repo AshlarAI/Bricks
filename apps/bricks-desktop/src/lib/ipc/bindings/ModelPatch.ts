@@ -17,6 +17,7 @@ input_modalities: Array<string> | null, pricing: PricingEdit | null,
  */
 profiles: Array<ReasoningProfileEdit> | null, 
 /**
- * Tools start while the answer still streams; `false` removes the key.
+ * Tools start while the answer still streams (the default); `true`
+ * removes the key, `false` writes it.
  */
 async_tool_calls: boolean | null, };

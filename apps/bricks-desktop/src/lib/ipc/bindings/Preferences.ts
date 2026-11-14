@@ -49,4 +49,8 @@ language: Language,
 /**
  * Conversations pinned above the projects, most recently pinned first.
  */
-pinned_sessions: Array<string>, };
+pinned_sessions: Array<string>, 
+/**
+ * Release version explicitly skipped by the user for background update notices.
+ */
+skipped_update_version: string | null, };

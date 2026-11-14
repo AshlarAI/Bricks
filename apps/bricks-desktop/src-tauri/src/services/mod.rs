@@ -18,6 +18,7 @@ pub mod providers_toml;
 pub mod run_labels;
 pub mod run_records;
 pub mod skills;
+pub mod updater;
 
 use crate::contract::{IpcError, IpcErrorCode};
 use crate::i18n::{msg, tr};

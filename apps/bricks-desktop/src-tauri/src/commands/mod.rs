@@ -15,3 +15,4 @@ pub mod reader_file;
 pub mod sessions;
 pub mod skills;
 pub mod slash;
+pub mod updater;

@@ -14,6 +14,7 @@ import type {
   Project,
   SessionItem,
   SessionSearchHit,
+  UpdateStatus,
 } from '$lib/ipc/client'
 import type {
   AskTimer,
@@ -51,6 +52,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   keep_awake: false,
   language: 'en',
   pinned_sessions: [],
+  skipped_update_version: null,
 }
 
 /** An IPC refusal because a project's folder is missing. */
@@ -106,6 +108,8 @@ class AppStore {
 
   /** Last user-facing error of an action (shown as a toast by the UI). */
   lastError = $state<{ message: string; at: number } | null>(null)
+  /** Current state of the GitHub Releases auto-updater. */
+  updateStatus = $state<UpdateStatus>({ phase: 'idle' })
 
   /** Bumped by `newConversation()`: the composer focuses its editor when it changes. */
   composerFocus = $state(0)
@@ -181,6 +185,16 @@ class AppStore {
     return this.models.length > 0
   }
 
+  get hasActiveRuns(): boolean {
+    for (const conv of this.conversations.values()) {
+      if (conv.running) return true
+    }
+    for (const list of this.sessionsByProject.values()) {
+      if (list.some((s) => s.running)) return true
+    }
+    return false
+  }
+
   /** Model choice of a `provider/model` selection. */
   model(selection: string | null | undefined): ModelChoice | undefined {
     return this.models.find((m) => m.selection === selection)
@@ -189,13 +203,15 @@ class AppStore {
   async init() {
     try {
       this.unsubscribe = await ipc.subscribeEvents((e) => this.onEvent(e))
-      const [info, prefs, projects] = await Promise.all([
+      const [info, prefs, projects, updateStatus] = await Promise.all([
         ipc.appInfo(),
         ipc.prefsGet().catch(() => ({ ...DEFAULT_PREFERENCES, language: currentLanguage() })),
         ipc.projectsList(),
+        ipc.updateState().catch((): UpdateStatus => ({ phase: 'idle' })),
       ])
       this.info = info
       this.prefs = prefs
+      this.updateStatus = updateStatus
       setLanguage(prefs.language)
       this.projects = projects
       // Drafts are created here, not while rendering (a state write in a derived is refused).
@@ -254,6 +270,54 @@ class AppStore {
     } catch (e) {
       return ipc.errorMessage(e)
     }
+  }
+
+  // ─── Updates ──────────────────────────────────────────────────────────────
+
+  async checkForUpdates(): Promise<UpdateStatus> {
+    try {
+      const next = await ipc.updateCheck()
+      this.updateStatus = next
+      return next
+    } catch (e) {
+      const info =
+        this.updateStatus.phase === 'available' ||
+        this.updateStatus.phase === 'downloading' ||
+        this.updateStatus.phase === 'ready' ||
+        this.updateStatus.phase === 'error'
+          ? (this.updateStatus.info ?? null)
+          : null
+      const errStatus: UpdateStatus = {
+        phase: 'error',
+        message: ipc.errorMessage(e),
+        info,
+      }
+      this.updateStatus = errStatus
+      return errStatus
+    }
+  }
+
+  async downloadUpdate(): Promise<UpdateStatus> {
+    const next = await ipc.updateDownload()
+    this.updateStatus = next
+    return next
+  }
+
+  async cancelUpdateDownload(): Promise<UpdateStatus> {
+    const next = await ipc.updateCancel()
+    this.updateStatus = next
+    return next
+  }
+
+  async ignoreUpdate(version: string): Promise<UpdateStatus> {
+    const next = await ipc.updateIgnore(version)
+    this.prefs = { ...this.prefs, skipped_update_version: version }
+    this.updateStatus = next
+    return next
+  }
+
+  async installUpdate(): Promise<void> {
+    await ipc.updateInstall()
   }
 
   /** The Computer Use choice, as the backend saved it (its own command saves it). */
@@ -736,6 +800,9 @@ class AppStore {
         break
       case 'change_recorded':
         changeListeners.forEach((l) => l(e.record))
+        break
+      case 'update_state_changed':
+        this.updateStatus = e.state
         break
     }
   }

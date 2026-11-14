@@ -110,6 +110,7 @@ fn session_of(event: &DesktopEvent) -> Option<String> {
         | DesktopEvent::RunLabeled { session_id, .. } => Some(session_id.clone()),
         DesktopEvent::SessionUpdated { session } => Some(session.id.clone()),
         DesktopEvent::ChangeRecorded { record } => Some(record.session_id.clone()),
+        DesktopEvent::UpdateStateChanged { .. } => None,
     }
 }
 
