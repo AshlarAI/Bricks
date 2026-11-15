@@ -545,8 +545,12 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clamav
-          sudo freshclam || echo "Warning: freshclam update failed; using cached/packaged database."
-          clamscan --recursive --infected --no-summary dist/
+          sudo systemctl stop clamav-freshclam || true
+          sudo mkdir -p /var/lib/clamav
+          sudo chown -R clamav:clamav /var/lib/clamav
+          sudo freshclam --log=/tmp/freshclam.log || echo "Warning: freshclam update failed; using cached/packaged database."
+          sudo chmod -R a+rX /var/lib/clamav
+          clamscan --database=/var/lib/clamav --recursive --infected --no-summary dist/
 
       - name: Scan artifacts with VirusTotal API
         env:

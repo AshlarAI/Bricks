@@ -2461,12 +2461,25 @@ async fn a_resume_waits_for_a_slot_like_a_launch() {
     )
     .await;
     env.shared.auto_wait.store(false, Ordering::SeqCst);
-    let evs = submit(&mut env, "go").await;
-    let sp = spawned(&evs);
+    let mut all = submit(&mut env, "go").await;
+    let sp = spawned(&all);
     let (a, b) = (sp[0].agent_id.clone(), sp[1].agent_id.clone());
-    let (err, out) = tool_out(&evs, "r1");
+    let (err, out) = tool_out(&all, "r1");
     assert!(!err, "{out}");
-    let queued = evs.iter().any(|e| {
+    if !all.iter().any(|e| {
+        matches!(
+            &e.event,
+            Event::AgentState { agent_id, state: InstanceState::Running, .. } if *agent_id == b
+        )
+    }) {
+        all.extend(
+            until(&mut env.events, |e| {
+                matches!(e, Event::AgentState { agent_id, state: InstanceState::Running, .. } if *agent_id == b)
+            })
+            .await,
+        );
+    }
+    let queued = all.iter().any(|e| {
         matches!(&e.event, Event::AgentState { agent_id, state: InstanceState::Queued, execution: 2, .. } if *agent_id == a)
     });
     assert!(queued, "the resumed agent waits for the free slot");
@@ -2476,7 +2489,6 @@ async fn a_resume_waits_for_a_slot_like_a_launch() {
         "{b} holds it"
     );
     env.shared.release();
-    let mut all = evs;
     loop {
         if results(&all)
             .iter()
