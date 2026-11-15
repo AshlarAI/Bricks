@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // A top-level ```mermaid fence of an assistant message. The renderer is
   // loaded on demand, only once the fence is closed; the source stays visible
   // until then and when rendering fails. The SVG comes from `renderMermaid`,
@@ -79,6 +80,6 @@
 {:else}
   <figure class="my-2 overflow-hidden rounded-md bg-code-bg text-code-foreground" aria-busy={!error && complete}>
     {#if error}<p class="px-2.5 pt-2 text-xs text-destructive" role="alert">{t('conversation.diagramNotRendered', { error })}</p>{/if}
-    <pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="font-mono">{source}</code></pre>
+    <ScrollArea orientation="horizontal"><pre class="p-2.5 text-xs leading-relaxed"><code class="font-mono">{source}</code></pre></ScrollArea>
   </figure>
 {/if}

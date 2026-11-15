@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	// Bottom pane: interactive shells on a real PTY, one set per project.
 	// The sessions live in terminals.svelte.ts (store and session rules in
 	// terminal-store / terminal-session); this component only shows the active
@@ -76,33 +77,35 @@
 
 <div class="flex h-full min-h-0 flex-col bg-code-bg">
 	<div class="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-background px-2">
-		<ToggleGroup.Root
-			type="single"
-			spacing={1}
-			aria-label={t('terminal.projectTerminals')}
-			class="min-w-0 flex-1 overflow-x-auto"
-			bind:value={() => activeId ?? '', (id) => id && select(id)}
-		>
-			{#each list as session, index (session.id)}
-				<div class="flex shrink-0 items-center rounded-md has-data-[state=on]:bg-element-selected">
-					<ToggleGroup.Item
-						value={session.id}
-						class="h-6 min-w-0 px-2 text-xs font-normal hover:bg-transparent data-[state=on]:bg-transparent"
-					>
-						{t('terminal.terminal', { value: index + 1 })}
-					</ToggleGroup.Item>
-					<button
-						type="button"
-						class="rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label={t('terminal.closeTerminal', { value: index + 1 })}
-						title={t('terminal.closeTheTerminal')}
-						onclick={() => close(session.id)}
-					>
-						<X class="size-3.5" aria-hidden="true" />
-					</button>
-				</div>
-			{/each}
-		</ToggleGroup.Root>
+		<ScrollArea orientation="horizontal" class="min-w-0 flex-1">
+			<ToggleGroup.Root
+				type="single"
+				spacing={1}
+				aria-label={t('terminal.projectTerminals')}
+				class="w-max"
+				bind:value={() => activeId ?? '', (id) => id && select(id)}
+			>
+				{#each list as session, index (session.id)}
+					<div class="flex shrink-0 items-center rounded-md has-data-[state=on]:bg-element-selected">
+						<ToggleGroup.Item
+							value={session.id}
+							class="h-6 min-w-0 px-2 text-xs font-normal hover:bg-transparent data-[state=on]:bg-transparent"
+						>
+							{t('terminal.terminal', { value: index + 1 })}
+						</ToggleGroup.Item>
+						<button
+							type="button"
+							class="rounded-md p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label={t('terminal.closeTerminal', { value: index + 1 })}
+							title={t('terminal.closeTheTerminal')}
+							onclick={() => close(session.id)}
+						>
+							<X class="size-3.5" aria-hidden="true" />
+						</button>
+					</div>
+				{/each}
+			</ToggleGroup.Root>
+		</ScrollArea>
 		<Button
 			variant="ghost"
 			size="icon-sm"

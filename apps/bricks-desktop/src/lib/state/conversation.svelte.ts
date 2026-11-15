@@ -542,8 +542,6 @@ export class Conversation {
   model = $state('')
   reasoning = $state<string | null>(null)
   effectiveReasoning = $state<string | null>(null)
-  /** Set when a model/reasoning change waits for the next turn/run. */
-  pendingChange = $state<{ what: string; applies: string } | null>(null)
 
   items = $state<TimelineItem[]>([])
   runs = new SvelteMap<string, RunInfo>()
@@ -1174,12 +1172,10 @@ export class Conversation {
         this.reasoning = env.reasoning ?? null
         this.effectiveReasoning = env.effective_reasoning ?? null
         this.contextStale = true
-        this.pendingChange = this.running ? { what: 'model', applies: env.applies } : null
         break
       case 'reasoning_changed':
         this.reasoning = env.requested ?? null
         this.effectiveReasoning = env.effective ?? null
-        this.pendingChange = this.running ? { what: 'reasoning', applies: env.applies } : null
         break
       case 'notice':
         this.notice('info', env.message, runId)
@@ -1208,7 +1204,6 @@ export class Conversation {
           this.items.push({ kind: 'run_end', id: localId('r'), runId: id })
         }
         if (this.runningRunId === id) this.runningRunId = null
-        this.pendingChange = null
         for (const item of this.items) {
           if (item.kind !== 'tool' || item.status !== 'running' || item.runId !== id) continue
           // A shell call that never reported an end is a command of unknown outcome.

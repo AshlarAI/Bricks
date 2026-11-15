@@ -52,6 +52,8 @@
   let legacyTerminalHeight = $state<number | undefined>(undefined)
   // macOS draws its window buttons over the top bar, except in full screen.
   let fullscreen = $state(false)
+  // Focus inside the composer pauses the welcome's typed line.
+  let composerFocused = $state(false)
   const systemButtons = $derived(app.info?.platform === 'macos' && !fullscreen)
 
   // Every conversation shown is a stop of the history (« Précédent » / « Suivant »).
@@ -259,11 +261,17 @@
                 </EmptyState>
               </div>
             {:else if app.currentProject}
-              <WelcomeView onPick={pickStarter} />
+              <WelcomeView onPick={pickStarter} paused={composerFocused} />
             {/if}
           </div>
           <PermissionChoice conversation={app.current} />
-          <Composer conversation={app.current} />
+          <div
+            class="contents"
+            onfocusin={() => (composerFocused = true)}
+            onfocusout={(e) => (composerFocused = e.currentTarget.contains(e.relatedTarget as Node | null))}
+          >
+            <Composer conversation={app.current} />
+          </div>
         </div>
       {/snippet}
       {#snippet right()}

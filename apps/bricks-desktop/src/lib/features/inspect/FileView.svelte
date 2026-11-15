@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // Read-only window of a project file opened from a file reference in a
   // message. The path is resolved and checked by Rust (`project_file_read`)
   // in the project of the conversation the message belongs to.
@@ -54,28 +55,23 @@
   {:else if !file}
     <p class="text-xs text-muted-foreground" role="status">{t('common.reading2')}</p>
   {:else}
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div
-      bind:this={scroller}
-      class="max-h-[60vh] overflow-auto rounded-md bg-code-bg font-mono text-xs leading-5 text-code-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      role="region"
-      aria-label={t('common.contentOf', { path })}
-      tabindex="0"
-    >
-      <div class="min-w-max py-1">
-        {#each file.lines as text, i (i)}
-          {@const n = file.start + i}
-          {@const marked = first > 0 && n >= first && n <= last}
-          <div
-            class={['grid grid-cols-[3.5rem_minmax(0,1fr)]', marked && 'bg-info-soft']}
-            data-first-marked={marked && n === first ? '' : undefined}
-          >
-            <span class="px-2 text-right text-muted-foreground tabular-nums select-none">{n}</span>
-            <span class="px-2 whitespace-pre">{text}</span>
-          </div>
-        {/each}
+    <ScrollArea class="rounded-md bg-code-bg" viewportClass="max-h-[60vh] outline-none focus-visible:ring-2 focus-visible:ring-ring" orientation="both" bind:viewportRef={scroller} viewportProps={{ role: 'region', 'aria-label': t('common.contentOf', { path }), tabindex: 0 }}>
+      <div class="font-mono text-xs leading-5 text-code-foreground">
+        <div class="min-w-max py-1">
+          {#each file.lines as text, i (i)}
+            {@const n = file.start + i}
+            {@const marked = first > 0 && n >= first && n <= last}
+            <div
+              class={['grid grid-cols-[3.5rem_minmax(0,1fr)]', marked && 'bg-info-soft']}
+              data-first-marked={marked && n === first ? '' : undefined}
+            >
+              <span class="px-2 text-right text-muted-foreground tabular-nums select-none">{n}</span>
+              <span class="px-2 whitespace-pre">{text}</span>
+            </div>
+          {/each}
+        </div>
       </div>
-    </div>
+    </ScrollArea>
     {#if file.truncated}
       <p class="text-xs text-muted-foreground">
         {t('inspect.linesToOf', { start: file.start, value: file.start + file.lines.length - 1, totalLines: file.totalLines })}

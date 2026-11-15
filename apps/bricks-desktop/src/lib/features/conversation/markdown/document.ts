@@ -70,7 +70,7 @@ interface Entry {
   raw: string
   /** Null for a text range marked emitted no token for. */
   token: Token | null
-  kind: 'none' | 'html' | 'mermaid' | 'svg' | 'vega' | 'diff'
+  kind: 'none' | 'html' | 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown'
   footnote: { id: string; text: string } | null
   /** Normalized link labels the block refers to, and the definitions they resolved to when lexed. */
   labels: string[]
@@ -110,6 +110,7 @@ function kindOf(node: Tok | null): Entry['kind'] {
     if (language === 'svg') return 'svg'
     if (language === 'vega-lite' || language === 'vegalite') return 'vega'
     if (language === 'diff' || language === 'patch') return 'diff'
+    if (language === 'markdown' || language === 'md') return 'markdown'
   }
   return 'html'
 }
@@ -551,7 +552,7 @@ export class MarkdownDocument {
     }
     const node = entry.token as Tok
     const source = node.text as string
-    const kind = entry.kind as 'mermaid' | 'svg' | 'vega' | 'diff'
+    const kind = entry.kind as 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown'
     entry.output = { key: entry.key, kind, source, complete: entry.complete }
     entry.outputSig = entry.raw
   }

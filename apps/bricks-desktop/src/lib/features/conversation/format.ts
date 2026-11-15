@@ -124,6 +124,13 @@ export function basename(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+/** What an attachment is, in one word: « Dossier », or the file's extension (« PDF »). */
+export function attachmentKind(kind: string, name: string): string {
+  if (kind === 'folder') return t('common.folder')
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toUpperCase() : ''
+}
+
 function numberField(value: Termination, key: string): number | null {
   const v = (value as Record<string, unknown>)[key]
   return typeof v === 'number' ? v : null

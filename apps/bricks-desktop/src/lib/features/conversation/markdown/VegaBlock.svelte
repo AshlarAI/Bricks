@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // A top-level ```vega-lite fence of an assistant message: the chart once the
   // fence is closed, drawn as an SVG at the width available, in the app's theme
   // under the chart's own colours. Vega is loaded on demand. While it streams,
@@ -88,7 +89,7 @@
   {:else}
     <figure class="my-2 overflow-hidden rounded-md bg-code-bg text-code-foreground" aria-busy={!error && complete}>
       {#if error}<p class="px-2.5 pt-2 text-xs text-destructive" role="alert">{t('conversation.chartNotRendered', { error })}</p>{/if}
-      <pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="font-mono">{source}</code></pre>
+      <ScrollArea orientation="horizontal"><pre class="p-2.5 text-xs leading-relaxed"><code class="font-mono">{source}</code></pre></ScrollArea>
     </figure>
   {/if}
 </div>

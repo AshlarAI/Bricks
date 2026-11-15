@@ -5,7 +5,6 @@
 	import { app } from '$lib/state/app.svelte';
 	import { errorMessage, gitStatus } from '$lib/ipc/client';
 	import type { GitStatus, Project } from '$lib/ipc/client';
-	import type { Conversation } from '$lib/state/conversation.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import SectionCard from '$lib/layout/SectionCard.svelte';
 	import CheckIcon from '@lucide/svelte/icons/check';
@@ -17,11 +16,9 @@
 
 	interface Props {
 		project: Project;
-		/** The shown conversation, or `null` when none is open. */
-		conversation: Conversation | null;
 	}
 
-	let { project, conversation }: Props = $props();
+	let { project }: Props = $props();
 
 	const projectId = $derived(project.id);
 	const projectMissing = $derived(project.missing);
@@ -109,14 +106,6 @@
 	}
 
 	onDestroy(() => clearTimeout(copyTimer));
-
-	const pendingText = $derived.by(() => {
-		const change = conversation?.pendingChange;
-		if (!change) return null;
-		const what = change.what === 'model' ? t('common.model') : t('context.reasoning');
-		const when = change.applies === 'next_turn' ? t('common.onTheNextTurn') : t('context.onTheNextRun');
-		return t('context.changeApplied', { what, when });
-	});
 </script>
 
 <svelte:window
@@ -191,8 +180,4 @@
 			{/if}
 		</dd>
 	</dl>
-
-	{#if pendingText}
-		<p class="mt-2 text-xs text-pretty text-muted-foreground">{pendingText}</p>
-	{/if}
 </SectionCard>

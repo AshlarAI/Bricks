@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	// Tools of the session (`/tools`): name, description, permission level and
 	// the decision of the session's permission policy.
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -87,7 +88,7 @@
 					? t('sessionInfo.toolCount', { count: tools.length })
 					: t('sessionInfo.ofTools', { visible: visible.length, count: tools.length })}
 			</p>
-			<div class="overflow-x-auto rounded-lg border border-border">
+			<ScrollArea class="rounded-lg border border-border" orientation="horizontal">
 				<table class="w-full min-w-[32rem] text-left text-sm">
 					<caption class="sr-only">{t('sessionInfo.sessionToolsWithTheirLevelAnd')}</caption>
 					<thead class="bg-muted text-xs text-muted-foreground">
@@ -118,7 +119,7 @@
 						{/each}
 					</tbody>
 				</table>
-			</div>
+			</ScrollArea>
 		{/if}
 	</div>
 {/if}

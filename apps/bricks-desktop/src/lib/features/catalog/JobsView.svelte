@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { onMount, untrack } from 'svelte';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -100,76 +101,78 @@
 					</Button>
 				</div>
 				<CollapsibleContent>
-					<ul class="max-h-[52vh] overflow-y-auto border-t border-border">
-						{#each jobs as job (job.jobId)}
-							{@const status = jobStatus(job.state)}
-							<li class="border-b border-border last:border-b-0">
-								<Collapsible>
-									<div class="flex min-w-0 items-center gap-1 pr-1.5">
-										<CollapsibleTrigger
-											class="group flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-start hover:bg-element-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-										>
-											<ChevronRightIcon
-												class="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
-												aria-hidden="true"
-											/>
-											<StatusDot status={status.dot} label={status.label} class="shrink-0" />
-											<span class="min-w-0 flex-1 truncate font-mono text-xs" title={job.command}>{job.command}</span>
-											<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
-												{formatDuration(jobDurationMs(job, now))}
-											</span>
-										</CollapsibleTrigger>
-										{#if job.state === 'running'}
-											<Button
-												variant="ghost"
-												size="icon-xs"
-												aria-label={t('catalog.stop', { command: job.command })}
-												title={t('common.stop')}
-												disabled={stop.pending}
-												onclick={() => askStop(job.jobId)}
+					<ScrollArea class="border-t border-border" viewportClass="max-h-[52vh]">
+						<ul>
+							{#each jobs as job (job.jobId)}
+								{@const status = jobStatus(job.state)}
+								<li class="border-b border-border last:border-b-0">
+									<Collapsible>
+										<div class="flex min-w-0 items-center gap-1 pr-1.5">
+											<CollapsibleTrigger
+												class="group flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-start hover:bg-element-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 											>
-												<SquareIcon aria-hidden="true" />
-											</Button>
-										{/if}
-									</div>
-									<CollapsibleContent>
-										<dl class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-3 pt-0.5 pb-2 pl-9 text-xs">
-											<dt class="text-muted-foreground">{t('catalog.status')}</dt>
-											<dd>{status.label}</dd>
-											<dt class="text-muted-foreground">{t('catalog.started')}</dt>
-											<dd class="tabular-nums">{formatTime(job.startedAt)}</dd>
-											<dt class="text-muted-foreground">{t('common.folder')}</dt>
-											<dd class="font-mono break-all">{job.cwd}</dd>
-											<dt class="text-muted-foreground">PID</dt>
-											<dd class="tabular-nums">{job.pid}</dd>
-											<dt class="text-muted-foreground">{t('common.agent2')}</dt>
-											<dd class="font-mono break-all">{job.agentId}</dd>
-											<dt class="text-muted-foreground">{t('common.output')}</dt>
-											<dd class="tabular-nums">
-												{t('catalog.stdoutStderr', { stdoutBytes: formatBytes(job.stdoutBytes), stderrBytes: formatBytes(job.stderrBytes) })}
-											</dd>
-											{#if job.code !== undefined}
-												<dt class="text-muted-foreground">{t('catalog.code')}</dt>
-												<dd class="tabular-nums">{job.code}</dd>
+												<ChevronRightIcon
+													class="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
+													aria-hidden="true"
+												/>
+												<StatusDot status={status.dot} label={status.label} class="shrink-0" />
+												<span class="min-w-0 flex-1 truncate font-mono text-xs" title={job.command}>{job.command}</span>
+												<span class="shrink-0 text-xs tabular-nums text-muted-foreground">
+													{formatDuration(jobDurationMs(job, now))}
+												</span>
+											</CollapsibleTrigger>
+											{#if job.state === 'running'}
+												<Button
+													variant="ghost"
+													size="icon-xs"
+													aria-label={t('catalog.stop', { command: job.command })}
+													title={t('common.stop')}
+													disabled={stop.pending}
+													onclick={() => askStop(job.jobId)}
+												>
+													<SquareIcon aria-hidden="true" />
+												</Button>
 											{/if}
-											{#if job.signal !== undefined}
-												<dt class="text-muted-foreground">{t('catalog.signal')}</dt>
-												<dd class="tabular-nums">{job.signal}</dd>
-											{/if}
-											{#if job.logs.length > 0}
-												<dt class="text-muted-foreground">{t('catalog.logs')}</dt>
-												<dd class="font-mono break-all">{job.logs.join(', ')}</dd>
-											{/if}
-											{#if job.logsError}
-												<dt class="text-muted-foreground">{t('catalog.logCopy')}</dt>
-												<dd class="break-all text-destructive">{job.logsError}</dd>
-											{/if}
-										</dl>
-									</CollapsibleContent>
-								</Collapsible>
-							</li>
-						{/each}
-					</ul>
+										</div>
+										<CollapsibleContent>
+											<dl class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-3 pt-0.5 pb-2 pl-9 text-xs">
+												<dt class="text-muted-foreground">{t('catalog.status')}</dt>
+												<dd>{status.label}</dd>
+												<dt class="text-muted-foreground">{t('catalog.started')}</dt>
+												<dd class="tabular-nums">{formatTime(job.startedAt)}</dd>
+												<dt class="text-muted-foreground">{t('common.folder')}</dt>
+												<dd class="font-mono break-all">{job.cwd}</dd>
+												<dt class="text-muted-foreground">PID</dt>
+												<dd class="tabular-nums">{job.pid}</dd>
+												<dt class="text-muted-foreground">{t('common.agent2')}</dt>
+												<dd class="font-mono break-all">{job.agentId}</dd>
+												<dt class="text-muted-foreground">{t('common.output')}</dt>
+												<dd class="tabular-nums">
+													{t('catalog.stdoutStderr', { stdoutBytes: formatBytes(job.stdoutBytes), stderrBytes: formatBytes(job.stderrBytes) })}
+												</dd>
+												{#if job.code !== undefined}
+													<dt class="text-muted-foreground">{t('catalog.code')}</dt>
+													<dd class="tabular-nums">{job.code}</dd>
+												{/if}
+												{#if job.signal !== undefined}
+													<dt class="text-muted-foreground">{t('catalog.signal')}</dt>
+													<dd class="tabular-nums">{job.signal}</dd>
+												{/if}
+												{#if job.logs.length > 0}
+													<dt class="text-muted-foreground">{t('catalog.logs')}</dt>
+													<dd class="font-mono break-all">{job.logs.join(', ')}</dd>
+												{/if}
+												{#if job.logsError}
+													<dt class="text-muted-foreground">{t('catalog.logCopy')}</dt>
+													<dd class="break-all text-destructive">{job.logsError}</dd>
+												{/if}
+											</dl>
+										</CollapsibleContent>
+									</Collapsible>
+								</li>
+							{/each}
+						</ul>
+					</ScrollArea>
 				</CollapsibleContent>
 			</Collapsible>
 		</section>

@@ -1,9 +1,13 @@
 <script lang="ts">
+  // An attachment of the draft: its thumbnail or file icon, its name, its state (copying, refused)
+  // and a button to remove it.
   import { t } from '$lib/i18n/i18n.svelte'
   import type { DraftAttachment } from '$lib/state/conversation.svelte'
-  import { Button } from '$lib/components/ui/button'
+  import * as Attachment from '$lib/components/ui/attachment'
+  import { Spinner } from '$lib/components/ui/spinner'
   import FileIcon from '$lib/features/file-icons/FileIcon.svelte'
   import XIcon from '@lucide/svelte/icons/x'
+  import { attachmentKind } from '$lib/features/conversation/format'
 
   let {
     attachment,
@@ -15,33 +19,41 @@
     error: string | null
     onRemove: () => void
   } = $props()
+
+  const state = $derived(error !== null ? 'error' : attachment.importing ? 'uploading' : 'done')
+  const description = $derived(
+    error ?? (attachment.importing ? t('composer.copying') : attachmentKind(attachment.kind, attachment.name)),
+  )
 </script>
 
-<div
+<Attachment.Root
+  {state}
+  size="sm"
+  class="max-w-64 min-w-0"
   aria-busy={attachment.importing ? 'true' : undefined}
-  class="flex max-w-full items-center gap-2 rounded-md border bg-muted/60 py-1 pr-1 pl-1.5 text-sm"
-  class:border-transparent={error === null}
-  class:border-destructive={error !== null}
   data-kind={attachment.kind}
+  title={attachment.path || attachment.name}
 >
-  <div class={['flex min-w-0 items-center', attachment.previewUrl ? 'gap-2' : 'gap-1.5']}>
-    {#if attachment.previewUrl}
-      <img src={attachment.previewUrl} alt="" class="size-8 shrink-0 rounded-sm object-cover" />
-    {:else}
-      <FileIcon path={attachment.path || attachment.name} kind={attachment.kind === 'folder' ? 'folder' : 'file'} />
-    {/if}
-
-    <div class="min-w-0">
-      <p class="max-w-56 truncate" title={attachment.path || attachment.name}>{attachment.name}</p>
-      {#if error}
-        <p class="text-xs text-destructive" role="alert">{error}</p>
-      {:else if attachment.importing}
-        <p class="text-xs text-muted-foreground">{t('composer.copying')}</p>
+  {#if attachment.previewUrl}
+    <Attachment.Media variant="image">
+      <img src={attachment.previewUrl} alt="" />
+    </Attachment.Media>
+  {:else}
+    <Attachment.Media>
+      {#if attachment.importing}
+        <Spinner />
+      {:else}
+        <FileIcon path={attachment.path || attachment.name} kind={attachment.kind === 'folder' ? 'folder' : 'file'} />
       {/if}
-    </div>
-  </div>
-
-  <Button variant="ghost" size="icon-xs" aria-label={t('composer.remove', { name: attachment.name })} onclick={onRemove}>
-    <XIcon aria-hidden="true" />
-  </Button>
-</div>
+    </Attachment.Media>
+  {/if}
+  <Attachment.Content>
+    <Attachment.Title>{attachment.name}</Attachment.Title>
+    <Attachment.Description role={error ? 'alert' : undefined}>{description}</Attachment.Description>
+  </Attachment.Content>
+  <Attachment.Actions>
+    <Attachment.Action aria-label={t('composer.remove', { name: attachment.name })} onclick={onRemove}>
+      <XIcon aria-hidden="true" />
+    </Attachment.Action>
+  </Attachment.Actions>
+</Attachment.Root>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	// Right panel « Modifications »: what the conversation changed, what the
 	// project's journal recorded, and the Git state of the project folder.
 	// Owner: Haiku 7 (changes feature).
@@ -28,14 +29,26 @@
 			</Tabs.Trigger>
 			<Tabs.Trigger value="git" class="min-w-0 truncate text-xs">Git</Tabs.Trigger>
 		</Tabs.List>
-		<Tabs.Content value="conversation" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-3 outline-none">
-			<ConversationChanges />
+		<Tabs.Content value="conversation" class="min-h-0 flex-1 outline-none">
+			<ScrollArea class="h-full">
+				<div class="px-3 pt-3 pb-3">
+					<ConversationChanges />
+				</div>
+			</ScrollArea>
 		</Tabs.Content>
-		<Tabs.Content value="historique" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-3 outline-none">
-			<HistoryChanges />
+		<Tabs.Content value="historique" class="min-h-0 flex-1 outline-none">
+			<ScrollArea class="h-full">
+				<div class="px-3 pt-3 pb-3">
+					<HistoryChanges />
+				</div>
+			</ScrollArea>
 		</Tabs.Content>
-		<Tabs.Content value="git" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-3 outline-none">
-			<GitChanges />
+		<Tabs.Content value="git" class="min-h-0 flex-1 outline-none">
+			<ScrollArea class="h-full">
+				<div class="px-3 pt-3 pb-3">
+					<GitChanges />
+				</div>
+			</ScrollArea>
 		</Tabs.Content>
 	</Tabs.Root>
 </div>

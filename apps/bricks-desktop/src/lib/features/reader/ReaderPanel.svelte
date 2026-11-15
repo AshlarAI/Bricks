@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // Read-only reader of the right column: one tab per file of the open
   // conversation, and per tab a source view (highlighted, numbered lines,
   // read in bounded windows), a Markdown preview, and the recorded edit
@@ -63,37 +64,39 @@
   {#if tabs.length === 0}
     <p class="p-4 text-ui text-muted-foreground">{t('reader.noOpenFile')}</p>
   {:else}
-    <div role="tablist" aria-label={t('reader.openFiles')} class="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/50 px-1.5 py-1">
-      {#each tabs as tab (tab.id)}
-        <div
-          class={[
-            'group flex max-w-48 min-w-12 shrink items-center rounded-md text-ui',
-            tab.id === active?.id ? 'bg-element-selected text-foreground' : 'text-muted-foreground hover:bg-element-hover',
-          ]}
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab.id === active?.id}
-            title={tab.fullPath}
-            class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pr-1 pl-2 font-mono text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            onclick={() => reader.activate(tab.id)}
+    <ScrollArea class="shrink-0 border-b border-border/50" orientation="horizontal">
+      <div class="flex items-center gap-0.5 px-1.5 py-1" role="tablist" aria-label={t('reader.openFiles')}>
+        {#each tabs as tab (tab.id)}
+          <div
+            class={[
+              'group flex max-w-48 min-w-12 shrink items-center rounded-md text-ui',
+              tab.id === active?.id ? 'bg-element-selected text-foreground' : 'text-muted-foreground hover:bg-element-hover',
+            ]}
           >
-            <FileIcon path={tab.fullPath || tab.title} />
-            <span class="min-w-0 truncate">{tab.title}</span>
-          </button>
-          <button
-            type="button"
-            aria-label={t('reader.close', { title: tab.title })}
-            title={t('common.close')}
-            class="mr-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            onclick={() => reader.close(tab.id)}
-          >
-            <X class="size-3" aria-hidden="true" />
-          </button>
-        </div>
-      {/each}
-    </div>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab.id === active?.id}
+              title={tab.fullPath}
+              class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pr-1 pl-2 font-mono text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              onclick={() => reader.activate(tab.id)}
+            >
+              <FileIcon path={tab.fullPath || tab.title} />
+              <span class="min-w-0 truncate">{tab.title}</span>
+            </button>
+            <button
+              type="button"
+              aria-label={t('reader.close', { title: tab.title })}
+              title={t('common.close')}
+              class="mr-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              onclick={() => reader.close(tab.id)}
+            >
+              <X class="size-3" aria-hidden="true" />
+            </button>
+          </div>
+        {/each}
+      </div>
+    </ScrollArea>
 
     {#if active}
       <div class="flex shrink-0 items-center gap-2 px-2 py-1">
@@ -115,15 +118,7 @@
         </span>
       </div>
 
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        bind:this={scroller}
-        onscroll={onScroll}
-        role="region"
-        aria-label={t('common.contentOf', { path: active.title })}
-        tabindex="0"
-        class="min-h-0 flex-1 overflow-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      >
+      <ScrollArea class="min-h-0 flex-1" viewportClass="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset" orientation={active.mode === 'changes' || active.mode === 'preview' ? 'vertical' : 'both'} bind:viewportRef={scroller} viewportProps={{ onscroll: onScroll, role: 'region', 'aria-label': t('common.contentOf', { path: active.title }), tabindex: 0 }}>
         {#if active.mode === 'changes'}
           <div class="flex flex-col gap-3 p-2">
             {#each active.operations as op, i (op.key)}
@@ -175,7 +170,7 @@
             {/each}
           </div>
         {/if}
-      </div>
+      </ScrollArea>
 
       {#if active.mode !== 'changes' && active.window && !active.window.loading && !active.window.error && active.window.truncated}
         {@const w = active.window}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { onMount } from 'svelte';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
@@ -173,42 +174,38 @@
 			{:else}
 				<!-- A named, focusable scroll container: keyboard users must be able to scroll
 					it (WCAG 2.1.1). The rule only checks the role, so it is suppressed here. -->
-				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-				<div
-					role="region"
-					aria-label={t('common.skills')}
-					tabindex="0"
-					class="flex max-h-[46vh] flex-col gap-3 overflow-y-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				>
-					<ul class="flex flex-col gap-2">
-						{#each listing.entries as entry, i (i)}
-							{@const view = skillStateView(entry.state)}
-							<li class="flex min-w-0 flex-col gap-1.5 rounded-md border border-border px-2.5 py-2">
-								<div class="flex min-w-0 flex-wrap items-center gap-2">
-									<span class="min-w-0 truncate font-mono font-medium">{entry.name}</span>
-									<Badge variant="outline">{scopeLabel(entry.source)}</Badge>
-									<Badge variant={view.variant}>{view.label}</Badge>
-									{#if entry.revision}
-										<span class="font-mono text-xs text-muted-foreground">{t('catalog.revision', { revision: entry.revision })}</span>
+				<ScrollArea class="rounded-sm" viewportClass="max-h-[46vh] outline-none focus-visible:ring-2 focus-visible:ring-ring" viewportProps={{ role: 'region', 'aria-label': t('common.skills'), tabindex: 0 }}>
+					<div class="flex flex-col gap-3">
+						<ul class="flex flex-col gap-2">
+							{#each listing.entries as entry, i (i)}
+								{@const view = skillStateView(entry.state)}
+								<li class="flex min-w-0 flex-col gap-1.5 rounded-md border border-border px-2.5 py-2">
+									<div class="flex min-w-0 flex-wrap items-center gap-2">
+										<span class="min-w-0 truncate font-mono font-medium">{entry.name}</span>
+										<Badge variant="outline">{scopeLabel(entry.source)}</Badge>
+										<Badge variant={view.variant}>{view.label}</Badge>
+										{#if entry.revision}
+											<span class="font-mono text-xs text-muted-foreground">{t('catalog.revision', { revision: entry.revision })}</span>
+										{/if}
+									</div>
+									{#if entry.description}
+										<p class="text-xs text-pretty">{entry.description}</p>
 									{/if}
-								</div>
-								{#if entry.description}
-									<p class="text-xs text-pretty">{entry.description}</p>
-								{/if}
-								{#if entry.path}
-									<p class="font-mono text-xs break-all text-muted-foreground">{entry.path}</p>
-								{/if}
-								{#if entry.details && entry.details.length > 0}
-									<ul class="flex list-disc flex-col gap-0.5 pl-4 text-xs text-pretty">
-										{#each entry.details as detail, j (j)}
-											<li class="break-all">{detail}</li>
-										{/each}
-									</ul>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				</div>
+									{#if entry.path}
+										<p class="font-mono text-xs break-all text-muted-foreground">{entry.path}</p>
+									{/if}
+									{#if entry.details && entry.details.length > 0}
+										<ul class="flex list-disc flex-col gap-0.5 pl-4 text-xs text-pretty">
+											{#each entry.details as detail, j (j)}
+												<li class="break-all">{detail}</li>
+											{/each}
+										</ul>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				</ScrollArea>
 
 				<Pager
 					page={listing.page}

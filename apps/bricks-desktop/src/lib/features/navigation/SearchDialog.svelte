@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	// The magnifier next to « Nouvelle conversation », and the search it opens: titles and
 	// messages of every project. Escape closes it and gives focus back to the magnifier.
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -79,9 +80,11 @@
 			/>
 		</div>
 		{#if query.trim()}
-			<div class="max-h-[60vh] overflow-y-auto overscroll-contain pt-2">
-				<SearchResults bind:query onopened={onResultOpened} />
-			</div>
+			<ScrollArea viewportClass="max-h-[60vh]">
+				<div class="pt-2">
+					<SearchResults bind:query onopened={onResultOpened} />
+				</div>
+			</ScrollArea>
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>

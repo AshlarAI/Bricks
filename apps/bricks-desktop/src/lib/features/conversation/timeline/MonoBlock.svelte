@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   import { t } from '$lib/i18n/i18n.svelte'
   import { cn } from '$lib/utils.js'
 
@@ -31,18 +32,14 @@
 </script>
 
 <!-- The block scrolls, so keyboard users must be able to focus it (WCAG 2.1.1). -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div
-  role="region"
-  aria-label={label}
-  tabindex="0"
-  class={cn(
-    'max-h-80 overflow-auto rounded-md border border-border bg-code-bg text-code-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-    className,
-  )}
+<ScrollArea
+  orientation="both"
+  class={cn('rounded-md border border-border bg-code-bg text-code-foreground', className)}
+  viewportClass="max-h-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+  viewportProps={{ role: 'region', 'aria-label': label, tabindex: 0 }}
 >
   <pre class="min-w-max p-2.5 font-mono text-xs leading-relaxed">{#each shown as line, i (i)}<span class={cn('block whitespace-pre', lineClass(line))}>{line || ' '}</span>{/each}</pre>
-</div>
+</ScrollArea>
 {#if hiddenCount > 0}
   <button
     type="button"

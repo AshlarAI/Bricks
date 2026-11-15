@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { onMount } from 'svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -242,33 +243,29 @@
 	{:else}
 		<!-- A named, focusable scroll container: keyboard users must be able to scroll
 			it (WCAG 2.1.1). The rule only checks the role, so it is suppressed here. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<div
-			role="region"
-			aria-label={t('common.isolatedChanges')}
-			tabindex="0"
-			class="flex max-h-[52vh] flex-col gap-2 overflow-y-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			<ul class="flex flex-col gap-2">
-				{#each changes as item (item.id)}
-					<li>
-						<button
-							type="button"
-							onclick={() => (picked = item.id)}
-							class="flex w-full min-w-0 flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-						>
-							<span class="flex min-w-0 items-center gap-2">
-								<span class="min-w-0 flex-1 truncate text-sm font-medium">{item.task}</span>
-								<Badge variant={changesetVariant(item.state)}>{changesetLabel(item.state)}</Badge>
-							</span>
-							<span class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-								<span>{t('common.fileCount', { count: item.files.length })}</span>
-								<span class="min-w-0 font-mono break-all">{item.branch}</span>
-							</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
-		</div>
+		<ScrollArea class="rounded-sm" viewportClass="max-h-[52vh] outline-none focus-visible:ring-2 focus-visible:ring-ring" viewportProps={{ role: 'region', 'aria-label': t('common.isolatedChanges'), tabindex: 0 }}>
+			<div class="flex flex-col gap-2">
+				<ul class="flex flex-col gap-2">
+					{#each changes as item (item.id)}
+						<li>
+							<button
+								type="button"
+								onclick={() => (picked = item.id)}
+								class="flex w-full min-w-0 flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								<span class="flex min-w-0 items-center gap-2">
+									<span class="min-w-0 flex-1 truncate text-sm font-medium">{item.task}</span>
+									<Badge variant={changesetVariant(item.state)}>{changesetLabel(item.state)}</Badge>
+								</span>
+								<span class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+									<span>{t('common.fileCount', { count: item.files.length })}</span>
+									<span class="min-w-0 font-mono break-all">{item.branch}</span>
+								</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		</ScrollArea>
 	{/if}
 </div>

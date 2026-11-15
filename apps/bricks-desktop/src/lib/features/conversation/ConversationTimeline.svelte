@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   import { t } from '$lib/i18n/i18n.svelte'
   import { tick, untrack } from 'svelte'
   import { ArrowDown } from '@lucide/svelte'
@@ -220,16 +221,7 @@
 
 <div class="@container relative flex h-full min-h-0 flex-1 flex-col">
   <!-- The timeline scrolls: keyboard users must be able to focus it (WCAG 2.1.1). -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div
-    bind:this={scrollEl}
-    data-conversation-scroll
-    onscroll={updateNearBottom}
-    role="region"
-    aria-label={t('common.conversation')}
-    tabindex="0"
-    class="scroll-fade scroll-fade-t-6 scroll-fade-b-10 min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none"
-  >
+  <ScrollArea class="min-h-0 flex-1" viewportClass="scroll-fade scroll-fade-t-6 scroll-fade-b-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none" bind:viewportRef={scrollEl} viewportProps={{ 'data-conversation-scroll': '', onscroll: updateNearBottom, role: 'region', 'aria-label': t('common.conversation'), tabindex: 0 }}>
     <div
       bind:this={listEl}
       role="log"
@@ -274,7 +266,7 @@
         <SkillsTrustBanner {conversation} trust={conversation.skillsTrust} />
       {/if}
     </div>
-  </div>
+  </ScrollArea>
 
   <MessageRail {marks} scroller={scrollEl} />
 

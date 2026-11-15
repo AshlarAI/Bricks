@@ -6,6 +6,7 @@
   import FileIcon from '$lib/features/file-icons/FileIcon.svelte'
   import { Button } from '$lib/components/ui/button'
   import { Textarea } from '$lib/components/ui/textarea'
+  import * as Attachment from '$lib/components/ui/attachment'
   import * as Bubble from '$lib/components/ui/bubble'
   import * as Message from '$lib/components/ui/message'
   import * as Tooltip from '$lib/components/ui/tooltip'
@@ -15,7 +16,7 @@
   import type { Conversation, UserItem } from '$lib/state/conversation.svelte'
   import type { AttachmentInfo } from '$lib/ipc/engine'
   import { attachmentPreview } from '$lib/ipc/client'
-  import { basename, formatBytes } from '../format'
+  import { attachmentKind, basename, formatBytes } from '../format'
   import { isOpenableUrl, messageParts } from '../links'
 
   let { item, conversation = null }: { item: UserItem; conversation?: Conversation | null } = $props()
@@ -199,23 +200,37 @@
     {/if}
   {/if}
   {#if item.attachments.length > 0}
-    <ul class="flex max-w-[85%] flex-wrap justify-end gap-1.5" aria-label={t('common.attachments')}>
+    <ul class="flex max-w-[85%] flex-wrap items-end justify-end gap-2" aria-label={t('common.attachments')}>
       {#each item.attachments as attachment, i (`${i}:${attachment.path}`)}
-        {@const size = formatBytes(attachment.bytes)}
+        {@const name = shownName(attachment)}
         {@const id = copyId(attachment)}
         {@const preview = id ? previews[id] : undefined}
-        <li
-          class="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground"
-          title={shownName(attachment)}
-        >
-          {#if preview}
-            <img src={preview} alt="" class="size-10 shrink-0 rounded-sm object-cover" />
-          {:else}
-            <FileIcon path={shownName(attachment)} kind={attachment.kind === 'folder' ? 'folder' : 'file'} />
-          {/if}
-          <span class="min-w-0 truncate">{shownName(attachment)}</span>
-          {#if size}<span class="shrink-0 text-muted-foreground">{size}</span>{/if}
-          {#if attachment.note}<span class="shrink-0 text-muted-foreground">· {attachment.note}</span>{/if}
+        {@const details = [formatBytes(attachment.bytes) || attachmentKind(attachment.kind, name), attachment.note]
+          .filter(Boolean)
+          .join(' · ')}
+        <li class="min-w-0">
+          <Attachment.Root
+            size="sm"
+            orientation={preview ? 'vertical' : 'horizontal'}
+            class={preview ? undefined : 'max-w-64 min-w-0'}
+            title={name}
+          >
+            {#if preview}
+              <Attachment.Media variant="image">
+                <img src={preview} alt="" />
+              </Attachment.Media>
+            {:else}
+              <Attachment.Media>
+                <FileIcon path={name} kind={attachment.kind === 'folder' ? 'folder' : 'file'} />
+              </Attachment.Media>
+            {/if}
+            <Attachment.Content>
+              <Attachment.Title>{name}</Attachment.Title>
+              {#if details}
+                <Attachment.Description>{details}</Attachment.Description>
+              {/if}
+            </Attachment.Content>
+          </Attachment.Root>
         </li>
       {/each}
     </ul>

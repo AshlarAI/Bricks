@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	// Settings of Bricks: a large dialog with a section list. Entry point mounted by App.svelte.
 	import { t } from '$lib/i18n/i18n.svelte';
 	import type { Component } from 'svelte';
@@ -68,43 +69,73 @@
 			orientation={wide.current ? 'vertical' : 'horizontal'}
 			class="flex min-h-0 flex-1 flex-col sm:flex-row"
 		>
-			<Tabs.List
-				variant="line"
-				aria-label={t('settings.settingsSections')}
-				class="w-full shrink-0 justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-2 sm:w-56 sm:gap-0.5 sm:p-3"
-			>
-				{#each SECTIONS as item (item.id)}
-					{@const Icon = item.icon}
-					<Tabs.Trigger
-						value={item.id}
-						class="h-8 flex-none justify-start gap-2 rounded-lg px-2.5 text-ui text-muted-foreground after:hidden hover:bg-element-hover hover:text-foreground data-[state=active]:bg-element-selected data-[state=active]:text-foreground data-[state=active]:shadow-none"
-					>
-						<Icon class="size-4" aria-hidden="true" />
-						{item.label}
-					</Tabs.Trigger>
-				{/each}
-			</Tabs.List>
+			<ScrollArea orientation="both" class="w-full shrink-0 sm:w-56">
+				<Tabs.List
+					variant="line"
+					aria-label={t('settings.settingsSections')}
+					class="w-max min-w-full justify-start gap-1 rounded-none bg-transparent p-2 sm:w-full sm:gap-0.5 sm:p-3"
+				>
+					{#each SECTIONS as item (item.id)}
+						{@const Icon = item.icon}
+						<Tabs.Trigger
+							value={item.id}
+							class="h-8 flex-none justify-start gap-2 rounded-lg px-2.5 text-ui text-muted-foreground after:hidden hover:bg-element-hover hover:text-foreground data-[state=active]:bg-element-selected data-[state=active]:text-foreground data-[state=active]:shadow-none"
+						>
+							<Icon class="size-4" aria-hidden="true" />
+							{item.label}
+						</Tabs.Trigger>
+					{/each}
+				</Tabs.List>
+			</ScrollArea>
 
-			<Tabs.Content value="appearance" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<AppearanceSettings />
+			<Tabs.Content value="appearance" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<AppearanceSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="general" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<GeneralSettings />
+			<Tabs.Content value="general" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<GeneralSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="memory" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<MemorySettings />
+			<Tabs.Content value="memory" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<MemorySettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="models" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<ModelSettings />
+			<Tabs.Content value="models" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<ModelSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="skills" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<SkillsSettings />
+			<Tabs.Content value="skills" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<SkillsSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="extensions" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<ExtensionsSettings />
+			<Tabs.Content value="extensions" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<ExtensionsSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
-			<Tabs.Content value="application" class="min-h-0 flex-1 overflow-y-auto p-6">
-				<ApplicationSettings />
+			<Tabs.Content value="application" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<ApplicationSettings />
+					</div>
+				</ScrollArea>
 			</Tabs.Content>
 		</Tabs.Root>
 	</Dialog.Content>

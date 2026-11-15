@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // Hosts the inspector view opened by a `/` command (ui.inspector).
   // Owner: orchestrator. Each view lives in its owner's feature folder.
   import { t } from '$lib/i18n/i18n.svelte'
@@ -56,9 +57,10 @@
       <Dialog.Header>
         <Dialog.Title>{entry.title}</Dialog.Title>
       </Dialog.Header>
-      <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <!-- The dialog has only a max height: the viewport carries its own, minus padding and title. -->
+      <ScrollArea class="min-h-0 flex-1" viewportClass="max-h-[calc(85vh-5.5rem)]">
         <entry.component args={ui.inspector.args} />
-      </div>
+      </ScrollArea>
     {/if}
   </Dialog.Content>
 </Dialog.Root>

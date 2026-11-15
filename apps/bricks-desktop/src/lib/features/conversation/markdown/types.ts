@@ -17,6 +17,8 @@ export type RenderedBlock =
   | { key: string; kind: 'svg'; source: string; complete: boolean }
   /** A top-level ```vega-lite fence: a chart from its JSON specification, once closed. */
   | { key: string; kind: 'vega'; source: string; complete: boolean }
+  /** A top-level ```markdown / ```md fence: its source, or its rendering on demand. */
+  | { key: string; kind: 'markdown'; source: string; complete: boolean }
   /** A top-level ```diff / ```patch fence: a proposal shown read-only, never an applied change. */
   | { key: string; kind: 'diff'; source: string; complete: boolean }
 

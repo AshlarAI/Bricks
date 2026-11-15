@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils.js';
@@ -56,23 +57,19 @@
 	{:else}
 		<!-- A named, focusable scroll container: keyboard users must be able to scroll
 			it (WCAG 2.1.1). The rule only checks the role, so it is suppressed here. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<div
-			class="max-h-96 overflow-auto rounded-sm font-mono leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			role="region"
-			aria-label={t('common.diff')}
-			tabindex="0"
-		>
-			<div class="min-w-max py-1">
-				{#each shown as line, i (i)}
-					<div class={cn('grid grid-cols-[3rem_3rem_minmax(0,1fr)] border-l-[3px]', ROW[line.kind])}>
-						<span class="px-1 text-right text-muted-foreground tabular-nums select-none">{line.oldNo ?? ''}</span>
-						<span class="px-1 text-right text-muted-foreground tabular-nums select-none">{line.newNo ?? ''}</span>
-						<span class="px-2 whitespace-pre">{line.text}</span>
-					</div>
-				{/each}
+		<ScrollArea class="rounded-sm" viewportClass="max-h-96 outline-none focus-visible:ring-2 focus-visible:ring-ring" orientation="both" viewportProps={{ role: 'region', 'aria-label': t('common.diff'), tabindex: 0 }}>
+			<div class="font-mono leading-5">
+				<div class="min-w-max py-1">
+					{#each shown as line, i (i)}
+						<div class={cn('grid grid-cols-[3rem_3rem_minmax(0,1fr)] border-l-[3px]', ROW[line.kind])}>
+							<span class="px-1 text-right text-muted-foreground tabular-nums select-none">{line.oldNo ?? ''}</span>
+							<span class="px-1 text-right text-muted-foreground tabular-nums select-none">{line.newNo ?? ''}</span>
+							<span class="px-2 whitespace-pre">{line.text}</span>
+						</div>
+					{/each}
+				</div>
 			</div>
-		</div>
+		</ScrollArea>
 		{#if hidden > 0}
 			<div class="border-t border-border px-2 py-1">
 				<Button variant="ghost" size="xs" onclick={() => (extra += pageSize)}>

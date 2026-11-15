@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // The `@` popover above the composer: project files and folders matching the
   // text after `@`. Same listbox pattern as the command palette: the editor keeps
   // the keyboard (aria-activedescendant); this component renders and reports.
@@ -44,31 +45,33 @@
   class="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-float"
 >
   {#if items.length > 0}
-    <div role="listbox" {id} aria-label={t('composer.projectFiles')} class="max-h-64 overflow-y-auto p-1">
-      {#each items as entry, i (entry.path)}
-        <div
-          role="option"
-          id="{id}-opt-{i}"
-          aria-selected={i === activeIndex}
-          tabindex="-1"
-          class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm {i === activeIndex
-            ? 'bg-accent text-accent-foreground'
-            : ''}"
-          onmousedown={(e) => e.preventDefault()}
-          onmouseenter={() => onHover(i)}
-          onclick={() => onPick(entry)}
-          onkeydown={(e) => {
-            // Options are not tab stops (the editor keeps the focus); Enter or Space still pick one.
-            if (e.key !== 'Enter' && e.key !== ' ') return
-            e.preventDefault()
-            onPick(entry)
-          }}
-        >
-          <FileIcon path={entry.path} kind={entry.is_dir ? 'folder' : 'file'} />
-          <span class="truncate font-mono">{entry.path}{entry.is_dir ? '/' : ''}</span>
-        </div>
-      {/each}
-    </div>
+    <ScrollArea viewportClass="max-h-64">
+      <div class="p-1" role="listbox" {id} aria-label={t('composer.projectFiles')}>
+        {#each items as entry, i (entry.path)}
+          <div
+            role="option"
+            id="{id}-opt-{i}"
+            aria-selected={i === activeIndex}
+            tabindex="-1"
+            class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm {i === activeIndex
+              ? 'bg-accent text-accent-foreground'
+              : ''}"
+            onmousedown={(e) => e.preventDefault()}
+            onmouseenter={() => onHover(i)}
+            onclick={() => onPick(entry)}
+            onkeydown={(e) => {
+              // Options are not tab stops (the editor keeps the focus); Enter or Space still pick one.
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              onPick(entry)
+            }}
+          >
+            <FileIcon path={entry.path} kind={entry.is_dir ? 'folder' : 'file'} />
+            <span class="truncate font-mono">{entry.path}{entry.is_dir ? '/' : ''}</span>
+          </div>
+        {/each}
+      </div>
+    </ScrollArea>
   {:else if status === 'error'}
     <p role="alert" class="px-3 py-2 text-sm text-destructive">{t('composer.filesUnavailable', { error })}</p>
   {:else if status === 'ready'}

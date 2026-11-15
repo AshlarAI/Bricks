@@ -125,7 +125,7 @@ export function codeShell(label: string, body: string, icon: string | null = nul
     `<div class="code-block my-2 overflow-hidden rounded-md border border-border bg-code-bg text-code-foreground">` +
     `<div class="flex items-center justify-between gap-2 border-b border-border px-2.5 py-1 text-xs text-muted-foreground">` +
     `<span class="inline-flex min-w-0 items-center gap-1.5 font-mono">${mark}${escapeHtml(label)}</span>` +
-    `<button type="button" data-copy class="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">Copier</button>` +
+    `<button type="button" data-copy class="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">${escapeHtml(t('common.copy'))}</button>` +
     `</div>` +
     `<pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="hljs font-mono">${body}</code></pre>` +
     `</div>`

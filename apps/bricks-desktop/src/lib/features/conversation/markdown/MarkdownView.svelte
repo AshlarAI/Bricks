@@ -9,6 +9,7 @@
   import { loadKatex } from './math'
   import { createMermaidCache } from './mermaid'
   import DiffBlock from './DiffBlock.svelte'
+  import MarkdownBlock from './MarkdownBlock.svelte'
   import MermaidBlock from './MermaidBlock.svelte'
   import SvgBlock from './SvgBlock.svelte'
   import VegaBlock from './VegaBlock.svelte'
@@ -95,6 +96,14 @@
       <SvgBlock source={block.source} complete={block.complete} />
     {:else if block.kind === 'vega'}
       <VegaBlock source={block.source} complete={block.complete} />
+    {:else if block.kind === 'markdown'}
+      <MarkdownBlock
+        source={block.source}
+        complete={block.complete}
+        idPrefix="{idPrefix}-{block.key}"
+        {onFile}
+        {onLinkResult}
+      />
     {:else}
       <DiffBlock source={block.source} complete={block.complete} {onFile} />
     {/if}

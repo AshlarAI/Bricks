@@ -85,7 +85,7 @@ describe('the welcome view', () => {
 
 	it('is shown only for a project with no open conversation, and the provider message stays', () => {
 		const app = source('App.svelte');
-		expect(app).toMatch(/\{:else if !app\.hasProviders\}[^]*app\.noProviderConfigured[^]*\{:else if app\.currentProject\}\s*<WelcomeView onPick=\{pickStarter\} \/>/);
+		expect(app).toMatch(/\{:else if !app\.hasProviders\}[^]*app\.noProviderConfigured[^]*\{:else if app\.currentProject\}\s*<WelcomeView onPick=\{pickStarter\}[^>]*\/>/);
 	});
 
 	it('picking a suggestion fills the composer and focuses it, without sending', () => {

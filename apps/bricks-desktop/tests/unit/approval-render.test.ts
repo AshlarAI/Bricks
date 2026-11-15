@@ -12,7 +12,7 @@ const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ');
 
 /** Plain text of a rendered fragment (tags and comments removed). */
 function text(html: string): string {
-	return plain(html.replace(/<!--[^]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+	return plain(html.replace(/<!--[^]*?-->/g, '').replace(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
 /** The card reads the conversation only for sub-agents; none here. */

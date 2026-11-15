@@ -3,10 +3,13 @@
   // « Envoyer » (⌘↩). With a timer, the time left comes from the engine's deadline,
   // so a reload or a switch of conversation never restarts it; the engine closes
   // the question at expiry. A closed question shows nothing here: its `Ask` line
-  // counts the answers.
+  // counts the answers. Once an answer is accepted, the card gives way to a shimmering line
+  // until the engine closes the question.
   import { t } from '$lib/i18n/i18n.svelte'
-  import CircleAlert from '@lucide/svelte/icons/circle-alert'
+  import MessageCircleQuestion from '@lucide/svelte/icons/message-circle-question-mark'
   import { Button } from '$lib/components/ui/button'
+  import * as Item from '$lib/components/ui/item'
+  import * as Trace from '$lib/components/ui/trace'
   import { Input } from '$lib/components/ui/input'
   import type { QuestionAnswer, QuestionRequest } from '$lib/ipc/engine'
   import type { Conversation } from '$lib/state/conversation.svelte'
@@ -45,7 +48,8 @@
     if (sending) return
     sending = true
     refusal = await app.answerQuestion(conversation, question.question_id, a)
-    sending = false
+    // Accepted: the line stays until the engine closes the question.
+    if (refusal) sending = false
   }
 
   function send() {
@@ -62,30 +66,42 @@
 
 </script>
 
+{#if sending}
+  <Trace.Root>
+    <Trace.Line status="running" role="status">
+      <Trace.Icon><MessageCircleQuestion /></Trace.Icon>
+      <Trace.Title>{t('conversation.answerSent')}</Trace.Title>
+    </Trace.Line>
+  </Trace.Root>
+{:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <section
     aria-labelledby={`${uid}-q`}
     class="overflow-hidden rounded-lg border border-border bg-card text-card-foreground"
     onkeydown={onKeydown}
   >
-    <header class="flex flex-col gap-1.5 border-b border-border bg-muted/40 px-4 py-3">
-      <div class="flex items-center gap-1.5 text-caption font-medium text-warning">
-        <CircleAlert class="size-3.5 shrink-0" aria-hidden="true" />
-        <span>{t('conversation.needsYourInput')}</span>
-        {#if left !== null}
-          <span
-            class={cn(
-              'ml-auto font-mono tabular-nums',
-              left < 10 ? 'text-destructive' : left < 30 ? 'text-warning' : 'text-muted-foreground',
-            )}
-            aria-label={t('conversation.timeLeft', { leftText })}
-          >
-            {leftText}
-          </span>
-        {/if}
-      </div>
-      <h2 id={`${uid}-q`} class="text-ui font-medium break-words">{question.question}</h2>
-    </header>
+    <Item.Root size="sm" class="rounded-none border-0 border-b border-border bg-muted/40 px-4 py-3">
+      <Item.Media variant="icon" class="text-warning">
+        <MessageCircleQuestion />
+      </Item.Media>
+      <Item.Content class="min-w-0">
+        <Item.Description class="text-caption font-medium text-warning">{t('conversation.needsYourInput')}</Item.Description>
+        <Item.Title>
+          <h2 id={`${uid}-q`} class="text-ui font-medium break-words">{question.question}</h2>
+        </Item.Title>
+      </Item.Content>
+      {#if left !== null}
+        <Item.Actions
+          class={cn(
+            'self-start font-mono text-caption tabular-nums',
+            left < 10 ? 'text-destructive' : left < 30 ? 'text-warning' : 'text-muted-foreground',
+          )}
+          aria-label={t('conversation.timeLeft', { leftText })}
+        >
+          {leftText}
+        </Item.Actions>
+      {/if}
+    </Item.Root>
 
     <fieldset class="m-0 border-0 p-0">
       <legend class="sr-only">{question.question}</legend>
@@ -131,3 +147,4 @@
       <Button size="sm" disabled={!canSend} onclick={send}>{t('common.send')}</Button>
     </footer>
   </section>
+{/if}

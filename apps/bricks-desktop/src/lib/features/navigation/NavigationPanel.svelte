@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	// Left panel: projects with their conversations, the conversations without a project, and search.
 	// Entry point mounted by App.svelte with no props. All state lives in `app`.
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -43,9 +44,7 @@
 	</div>
 
 	<!-- Native scrolling, like shadcn's Sidebar.Content, and scroll-fade: an edge fades only where there is more to see. -->
-	<div
-		class="scrollbar-subtle scroll-fade scroll-fade-6 min-h-0 flex-1 overflow-y-auto overscroll-contain"
-	>
+	<ScrollArea class="min-h-0 flex-1" viewportClass="scroll-fade scroll-fade-6">
 		<div class="flex flex-col gap-4 pb-6">
 			{#if app.pinnedSessions.length > 0}
 				<section class="flex flex-col gap-1 px-2">
@@ -81,7 +80,7 @@
 				</section>
 			{/if}
 		</div>
-	</div>
+	</ScrollArea>
 
 	<div class="flex items-center gap-1.5 px-2 pt-2 pb-1">
 		<Button

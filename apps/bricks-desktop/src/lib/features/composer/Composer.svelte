@@ -144,14 +144,6 @@
   const isSlashLine = $derived(draft.text.trimStart().startsWith('/'))
   const slashReady = $derived(isSlashLine && editable && !sending && saving === 0)
 
-  const pendingText = $derived.by(() => {
-    const p = conversation?.pendingChange
-    if (!p) return null
-    const what = p.what === 'model' ? t('composer.modelChange') : t('composer.effortChange')
-    const when = p.applies === 'next_turn' ? t('common.onTheNextTurn') : t('composer.onTheNextRun')
-    return t('composer.applies', { what, when })
-  })
-
   const placeholder = $derived.by(() => {
     if (!project) return t('composer.createAProjectToWrite')
     if (project.missing) return t('composer.theProjectFolderCantBeFound')
@@ -1271,9 +1263,6 @@
         disabled={!editable}
         onPick={pickModel}
       />
-      {#if pendingText}
-        <span class="text-xs text-muted-foreground" role="status">{pendingText}</span>
-      {/if}
       <div class="ml-auto flex items-center gap-1.5">
         <ContextGauge {conversation} />
       </div>

@@ -12,6 +12,8 @@
   import * as Dialog from '$lib/components/ui/dialog'
   import { Button } from '$lib/components/ui/button'
   import { Toggle } from '$lib/components/ui/toggle'
+  import * as CodeBlock from '$lib/components/ui/code-block'
+  import { useHighlightedCode } from '$lib/hooks/use-highlighted-code.svelte'
   import { app } from '$lib/state/app.svelte'
   import { theme } from '$lib/theme/theme.svelte'
   import { diagramMode, diagramSettings, diagramTheme } from '$lib/features/diagrams/settings'
@@ -51,6 +53,12 @@
   let expanded = $state(false)
   let feedback = $state<string | null>(null)
   let showSource = $state(false)
+  /** The source's language; the highlighter loads only once the source is shown. */
+  const sourceLanguage = $derived(variant === 'mermaid' ? 'mermaid' : variant === 'chart' ? 'json' : 'xml')
+  const sourceLines = useHighlightedCode(
+    () => source ?? '',
+    () => (showSource ? sourceLanguage : ''),
+  )
   let figure = $state<HTMLElement | null>(null)
   /** WebKit and Chromium write images to the clipboard; elsewhere the button is not shown. */
   const canCopyImage = typeof ClipboardItem !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.clipboard?.write
@@ -189,7 +197,13 @@
 
 {#snippet sourceView()}
   {#if showSource && source !== undefined}
-    <pre class="max-h-80 overflow-auto border-t border-border bg-code-bg p-2.5 text-xs leading-relaxed text-code-foreground"><code class="font-mono">{source}</code></pre>
+    <CodeBlock.Root size="sm" class="rounded-none border-0 border-t border-border bg-code-bg text-code-foreground">
+      <CodeBlock.Content lineNumbers class="max-h-80">
+        {#each sourceLines.current as line, index (index)}
+          <CodeBlock.Line code={line} />
+        {/each}
+      </CodeBlock.Content>
+    </CodeBlock.Root>
   {/if}
 {/snippet}
 

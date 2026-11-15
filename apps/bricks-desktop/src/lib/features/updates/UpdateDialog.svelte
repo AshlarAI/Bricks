@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { toast } from 'svelte-sonner';
 	import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
 	import CheckCircle2 from '@lucide/svelte/icons/check-circle-2';
@@ -188,11 +189,11 @@
 						{t('updates.publishedOn', { date: pubDate })}
 					</p>
 				{/if}
-				<div
-					class="max-h-56 overflow-y-auto rounded-md border border-border bg-muted/40 p-3 text-ui whitespace-pre-wrap text-foreground"
-				>
-					{meta.notes?.trim() || t('updates.noReleaseNotes')}
-				</div>
+				<ScrollArea class="rounded-md border border-border bg-muted/40" viewportClass="max-h-56">
+					<div class="p-3 text-ui whitespace-pre-wrap text-foreground">
+						{meta.notes?.trim() || t('updates.noReleaseNotes')}
+					</div>
+				</ScrollArea>
 				{#if status.phase === 'error'}
 					<Alert.Root variant="destructive">
 						<TriangleAlert aria-hidden="true" />

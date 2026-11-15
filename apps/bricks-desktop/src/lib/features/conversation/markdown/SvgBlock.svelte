@@ -6,6 +6,8 @@
   import { sanitizeSvg } from './sanitize'
   import { MAX_SVG_LENGTH } from './svg-viewer'
   import SvgViewer from './SvgViewer.svelte'
+  import * as CodeBlock from '$lib/components/ui/code-block'
+  import { useHighlightedCode } from '$lib/hooks/use-highlighted-code.svelte'
 
   let { source, complete }: { source: string; complete: boolean } = $props()
 
@@ -18,13 +20,31 @@
     }
     return sanitizeSvg(source) ? null : t('conversation.invalidSvg')
   })
+
+  /** The source, highlighted line by line as it streams. */
+  const lines = useHighlightedCode(() => source, () => 'xml')
 </script>
 
 {#if complete && !error}
   <SvgViewer svg={source} {source} title="SVG" variant="drawing" fileName={t('conversation.drawingSvg')} />
 {:else}
-  <figure class="my-2 overflow-hidden rounded-md bg-code-bg text-code-foreground" aria-busy={!complete}>
-    {#if error}<p class="px-2.5 pt-2 text-xs text-destructive" role="alert">{t('conversation.drawingNotRendered', { error })}</p>{/if}
-    <pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="font-mono">{source}</code></pre>
-  </figure>
+  <CodeBlock.Root
+    size="sm"
+    variant={error ? 'destructive' : 'default'}
+    class="my-2 bg-code-bg text-code-foreground"
+    aria-busy={!complete}
+  >
+    <CodeBlock.Header>
+      <CodeBlock.Title>SVG</CodeBlock.Title>
+      <CodeBlock.Actions>
+        <CodeBlock.CopyButton value={source} />
+      </CodeBlock.Actions>
+    </CodeBlock.Header>
+    {#if error}<p class="px-2.5 pt-1.5 text-xs text-destructive" role="alert">{t('conversation.drawingNotRendered', { error })}</p>{/if}
+    <CodeBlock.Content lineNumbers class="max-h-96">
+      {#each lines.current as line, index (index)}
+        <CodeBlock.Line code={line} />
+      {/each}
+    </CodeBlock.Content>
+  </CodeBlock.Root>
 {/if}

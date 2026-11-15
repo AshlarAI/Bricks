@@ -11,7 +11,8 @@
   import WelcomeField from './WelcomeField.svelte'
   import { STARTERS, starterText } from './starters'
 
-  let { onPick }: { onPick: (text: string) => void } = $props()
+  // `paused` while the composer has focus: the typed line finishes and holds.
+  let { onPick, paused = false }: { onPick: (text: string) => void; paused?: boolean } = $props()
 
   // The tile that contrasts with the theme on screen, as at start-up.
   const logo = $derived(theme.resolved === 'dark' ? lightTile : darkTile)
@@ -32,7 +33,7 @@
     >
       {t('welcome.title')}
     </h2>
-    <TypedLine />
+    <TypedLine {paused} />
     <div role="group" aria-label={t('welcome.suggestions')} class="mt-7 grid w-full grid-cols-2 gap-2.5">
       {#each STARTERS as starter (starter.id)}
         {@const Icon = starter.icon}

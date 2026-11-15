@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	// Session consumption and cost (`/cost`, `/usage`, `details`). Figures come from
 	// the engine's usage events; nothing is priced or counted again here.
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -149,7 +150,7 @@
 						<span class="text-muted-foreground">{t('inspect.turn')}</span>
 						{runPrompt(rootId)}
 					</p>
-					<div class="overflow-x-auto">
+					<ScrollArea orientation="horizontal">
 						<table class="w-full min-w-[22rem] text-xs tabular-nums">
 							<thead>
 								<tr class="text-muted-foreground">
@@ -186,7 +187,7 @@
 								</tr>
 							</tbody>
 						</table>
-					</div>
+					</ScrollArea>
 					{#if !ru.final_total}
 						<p class="text-xs text-pretty text-warning">
 							{t('inspect.provisionalTotal', { count: ru.pending_agents })} 
@@ -206,7 +207,7 @@
 					{t('inspect.noAnswerReceivedSinceTheSession')}
 				</p>
 			{:else}
-				<div class="overflow-x-auto">
+				<ScrollArea orientation="horizontal">
 					<table class="w-full min-w-[32rem] text-xs tabular-nums">
 						<thead>
 							<tr class="text-muted-foreground">
@@ -235,7 +236,7 @@
 							{/each}
 						</tbody>
 					</table>
-				</div>
+				</ScrollArea>
 				<p class="text-xs text-pretty text-muted-foreground">
 					{t('inspect.answersShown', { count: turns.length })}
 				</p>

@@ -1,10 +1,13 @@
 <script lang="ts">
+  // A permission request: a card with Allow and Refuse while it waits, a shimmering line while the
+  // decision travels, then one trace line with the decision.
   import { t } from '$lib/i18n/i18n.svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
-  import ShieldAlert from '@lucide/svelte/icons/shield-alert'
   import ShieldCheck from '@lucide/svelte/icons/shield-check'
   import ShieldX from '@lucide/svelte/icons/shield-x'
   import { Button } from '$lib/components/ui/button'
+  import * as Item from '$lib/components/ui/item'
+  import * as Trace from '$lib/components/ui/trace'
   import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
   import DiffStat from '$lib/layout/DiffStat.svelte'
   import { app } from '$lib/state/app.svelte'
@@ -13,6 +16,7 @@
   import { CHANGE_KIND_LABEL, prettyJson, summarizeInput } from '../format'
   import MonoBlock from './MonoBlock.svelte'
   import { approvalTrace } from './toolLine'
+  import { toolIcon } from './toolIcons'
 
   interface Props {
     approval: ApprovalRequest
@@ -33,6 +37,7 @@
   })
   const inputSummary = $derived(summarizeInput(approval.tool, approval.input))
   const inputText = $derived(prettyJson(approval.input))
+  const ToolIcon = $derived(toolIcon(approval.tool))
 
   async function decide(decision: Decision) {
     if (sending !== null || resolved) return
@@ -51,91 +56,98 @@
 </script>
 
 {#if resolved}
-  <p class="flex min-w-0 items-center gap-2 px-2.5 py-0.5 text-xs text-muted-foreground">
-    {#if resolved.decision === 'deny'}
-      <ShieldX class="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
-    {:else}
-      <ShieldCheck class="size-3.5 shrink-0 text-success" aria-hidden="true" />
-    {/if}
-    <span class="min-w-0 break-words">{approvalTrace(approval.tool, resolved)}</span>
-  </p>
+  <Trace.Root>
+    <Trace.Line status={resolved.decision === 'deny' ? 'error' : undefined}>
+      <Trace.Icon>
+        {#if resolved.decision === 'deny'}
+          <ShieldX />
+        {:else}
+          <ShieldCheck class="text-success" />
+        {/if}
+      </Trace.Icon>
+      <Trace.Title class="break-words">{approvalTrace(approval.tool, resolved)}</Trace.Title>
+    </Trace.Line>
+  </Trace.Root>
+{:else if sending !== null && refusal === null}
+  <Trace.Root>
+    <Trace.Line status="running" role="status">
+      <Trace.Icon><ToolIcon /></Trace.Icon>
+      <Trace.Title>{t('conversation.decisionSent')}</Trace.Title>
+    </Trace.Line>
+  </Trace.Root>
 {:else}
-  <section
-    aria-label={t('conversation.approvalRequested2')}
-    class="flex flex-col gap-2.5 rounded-lg border border-warning/40 bg-card p-3 text-sm text-card-foreground"
-  >
-    <header class="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <ShieldAlert class="size-4 shrink-0 text-warning" aria-hidden="true" />
-      <h2 class="font-medium">{t('conversation.approvalRequested2')}</h2>
-      <span class="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs">{approval.tool}</span>
-      <span class="text-xs text-muted-foreground">{t('conversation.level', { level: approval.level })}</span>
-      {#if agentName}
-        <span class="text-xs text-muted-foreground">{t('conversation.agent', { agentName })}</span>
-      {/if}
-    </header>
+  <!-- A pending request is a prompt, not activity: it sits outside Trace. -->
+  <Item.Root variant="outline" size="sm" aria-label={t('conversation.approvalRequested2')} class="border-warning/40 bg-card">
+    <Item.Media variant="icon" class="text-warning">
+      <ToolIcon />
+    </Item.Media>
+    <Item.Content class="min-w-0">
+      <p class="text-caption font-medium text-warning">{t('conversation.approvalRequested2')}</p>
+      <Item.Title class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="font-mono">{approval.tool}</span>
+        {#if inputSummary}
+          <span class="min-w-0 font-mono text-xs font-normal break-all text-muted-foreground">{inputSummary}</span>
+        {/if}
+      </Item.Title>
+      <Item.Description class="line-clamp-none break-words">{approval.description}</Item.Description>
+      <p class="text-xs text-muted-foreground">
+        {t('conversation.level', { level: approval.level })}{#if agentName}<span> · {t('conversation.agent', { agentName })}</span>{/if}
+      </p>
+    </Item.Content>
+    <Item.Actions>
+      <Button size="sm" variant="outline" onclick={() => decide('deny')}>{t('common.refuse')}</Button>
+      <Button size="sm" onclick={() => decide('allow')}>{t('common.allow')}</Button>
+    </Item.Actions>
+    <Item.Footer class="flex-col items-stretch gap-2">
+      <Collapsible>
+        <CollapsibleTrigger
+          class="group inline-flex w-fit items-center gap-1 rounded-md text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <ChevronDown class="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+          {t('conversation.fullInput')}
+        </CollapsibleTrigger>
+        <CollapsibleContent class="mt-1.5">
+          <MonoBlock text={inputText} label={t('conversation.fullInputOf', { tool: approval.tool })} />
+        </CollapsibleContent>
+      </Collapsible>
 
-    <p class="break-words">{approval.description}</p>
-
-    {#if inputSummary}
-      <p class="font-mono text-xs break-all text-muted-foreground">{inputSummary}</p>
-    {/if}
-
-    <Collapsible>
-      <CollapsibleTrigger
-        class="group inline-flex w-fit items-center gap-1 rounded-md text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <ChevronDown class="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
-        {t('conversation.fullInput')}
-      </CollapsibleTrigger>
-      <CollapsibleContent class="mt-1.5">
-        <MonoBlock text={inputText} label={t('conversation.fullInputOf', { tool: approval.tool })} />
-      </CollapsibleContent>
-    </Collapsible>
-
-    {#if approval.preview}
-      {#if approval.preview.refusal}
-        <p class="text-xs text-destructive break-words">{approval.preview.refusal}</p>
-      {/if}
-      {#if approval.preview.files.length > 0}
-        <ul class="flex flex-col gap-2 border-t border-border pt-2.5" aria-label={t('conversation.filesInvolved')}>
-          {#each approval.preview.files as file (file.absolute)}
-            <li class="flex flex-col gap-1.5">
-              <Collapsible>
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                  <span class="text-muted-foreground">{CHANGE_KIND_LABEL[file.kind]}</span>
-                  <span class="min-w-0 break-all font-mono">{file.path}</span>
-                  <DiffStat additions={file.added} deletions={file.removed} label={t('common.lines')} />
+      {#if approval.preview}
+        {#if approval.preview.refusal}
+          <p class="text-xs break-words text-destructive">{approval.preview.refusal}</p>
+        {/if}
+        {#if approval.preview.files.length > 0}
+          <ul class="flex flex-col gap-2 border-t border-border pt-2.5" aria-label={t('conversation.filesInvolved')}>
+            {#each approval.preview.files as file (file.absolute)}
+              <li class="flex flex-col gap-1.5">
+                <Collapsible>
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                    <span class="text-muted-foreground">{CHANGE_KIND_LABEL[file.kind]}</span>
+                    <span class="min-w-0 font-mono break-all">{file.path}</span>
+                    <DiffStat additions={file.added} deletions={file.removed} label={t('common.lines')} />
+                    {#if file.diff}
+                      <CollapsibleTrigger
+                        aria-label={t('conversation.viewTheDiffOf', { path: file.path })}
+                        class="rounded-sm px-1 text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      >
+                        {t('conversation.viewTheDiff')}
+                      </CollapsibleTrigger>
+                    {/if}
+                  </div>
                   {#if file.diff}
-                    <CollapsibleTrigger
-                      aria-label={t('conversation.viewTheDiffOf', { path: file.path })} class="rounded-sm px-1 text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                    >
-                      {t('conversation.viewTheDiff')}
-                    </CollapsibleTrigger>
+                    <CollapsibleContent class="mt-1.5">
+                      <MonoBlock text={file.diff} label={t('conversation.diffOf', { path: file.path })} diff maxLines={400} />
+                    </CollapsibleContent>
                   {/if}
-                </div>
-                {#if file.diff}
-                  <CollapsibleContent class="mt-1.5">
-                    <MonoBlock text={file.diff} label={t('conversation.diffOf', { path: file.path })} diff maxLines={400} />
-                  </CollapsibleContent>
-                {/if}
-              </Collapsible>
-            </li>
-          {/each}
-        </ul>
+                </Collapsible>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       {/if}
-    {/if}
 
-    <div class="flex flex-wrap gap-2">
-      <Button size="sm" disabled={sending !== null} onclick={() => decide('allow')}>{t('common.allow')}</Button>
-      <Button size="sm" variant="ghost" class="text-destructive hover:text-destructive" disabled={sending !== null} onclick={() => decide('deny')}>
-        {t('common.refuse')}
-      </Button>
-    </div>
-    {#if sending !== null && refusal === null}
-      <p class="text-xs text-muted-foreground" role="status">{t('conversation.decisionSent')}</p>
-    {/if}
-    {#if refusal}
-      <p class="text-xs text-destructive break-words" role="alert">{refusal}</p>
-    {/if}
-  </section>
+      {#if refusal}
+        <p class="text-xs break-words text-destructive" role="alert">{refusal}</p>
+      {/if}
+    </Item.Footer>
+  </Item.Root>
 {/if}

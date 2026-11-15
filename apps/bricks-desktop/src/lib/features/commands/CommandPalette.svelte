@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area'
   // The `/` palette above the composer: an ARIA listbox. The keyboard stays in
   // the composer's editor (combobox pattern: aria-activedescendant), so this
   // component only renders the options and reports clicks and hovers.
@@ -48,37 +49,39 @@
       {t('commands.noCommandMatches', { query })}
     </p>
   {:else}
-    <div role="listbox" {id} aria-label={t('commands.commands')} class="max-h-64 overflow-y-auto p-1">
-      {#each items as cmd, i (cmd.name)}
-        <div
-          role="option"
-          id="{id}-opt-{i}"
-          aria-selected={i === activeIndex}
-          tabindex="-1"
-          class="flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm {i === activeIndex
-            ? 'bg-accent text-accent-foreground'
-            : ''}"
-          onmousedown={(e) => e.preventDefault()}
-          onmouseenter={() => onHover(i)}
-          onclick={() => onPick(cmd)}
-          onkeydown={(e) => {
-            // Options are not tab stops (the editor keeps the focus); Enter or Space still pick one.
-            if (e.key !== 'Enter' && e.key !== ' ') return
-            e.preventDefault()
-            onPick(cmd)
-          }}
-        >
-          <span class="flex flex-wrap items-baseline gap-x-2">
-            <span class="font-mono font-medium">{usageLine(cmd)}</span>
-            {#if cmd.aliases.length > 0}
-              <span class="text-xs text-muted-foreground">
-                {t('commands.alias', { value: cmd.aliases.map((a) => `/${a}`).join(', ') })}
-              </span>
-            {/if}
-          </span>
-          <span class="text-xs text-muted-foreground">{commandDescription(cmd)}</span>
-        </div>
-      {/each}
-    </div>
+    <ScrollArea viewportClass="max-h-64">
+      <div class="p-1" role="listbox" {id} aria-label={t('commands.commands')}>
+        {#each items as cmd, i (cmd.name)}
+          <div
+            role="option"
+            id="{id}-opt-{i}"
+            aria-selected={i === activeIndex}
+            tabindex="-1"
+            class="flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-sm {i === activeIndex
+              ? 'bg-accent text-accent-foreground'
+              : ''}"
+            onmousedown={(e) => e.preventDefault()}
+            onmouseenter={() => onHover(i)}
+            onclick={() => onPick(cmd)}
+            onkeydown={(e) => {
+              // Options are not tab stops (the editor keeps the focus); Enter or Space still pick one.
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              onPick(cmd)
+            }}
+          >
+            <span class="flex flex-wrap items-baseline gap-x-2">
+              <span class="font-mono font-medium">{usageLine(cmd)}</span>
+              {#if cmd.aliases.length > 0}
+                <span class="text-xs text-muted-foreground">
+                  {t('commands.alias', { value: cmd.aliases.map((a) => `/${a}`).join(', ') })}
+                </span>
+              {/if}
+            </span>
+            <span class="text-xs text-muted-foreground">{commandDescription(cmd)}</span>
+          </div>
+        {/each}
+      </div>
+    </ScrollArea>
   {/if}
 </div>
