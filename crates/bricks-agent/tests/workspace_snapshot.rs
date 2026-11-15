@@ -217,13 +217,19 @@ async fn a_file_rewritten_during_the_capture_is_captured_whole_or_refused() {
     std::fs::write(root.join("busy.txt"), &a).unwrap();
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let writer = {
+        use std::io::{Seek, SeekFrom, Write};
         let (root, stop, a, b) = (root.clone(), stop.clone(), a.clone(), b.clone());
         std::thread::spawn(move || {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(root.join("busy.txt"))
+                .unwrap();
             let mut flip = false;
             let mut n = 0u32;
             while !stop.load(std::sync::atomic::Ordering::SeqCst) {
                 flip = !flip;
-                std::fs::write(root.join("busy.txt"), if flip { &b } else { &a }).unwrap();
+                file.seek(SeekFrom::Start(0)).unwrap();
+                file.write_all(if flip { &b } else { &a }).unwrap();
                 let extra = root.join(format!("n{}.txt", n % 4));
                 if n.is_multiple_of(2) {
                     std::fs::write(&extra, "tmp").unwrap();

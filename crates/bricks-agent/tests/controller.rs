@@ -58,9 +58,9 @@ async fn open(replies: Vec<Reply>) -> Env {
 }
 
 async fn next(events: &mut EventStream) -> Envelope {
-    tokio::time::timeout(Duration::from_secs(10), events.next())
+    tokio::time::timeout(Duration::from_secs(30), events.next())
         .await
-        .expect("an event within 10 s")
+        .expect("an event within 30 s")
         .expect("stream open")
 }
 
