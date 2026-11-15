@@ -95,9 +95,9 @@ describe('the title bar in a branch (ConversationTitle.svelte)', () => {
 
 	it('leads back to the conversation: its title is a button that closes the branch, then a slash', () => {
 		expect(text).toContain('onclick={() => ui.closeAgent()}>{title}</button');
-		expect(text).toContain('>/</span>');
+		const SLASH = '<Breadcrumb.Separator class="text-muted-foreground/60">/</Breadcrumb.Separator>';
 		const back = text.indexOf('onclick={() => ui.closeAgent()}');
-		const slash = text.indexOf('>/</span>', back);
+		const slash = text.indexOf(SLASH, back);
 		const name = text.indexOf('{agentName(branch)}');
 		expect(back).toBeGreaterThan(-1);
 		expect(slash).toBeGreaterThan(back);

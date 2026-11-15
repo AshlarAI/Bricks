@@ -94,21 +94,24 @@ describe('appearance: bundled Google Sans fonts', () => {
 	});
 });
 
-describe('header: title and project centred, controls outside the centre', () => {
-	it('TopBar uses three columns whose sides are equal, so the centre does not move with the buttons', () => {
+describe('header: controls, then the title, then the actions', () => {
+	it('TopBar is one draggable row: fixed controls, a title that takes the rest, fixed actions', () => {
 		const text = src('lib/layout/TopBar.svelte');
-		expect(text).toContain('grid-cols-[minmax(0,1fr)_minmax(0,min(28rem,50%))_minmax(0,1fr)]');
-		expect(text).toContain('data-tauri-drag-region');
-	});
-
-	it('the left toggle sits in the first column, the title in the centre, the actions in the last', () => {
-		const text = src('lib/layout/TopBar.svelte');
-		const left = text.indexOf('justify-self-start');
-		const centre = text.indexOf('justify-center');
-		const right = text.indexOf('justify-self-end');
+		const left = text.indexOf('<div data-tauri-drag-region class="flex shrink-0 items-center gap-0.5">');
+		const centre = text.indexOf('<div data-tauri-drag-region class="ml-3 flex min-w-0 flex-1 items-center">');
+		const right = text.indexOf('<div data-tauri-drag-region class="flex shrink-0 items-center gap-1">');
 		expect(left).toBeGreaterThan(0);
 		expect(centre).toBeGreaterThan(left);
 		expect(right).toBeGreaterThan(centre);
+	});
+
+	it('the title sits in the middle group, the view toggles and the trailing menu in the last', () => {
+		const text = src('lib/layout/TopBar.svelte');
+		const centre = text.indexOf('flex min-w-0 flex-1 items-center');
+		expect(text.indexOf('{@render title?.()}', centre)).toBeGreaterThan(centre);
+		const right = text.indexOf('<div data-tauri-drag-region class="flex shrink-0 items-center gap-1">');
+		expect(text.indexOf("aria-label={t('layout.view')}", right)).toBeGreaterThan(right);
+		expect(text.indexOf('{@render trailing()}', right)).toBeGreaterThan(right);
 	});
 });
 

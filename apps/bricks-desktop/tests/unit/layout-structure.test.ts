@@ -38,7 +38,10 @@ describe('the « Plus » menu and the context panel', () => {
 	it('PlusMenu is the labelled trigger of the ADK access groups, disabled without a conversation', () => {
 		const plus = src(PLUS);
 		expect(plus).toContain('ADK_ACCESS_GROUPS');
-		expect(plus).toMatch(/<EllipsisIcon[^>]*\/>\s*\{t\('context\.more'\)\}/);
+		// An icon button: its name is the « Plus » label, also its tooltip.
+		expect(plus).toContain("aria-label={t('context.more')}");
+		expect(plus).toContain("title={t('context.more')}");
+		expect(plus).toMatch(/<EllipsisVerticalIcon aria-hidden="true" \/>/);
 		expect(plus).toContain('disabled={!enabled}');
 	});
 
