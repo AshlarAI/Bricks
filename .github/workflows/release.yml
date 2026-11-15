@@ -490,13 +490,15 @@ jobs:
         run: |
           set -euo pipefail
           cd "${{ github.workspace }}/release-artifacts"
+          SUMS_FILE="../sha256sums-build-${{ matrix.platform }}.txt"
           {
             if command -v sha256sum >/dev/null 2>&1; then
               sha256sum *
             else
               shasum -a 256 *
             fi
-          } | sed 's/^\([0-9a-f]\{64\}\) \*/\1  /' > "sha256sums-build-${{ matrix.platform }}.txt"
+          } | sed 's/^\([0-9a-f]\{64\}\) \*/\1  /' > "$SUMS_FILE"
+          mv "$SUMS_FILE" "sha256sums-build-${{ matrix.platform }}.txt"
           cat "sha256sums-build-${{ matrix.platform }}.txt"
 
       - uses: actions/upload-artifact@v4
