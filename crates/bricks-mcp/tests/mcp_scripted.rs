@@ -716,3 +716,56 @@ async fn an_image_block_keeps_its_data_for_the_caller_and_never_serializes_it() 
     // data is padded (`==` or `=`), here 72.
     assert_eq!(*bytes, 70, "the decoded size of the image");
 }
+
+#[tokio::test]
+async fn manager_instructions_returns_sorted_non_empty_server_instructions() {
+    let legacy_with_instructions = |name: &str, instructions: Option<&'static str>| {
+        let mut cfg = McpServerConfig::stdio(name, "unused", &[]).with_protocol(ProtocolMode::Legacy);
+        cfg = cfg.with_limits(McpLimits {
+            connect_timeout_ms: 3000,
+            request_timeout_ms: 1000,
+            max_total_timeout_ms: 2000,
+            ..Default::default()
+        });
+        let (io, _) = scripted(Box::new(move |m| {
+            Some(match method(m) {
+                "server/discover" => error(m, -32601, "Method not found"),
+                "initialize" => {
+                    let mut init = json!({
+                        "protocolVersion": "2025-11-25",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "s", "version": "1"}
+                    });
+                    if let Some(instr) = instructions {
+                        init["instructions"] = json!(instr);
+                    }
+                    reply(m, init)
+                }
+                "notifications/initialized" => vec![],
+                "tools/list" => reply(m, json!({"tools": []})),
+                _ => vec![],
+            })
+        }));
+        (cfg, io)
+    };
+
+    let (cfg_b, io_b) = legacy_with_instructions("zeta", Some("Use zeta carefully."));
+    let (cfg_a, io_a) = legacy_with_instructions("alpha", Some("Use alpha first."));
+    let (cfg_blank, io_blank) = legacy_with_instructions("blank", Some("   \n\t "));
+    let (cfg_none, io_none) = legacy_with_instructions("none", None);
+
+    let clients = vec![
+        McpClient::connect_with(cfg_b, io_b).await.unwrap(),
+        McpClient::connect_with(cfg_a, io_a).await.unwrap(),
+        McpClient::connect_with(cfg_blank, io_blank).await.unwrap(),
+        McpClient::connect_with(cfg_none, io_none).await.unwrap(),
+    ];
+    let manager = McpManager::from_clients(clients);
+    assert_eq!(
+        manager.instructions().await,
+        vec![
+            ("alpha".to_string(), "Use alpha first.".to_string()),
+            ("zeta".to_string(), "Use zeta carefully.".to_string()),
+        ]
+    );
+}

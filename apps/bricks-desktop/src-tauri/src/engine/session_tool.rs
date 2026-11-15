@@ -553,6 +553,9 @@ impl bricks_agent::ToolLender for Lenders {
     fn deferred_tools(&self) -> Vec<Arc<dyn Tool>> {
         self.0.iter().flat_map(|l| l.deferred_tools()).collect()
     }
+    fn mcp_instructions(&self) -> Vec<(String, String)> {
+        self.0.iter().flat_map(|l| l.mcp_instructions()).collect()
+    }
 }
 
 const DESCRIPTION: &str = "Work with the other conversations of Bricks, only when the person asks for it. \

@@ -302,6 +302,7 @@ pub struct Agent {
     /// The host's lent tools ([`ToolLender`]) and those of the current run.
     lender: Option<Arc<dyn ToolLender>>,
     lent: parking_lot::RwLock<Arc<Vec<Arc<dyn Tool>>>>,
+    lent_instructions: parking_lot::RwLock<Vec<(String, String)>>,
     /// The host's deferred tools, `LoadTools` when there are any, and the
     /// names loaded in this session ([`deferred`]).
     deferred: parking_lot::RwLock<Arc<Vec<Arc<dyn Tool>>>>,
@@ -790,10 +791,12 @@ impl Agent {
             .mcp
             .get_or_init(|| async {
                 let tools = mcp_tools(&manager).await;
+                let instructions = manager.instructions().await;
                 let seen = manager.tools_generation().await;
                 McpState {
                     manager: Some(manager),
                     tools: parking_lot::RwLock::new(tools),
+                    instructions,
                     seen: std::sync::atomic::AtomicU64::new(seen),
                     shared: true,
                 }
@@ -817,10 +820,12 @@ impl Agent {
             .get_or_init(|| async {
                 let manager = Arc::new(bricks_mcp::McpManager::connect(&self.mcp_servers).await);
                 let tools = mcp_tools(&manager).await;
+                let instructions = manager.instructions().await;
                 let seen = manager.tools_generation().await;
                 McpState {
                     manager: Some(manager),
                     tools: parking_lot::RwLock::new(tools),
+                    instructions,
                     seen: std::sync::atomic::AtomicU64::new(seen),
                     shared: false,
                 }
@@ -863,6 +868,35 @@ impl Agent {
         }
     }
 
+    fn cached_mcp_instructions(&self) -> Vec<(String, String)> {
+        let own = self
+            .mcp
+            .get()
+            .map(|s| s.instructions.clone())
+            .unwrap_or_default();
+        let lent = {
+            let cached = self.lent_instructions.read().clone();
+            if cached.is_empty() {
+                self.lender
+                    .as_ref()
+                    .map(|l| l.mcp_instructions())
+                    .unwrap_or_default()
+            } else {
+                cached
+            }
+        };
+        merge_mcp_instructions(own, lent)
+    }
+
+    async fn mcp_instructions(&self) -> Vec<(String, String)> {
+        let own = match self.mcp.get().and_then(|s| s.manager.as_ref()) {
+            Some(manager) => manager.instructions().await,
+            None => Vec::new(),
+        };
+        let lent = self.lent_instructions.read().clone();
+        merge_mcp_instructions(own, lent)
+    }
+
     /// The system prompt of the last request built ([`Self::request_system`]),
     /// else the prompt without a request context: what estimates and
     /// compaction measure.
@@ -879,6 +913,10 @@ impl Agent {
             Some(o) => {
                 let mut o = o.clone();
                 o.tools_available = names;
+                o.mcp_instructions = merge_mcp_instructions(
+                    std::mem::take(&mut o.mcp_instructions),
+                    self.cached_mcp_instructions(),
+                );
                 Some(system_prompt::build_system_prompt(&o))
             }
             None => self.system_prompt.clone(),
@@ -931,6 +969,10 @@ impl Agent {
                     .unwrap_or_default();
                 let replace = o.replace_system_prompt && o.custom_system_prompt.is_some();
                 if !replace {
+                    o.mcp_instructions = merge_mcp_instructions(
+                        std::mem::take(&mut o.mcp_instructions),
+                        self.mcp_instructions().await,
+                    );
                     o.git_status = self.request_env.git(&self.working_dir).await;
                     let shell_config = has("Bash").then(|| {
                         self.extensions
@@ -1094,6 +1136,7 @@ impl Agent {
             });
         *self.deferred.write() = deferred;
         *self.load_tools.write() = load_tools;
+        *self.lent_instructions.write() = lender.mcp_instructions();
     }
 }
 
@@ -1140,6 +1183,27 @@ pub trait ToolLender: Send + Sync {
     fn deferred_tools(&self) -> Vec<Arc<dyn Tool>> {
         Vec::new()
     }
+
+    /// MCP server instructions (`(server, instructions)`) lent with those
+    /// tools, injected into the system prompt's `<mcp_instructions>` section.
+    fn mcp_instructions(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+}
+
+/// Deduplicates and sorts `(server, instructions)` pairs, keeping the first
+/// non-empty entry per server name.
+fn merge_mcp_instructions(
+    base: Vec<(String, String)>,
+    extra: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+    let mut by_server = std::collections::BTreeMap::new();
+    for (name, text) in base.into_iter().chain(extra) {
+        if !text.trim().is_empty() {
+            by_server.entry(name).or_insert(text);
+        }
+    }
+    by_server.into_iter().collect()
 }
 
 /// A tool of an agent: one of its own, or one lent by its host.
@@ -1172,6 +1236,8 @@ pub(crate) struct McpState {
     manager: Option<Arc<bricks_mcp::McpManager>>,
     /// Re-read when a server announces its tools changed.
     tools: parking_lot::RwLock<Vec<Arc<dyn Tool>>>,
+    /// Server instructions read at connection.
+    instructions: Vec<(String, String)>,
     /// The manager's tool generation these tools were built from.
     seen: std::sync::atomic::AtomicU64,
     /// Connections owned by another agent (a sub-agent uses its parent's):
@@ -1778,6 +1844,7 @@ impl AgentBuilder {
             mcp: tokio::sync::OnceCell::new(),
             lender: self.lender,
             lent: parking_lot::RwLock::new(Arc::new(Vec::new())),
+            lent_instructions: parking_lot::RwLock::new(Vec::new()),
             deferred: parking_lot::RwLock::new(Arc::new(Vec::new())),
             load_tools: parking_lot::RwLock::new(None),
             loaded: deferred::Loaded::default(),

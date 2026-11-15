@@ -89,6 +89,8 @@ pub struct ComputerUse {
     running: tokio::sync::Mutex<Option<Running>>,
     /// The tools lent to the agents (empty when off or not ready).
     tools: parking_lot::RwLock<Vec<Arc<dyn Tool>>>,
+    /// Server instructions announced on connect (cleared on stop).
+    instructions: parking_lot::RwLock<Option<String>>,
     phase: parking_lot::RwLock<Phase>,
 }
 
@@ -110,6 +112,14 @@ impl ToolLender for ComputerUse {
     fn deferred_tools(&self) -> Vec<Arc<dyn Tool>> {
         self.tools.read().clone()
     }
+
+    fn mcp_instructions(&self) -> Vec<(String, String)> {
+        self.instructions
+            .read()
+            .clone()
+            .map(|text| vec![(SERVER.to_string(), text)])
+            .unwrap_or_default()
+    }
 }
 
 impl ComputerUse {
@@ -118,6 +128,7 @@ impl ComputerUse {
             prefs,
             running: tokio::sync::Mutex::new(None),
             tools: parking_lot::RwLock::new(Vec::new()),
+            instructions: parking_lot::RwLock::new(None),
             phase: parking_lot::RwLock::new(Phase::Off),
         })
     }
@@ -159,7 +170,15 @@ impl ComputerUse {
                     .into_iter()
                     .map(Arc::from)
                     .collect();
+                let instructions = r
+                    .manager
+                    .instructions()
+                    .await
+                    .into_iter()
+                    .find(|(name, _)| name == SERVER)
+                    .map(|(_, text)| text);
                 *self.tools.write() = tools;
+                *self.instructions.write() = instructions;
                 *self.phase.write() = Phase::Ready;
                 *running = Some(r);
             }
@@ -174,6 +193,7 @@ impl ComputerUse {
     pub async fn stop(&self) {
         let mut running = self.running.lock().await;
         self.tools.write().clear();
+        *self.instructions.write() = None;
         *self.phase.write() = Phase::Off;
         if let Some(r) = running.take() {
             r.manager.close().await;

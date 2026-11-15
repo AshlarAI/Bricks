@@ -277,6 +277,25 @@ impl McpManager {
         v
     }
 
+    /// `(server, instructions)` for every connected server whose handshake
+    /// announced non-empty instructions, sorted by server name.
+    pub async fn instructions(&self) -> Vec<(String, String)> {
+        let clients = self.clients.read().await;
+        let mut v: Vec<(String, String)> = clients
+            .iter()
+            .filter_map(|(name, client)| {
+                client
+                    .info()
+                    .instructions
+                    .as_ref()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| (name.clone(), s.clone()))
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    }
+
     pub fn configs(&self) -> &[McpServerConfig] {
         &self.configs
     }

@@ -9,6 +9,7 @@ import { Conversation, type ToolItem, type EditItem } from '../../src/lib/state/
 import { EnvelopeFeed, PROJECT_ID, openedSession } from './fixtures';
 import ToolLine from '../../src/lib/features/conversation/timeline/ToolLine.svelte';
 import type { ToolLineState } from '../../src/lib/features/conversation/timeline/toolLine';
+import { formatToolName, summarizeInput } from '../../src/lib/features/conversation/format';
 
 /** Narrow no-break spaces from fr-FR grouping are in the product; the tests compare plain text. */
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, ' ');
@@ -127,5 +128,97 @@ describe('inline edit result', () => {
 		const standalone = render(TimelineEntry, { props: { item: edit, conversation } }).body;
 		expect(standalone).toContain('/work/properties.rs');
 		expect(standalone).not.toMatch(/\bborder\b/);
+	});
+});
+
+describe('MCP & Computer Use formatting and inline hints', () => {
+	it('formats MCP tool names for display while keeping built-in names intact', () => {
+		expect(formatToolName('Write')).toBe('Write');
+		expect(formatToolName('Bash')).toBe('Bash');
+		expect(formatToolName('mcp__computer-use__click')).toBe('Computer Use · click');
+		expect(formatToolName('mcp__github__create_issue')).toBe('github · create_issue');
+	});
+
+	it('summarizes Computer Use inputs cleanly', () => {
+		expect(
+			summarizeInput('mcp__computer-use__run_steps', {
+				app: 'Safari',
+				steps: [
+					{ set_value: { role: 'textfield', name: 'Search', value: 'hello' } },
+					{ click: { role: 'button', name: 'Go' } },
+					{ tool: 'click', args: { x: 10, y: 20 } },
+				],
+			}),
+		).toBe('Safari · 3 étapes · set_value → click → click');
+
+		expect(
+			summarizeInput('mcp__computer-use__click', { app: 'Finder', role: 'button', name: 'Open' }),
+		).toBe('Finder · button "Open"');
+
+		expect(summarizeInput('mcp__computer-use__click', { x: 120, y: 340 })).toBe('(120, 340)');
+
+		expect(
+			summarizeInput('mcp__computer-use__hotkey', { app: 'Safari', keys: ['cmd', 'l'] }),
+		).toBe('Safari · cmd+l');
+
+		expect(
+			summarizeInput('mcp__computer-use__type_text', {
+				app: 'Safari',
+				role: 'textfield',
+				name: 'Password',
+				text: 's3cr3t',
+			}),
+		).toBe('Safari · textfield "Password" · ••••');
+
+		expect(
+			summarizeInput('mcp__computer-use__browser_navigate', { url: 'https://example.com' }),
+		).toBe('https://example.com');
+
+		expect(
+			summarizeInput('mcp__computer-use__invoke_menu', { pid: 42, path: ['File', 'Save As'] }),
+		).toBe('File › Save As · pid 42');
+
+		expect(
+			summarizeInput('mcp__computer-use__browser_type', {
+				ref: 'password_input',
+				text: 'my-secret',
+			}),
+		).toBe('•••• · password_input');
+	});
+
+	it('renders Computer Use tool name with raw name in title and inline target hint in ToolRow', () => {
+		const conversation = new Conversation(openedSession(), PROJECT_ID);
+		const feed = new EnvelopeFeed({ runId: 'run-cu' });
+		conversation.apply(feed.next({ type: 'run_started', prompt: 'Open', attachments: [], model: 'm' }));
+		conversation.apply(
+			feed.next({
+				type: 'tool_started',
+				tool_call_id: 'cu-1',
+				name: 'mcp__computer-use__click',
+				input: { app: 'Safari', role: 'button', name: 'Submit' },
+			}),
+		);
+		conversation.apply(
+			feed.next({
+				type: 'tool_finished',
+				tool_call_id: 'cu-1',
+				name: 'mcp__computer-use__click',
+				is_error: false,
+				duration_ms: 120,
+				output: 'Clicked Submit',
+				executed: true,
+				status: 'success',
+			}),
+		);
+		const tool = conversation.items.find((i): i is ToolItem => i.kind === 'tool')!;
+		const html = render(ToolRow, { props: { item: tool, conversation } }).body;
+		const visible = html
+			.replace(/<span class="sr-only">[^]*?<\/span>/g, '')
+			.replace(/<!--[^]*?-->/g, '')
+			.replace(/<[^>]+>/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
+		expect(visible).toBe('Computer Use · click Safari · button "Submit" 120ms');
+		expect(html).toContain('title="mcp__computer-use__click"');
 	});
 });

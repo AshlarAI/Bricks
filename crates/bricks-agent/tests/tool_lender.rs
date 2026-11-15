@@ -47,17 +47,26 @@ fn fixed(name: &'static str, answer: &'static str) -> Arc<dyn Tool> {
 #[derive(Default)]
 struct Lendable {
     tools: parking_lot::Mutex<Vec<Arc<dyn Tool>>>,
+    instructions: parking_lot::Mutex<Vec<(String, String)>>,
 }
 
 impl Lendable {
     fn set(&self, tools: Vec<Arc<dyn Tool>>) {
         *self.tools.lock() = tools;
     }
+
+    fn set_instructions(&self, instructions: Vec<(String, String)>) {
+        *self.instructions.lock() = instructions;
+    }
 }
 
 impl ToolLender for Lendable {
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
         self.tools.lock().clone()
+    }
+
+    fn mcp_instructions(&self) -> Vec<(String, String)> {
+        self.instructions.lock().clone()
     }
 }
 
@@ -216,4 +225,45 @@ async fn a_lent_tool_named_like_an_own_tool_is_not_lent() {
         a.tool_by_name("Probe").unwrap().description(),
         "the agent's own"
     );
+}
+
+#[tokio::test]
+async fn lent_mcp_instructions_are_injected_into_the_system_prompt() {
+    let script = Script::new(vec![Reply::text("first done"), Reply::text("second done")]);
+    let lender = Arc::new(Lendable::default());
+    lender.set(vec![fixed("mcp__computer-use__click", "ok")]);
+    lender.set_instructions(vec![
+        ("zeta".into(), "Zeta rules.".into()),
+        ("computer-use".into(), "Use run_steps for batches.".into()),
+        ("computer-use".into(), "Duplicate ignored.".into()),
+        ("empty".into(), "   ".into()),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let a = Agent::builder()
+        .provider(ScriptedProvider::new("a", script.clone()))
+        .model("a")
+        .working_dir(dir.path())
+        .permission_policy(AllowAll)
+        .system_prompt_options(bricks_agent::system_prompt::SystemPromptOptions::default())
+        .tool_lender(lender.clone())
+        .build()
+        .expect("build agent");
+
+    a.run("first").await.unwrap();
+    let reqs = script.requests();
+    let sys1 = reqs[0].1.system.as_deref().expect("system prompt on run 1");
+    assert!(sys1.contains("<mcp_instructions>"), "{sys1}");
+    let cu_pos = sys1.find("## computer-use\nUse run_steps for batches.").expect("computer-use section");
+    let zeta_pos = sys1.find("## zeta\nZeta rules.").expect("zeta section");
+    assert!(cu_pos < zeta_pos, "sorted by server name: {sys1}");
+    assert!(!sys1.contains("Duplicate ignored."), "{sys1}");
+    assert!(!sys1.contains("## empty"), "{sys1}");
+
+    // When the host drops the instructions, the next run omits `<mcp_instructions>`.
+    lender.set(Vec::new());
+    lender.set_instructions(Vec::new());
+    a.run("second").await.unwrap();
+    let reqs = script.requests();
+    let sys2 = reqs[1].1.system.as_deref().expect("system prompt on run 2");
+    assert!(!sys2.contains("<mcp_instructions>"), "{sys2}");
 }

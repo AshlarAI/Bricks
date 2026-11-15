@@ -525,6 +525,7 @@ export const fr: Record<MessageKey, Message> = {
 	'conversation.skip': 'Passer',
 	'conversation.sourceCopied': 'Source copiée',
 	'conversation.specificationTooLongCharactersAtMost': 'Spécification trop longue ({MAX_VEGA_SOURCE} caractères au maximum)',
+	'conversation.stepCount': { one: '{count} étape', other: '{count} étapes' },
 	'conversation.subAgent': 'Sous-agent {profile} : {description}',
 	'conversation.summary': 'Sommaire',
 	'conversation.svgSaved': 'SVG enregistré',

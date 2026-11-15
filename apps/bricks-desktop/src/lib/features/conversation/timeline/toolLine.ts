@@ -2,7 +2,7 @@
 // Shared by the timeline and the sub-agent inspector. Pure functions only.
 
 import { t } from '$lib/i18n/i18n.svelte';
-import { DECIDED_BY_LABEL, DECISION_LABEL, formatDuration } from '../format';
+import { DECIDED_BY_LABEL, DECISION_LABEL, formatDuration, formatToolName } from '../format';
 import type { DecidedBy, Decision } from '$lib/ipc/engine';
 
 /** What the line says about a call. */
@@ -48,7 +48,8 @@ export function formatToolDuration(ms: number | undefined): string | null {
  * stored before answers covered one call only may carry other values: shown as allowed.
  */
 export function approvalTrace(tool: string, resolved: { decision: Decision; by: DecidedBy }): string {
+	const label = formatToolName(tool);
 	const decision = DECISION_LABEL[resolved.decision] ?? DECISION_LABEL.allow;
 	const by = DECIDED_BY_LABEL[resolved.by];
-	return by ? `${decision} · ${tool} · ${by}` : `${decision} · ${tool}`;
+	return by ? `${decision} · ${label} · ${by}` : `${decision} · ${label}`;
 }

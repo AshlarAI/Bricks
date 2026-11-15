@@ -7,6 +7,7 @@
 import { t } from '$lib/i18n/i18n.svelte'
 import type { AssistantItem, RunInfo, TimelineItem } from '$lib/state/conversation.svelte'
 import type { IconComponent } from '$lib/layout/types'
+import { formatToolName } from './format'
 import { MESSAGE_ICON, THINKING_ICON, toolIcon } from './timeline/toolIcons'
 
 export interface WorkBlock {
@@ -112,7 +113,7 @@ export interface CurrentStep {
 export function currentStep(items: readonly TimelineItem[]): CurrentStep | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
-    if (item.kind === 'tool') return { icon: toolIcon(item.name), label: item.name }
+    if (item.kind === 'tool') return { icon: toolIcon(item.name), label: formatToolName(item.name) }
     if (item.kind === 'agent') return { icon: toolIcon('Agent'), label: t('common.agent2') }
     if (item.kind === 'assistant') {
       if (item.text.trim()) return { icon: MESSAGE_ICON, label: t('conversation.writing') }

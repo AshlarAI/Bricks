@@ -280,6 +280,68 @@ describe('Read: an image is shown, a text file is not', () => {
 	});
 });
 
+describe('MCP & Computer Use screenshots', () => {
+	function finishedMcp(name: string, input: Record<string, unknown>, output: string, isError = false): Conversation {
+		const conv = new Conversation(openedSession(), PROJECT_ID);
+		const feed = new EnvelopeFeed({ runId: 'run-mcp' });
+		conv.apply(feed.next({ type: 'run_started', prompt: 'Regarde', attachments: [], model: 'm' }));
+		conv.apply(feed.next({ type: 'tool_started', tool_call_id: CALL, name, input }));
+		conv.apply(
+			feed.next({
+				type: 'tool_finished',
+				tool_call_id: CALL,
+				name,
+				is_error: isError,
+				duration_ms: 45,
+				output,
+				executed: true,
+				status: isError ? 'error' : 'success'
+			})
+		);
+		return conv;
+	}
+
+	it('mounts <img> and calls sessionToolImage for mcp__computer-use__get_desktop_state', async () => {
+		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
+		show(finishedMcp('mcp__computer-use__get_desktop_state', {}, '[image image/png, 803660 bytes]\nDisplay 1920x1080'));
+		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		const img = picture()!;
+		expect(img.getAttribute('src')).toBe(PNG_URL);
+		expect(img.getAttribute('alt')).toBe('Computer Use · get_desktop_state');
+		expect(img.getAttribute('title')).toBe('Computer Use · get_desktop_state');
+		expect(ipc.sessionToolImage).toHaveBeenCalledWith(SESSION_ID, CALL);
+	});
+
+	it('includes app/window target in alt and title for get_window_state', async () => {
+		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
+		show(
+			finishedMcp(
+				'mcp__computer-use__get_window_state',
+				{ app: 'Safari', window: 'Bricks' },
+				'[image image/jpeg, 120400 bytes]\nWindow snapshot'
+			)
+		);
+		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		const img = picture()!;
+		expect(img.getAttribute('alt')).toBe('Computer Use · get_window_state · Safari — Bricks');
+		expect(img.getAttribute('title')).toBe('Computer Use · get_window_state · Safari — Bricks');
+	});
+
+	it('does not query sessionToolImage when the MCP image was not shown to the model', async () => {
+		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
+		show(
+			finishedMcp(
+				'mcp__computer-use__get_desktop_state',
+				{},
+				'[image image/png, 9000000 bytes — not shown: larger than 3750000 bytes]'
+			)
+		);
+		await settle();
+		expect(ipc.sessionToolImage).not.toHaveBeenCalled();
+		expect(picture()).toBeNull();
+	});
+});
+
 /** Unmounts the rendered row between two renders in one test. */
 function unmountCurrent(): void {
 	if (app) void unmount(app);

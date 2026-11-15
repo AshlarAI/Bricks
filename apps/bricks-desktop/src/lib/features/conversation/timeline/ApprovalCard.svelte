@@ -13,7 +13,7 @@
   import { app } from '$lib/state/app.svelte'
   import type { Conversation } from '$lib/state/conversation.svelte'
   import type { ApprovalRequest, Command, DecidedBy, Decision } from '$lib/ipc/engine'
-  import { CHANGE_KIND_LABEL, prettyJson, summarizeInput } from '../format'
+  import { CHANGE_KIND_LABEL, formatToolName, prettyJson, summarizeInput } from '../format'
   import MonoBlock from './MonoBlock.svelte'
   import { approvalTrace } from './toolLine'
   import { toolIcon } from './toolIcons'
@@ -35,6 +35,7 @@
     const agent = conversation.agents.get(approval.agent_id)
     return agent ? agent.spawn.profile : t('conversation.unknownAgent', { value: approval.agent_id.slice(0, 8) })
   })
+  const displayTool = $derived(formatToolName(approval.tool))
   const inputSummary = $derived(summarizeInput(approval.tool, approval.input))
   const inputText = $derived(prettyJson(approval.input))
   const ToolIcon = $derived(toolIcon(approval.tool))
@@ -84,7 +85,7 @@
     <Item.Content class="min-w-0">
       <p class="text-caption font-medium text-warning">{t('conversation.approvalRequested2')}</p>
       <Item.Title class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span class="font-mono">{approval.tool}</span>
+        <span class="font-mono" title={displayTool !== approval.tool ? approval.tool : undefined}>{displayTool}</span>
         {#if inputSummary}
           <span class="min-w-0 font-mono text-xs font-normal break-all text-muted-foreground">{inputSummary}</span>
         {/if}
@@ -107,7 +108,7 @@
           {t('conversation.fullInput')}
         </CollapsibleTrigger>
         <CollapsibleContent class="mt-1.5">
-          <MonoBlock text={inputText} label={t('conversation.fullInputOf', { tool: approval.tool })} />
+          <MonoBlock text={inputText} label={t('conversation.fullInputOf', { tool: displayTool })} />
         </CollapsibleContent>
       </Collapsible>
 

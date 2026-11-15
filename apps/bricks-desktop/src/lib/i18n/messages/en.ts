@@ -526,6 +526,7 @@ export const en = {
 	'conversation.skip': 'Skip',
 	'conversation.sourceCopied': 'Source copied',
 	'conversation.specificationTooLongCharactersAtMost': 'Specification too long ({MAX_VEGA_SOURCE} characters at most)',
+	'conversation.stepCount': { one: '{count} step', other: '{count} steps' },
 	'conversation.subAgent': 'Sub-agent {profile}: {description}',
 	'conversation.summary': 'Summary',
 	'conversation.svgSaved': 'SVG saved',

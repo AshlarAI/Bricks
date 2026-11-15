@@ -65,11 +65,182 @@ export function prettyJson(value: unknown): string {
   }
 }
 
+const COMPUTER_USE_PREFIX = 'mcp__computer-use__'
+const POINTER_ACTIONS = new Set([
+  'click',
+  'double_click',
+  'right_click',
+  'drag',
+  'move_cursor',
+  'scroll',
+  'left_click',
+  'mouse_click',
+])
+const TEXT_KEY_ACTIONS = new Set(['type_text', 'set_value', 'press_key', 'hotkey'])
+const WINDOW_APP_ACTIONS = new Set([
+  'get_window_state',
+  'get_desktop_state',
+  'get_accessibility_tree',
+  'launch_app',
+  'bring_to_front',
+  'list_windows',
+  'list_apps',
+  'set_window_frame',
+  'invoke_menu',
+  'zoom',
+  'verify_state',
+  'kill_app',
+])
+const SENSITIVE_FIELD = /password|passcode|pin|secret|token|mot de passe/i
+
+/** Human-readable tool name for MCP tools (`mcp__<server>__<tool>`), unchanged otherwise. */
+export function formatToolName(name: string): string {
+  if (!name.startsWith('mcp__')) return name
+  const rest = name.slice(5)
+  const sep = rest.indexOf('__')
+  if (sep <= 0) return name
+  const server = rest.slice(0, sep)
+  const tool = rest.slice(sep + 2)
+  if (!tool) return name
+  return server === 'computer-use' ? `Computer Use · ${tool}` : `${server} · ${tool}`
+}
+
 function firstString(obj: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const v = obj[key]
     if (typeof v === 'string' && v.length > 0) return v
   }
+  return null
+}
+
+function stepActionName(step: Record<string, unknown>): string | null {
+  if (typeof step.tool === 'string' && step.tool.length > 0) return step.tool
+  for (const [key, val] of Object.entries(step)) {
+    if (key !== 'wait_for' && key !== 'expect' && isRecord(val)) return key
+  }
+  return null
+}
+
+function stepArgs(step: Record<string, unknown>, action: string | null): Record<string, unknown> | null {
+  if (isRecord(step.args)) return step.args
+  if (action && isRecord(step[action])) return step[action]
+  return null
+}
+
+function formatElementTarget(obj: Record<string, unknown>): string | null {
+  const role = firstString(obj, ['role'])
+  const label = firstString(obj, ['name', 'title', 'label'])
+  const token = firstString(obj, ['element_token'])
+  if (role && label) return `${role} "${truncate(oneLine(label), 32)}"`
+  if (label) return `"${truncate(oneLine(label), 32)}"`
+  if (role) return role
+  if (token) return truncate(token, 20)
+  return null
+}
+
+function formatCoords(obj: Record<string, unknown>): string | null {
+  if (
+    typeof obj.from_x === 'number' &&
+    typeof obj.from_y === 'number' &&
+    typeof obj.to_x === 'number' &&
+    typeof obj.to_y === 'number'
+  ) {
+    return `(${obj.from_x}, ${obj.from_y}) → (${obj.to_x}, ${obj.to_y})`
+  }
+  if (typeof obj.x === 'number' && typeof obj.y === 'number') {
+    return `(${obj.x}, ${obj.y})`
+  }
+  return null
+}
+
+function formatAppWindow(obj: Record<string, unknown>): string | null {
+  const app = firstString(obj, ['app', 'bundle_id'])
+  const win = firstString(obj, ['window'])
+  const parts = [app, win].filter((v): v is string => Boolean(v)).map((v) => truncate(oneLine(v), 40))
+  return parts.length > 0 ? parts.join(' — ') : null
+}
+
+function formatMaskedText(obj: Record<string, unknown>, raw: string): string {
+  const elLabel = firstString(obj, ['name', 'title', 'label', 'ref', 'selector', 'target']) ?? ''
+  return obj.password === true || SENSITIVE_FIELD.test(elLabel)
+    ? '••••'
+    : `"${truncate(oneLine(raw), 40)}"`
+}
+
+function summarizeComputerUseInput(action: string, input: Record<string, unknown>): string | null {
+  if (action === 'run_steps' && Array.isArray(input.steps)) {
+    const actions: string[] = []
+    let firstTarget: string | null = formatAppWindow(input)
+    for (const step of input.steps) {
+      if (!isRecord(step)) continue
+      const act = stepActionName(step)
+      if (act) actions.push(act)
+      if (!firstTarget) {
+        const args = stepArgs(step, act)
+        if (args) firstTarget = formatAppWindow(args)
+      }
+    }
+    const countLabel = t('conversation.stepCount', { count: input.steps.length })
+    const preview = actions.slice(0, 4).join(' → ') + (actions.length > 4 ? ' → …' : '')
+    const parts = [firstTarget, countLabel, preview].filter(Boolean)
+    return parts.length > 0 ? truncate(parts.join(' · '), 160) : null
+  }
+
+  const target = formatAppWindow(input)
+  const element = formatElementTarget(input)
+
+  if (POINTER_ACTIONS.has(action)) {
+    const coords = formatCoords(input)
+    const parts = [target, element ?? coords].filter(Boolean)
+    return parts.length > 0 ? truncate(parts.join(' · '), 160) : null
+  }
+
+  if (TEXT_KEY_ACTIONS.has(action)) {
+    let payload: string | null = null
+    if (action === 'hotkey') {
+      if (Array.isArray(input.keys)) {
+        const keys = input.keys.filter((k): k is string => typeof k === 'string' && k.length > 0)
+        if (keys.length > 0) payload = keys.join('+')
+      } else {
+        payload = firstString(input, ['keys', 'hotkey'])
+      }
+    } else if (action === 'press_key') {
+      payload = firstString(input, ['key'])
+    } else {
+      const raw = firstString(input, ['text', 'value'])
+      if (raw !== null) payload = formatMaskedText(input, raw)
+    }
+    const parts = [target, element, payload].filter(Boolean)
+    return parts.length > 0 ? truncate(parts.join(' · '), 160) : null
+  }
+
+  if (WINDOW_APP_ACTIONS.has(action)) {
+    const query = firstString(input, ['query'])
+    const rawMenu = Array.isArray(input.path)
+      ? input.path
+      : Array.isArray(input.menu_path)
+        ? input.menu_path
+        : null
+    const menuPath = rawMenu
+      ? rawMenu.filter((p): p is string => typeof p === 'string' && p.length > 0).join(' › ')
+      : null
+    const pid = !target && typeof input.pid === 'number' ? `pid ${input.pid}` : null
+    const parts = [target, menuPath, query, pid].filter(Boolean)
+    return parts.length > 0 ? truncate(parts.join(' · '), 160) : null
+  }
+
+  if (action.startsWith('browser_') || action === 'page') {
+    const url = firstString(input, ['url'])
+    const text = firstString(input, ['text'])
+    const refOrSel = firstString(input, ['ref', 'selector', 'query'])
+    const parts = [
+      url ? truncate(oneLine(url), 60) : null,
+      text ? formatMaskedText(input, text) : null,
+      refOrSel ? truncate(oneLine(refOrSel), 40) : null,
+    ].filter(Boolean)
+    return parts.length > 0 ? truncate(parts.join(' · '), 160) : null
+  }
+
   return null
 }
 
@@ -88,6 +259,10 @@ export function summarizeInput(name: string, input: unknown): string {
   if (SEARCH_TOOLS.has(name) && typeof input.pattern === 'string') {
     const path = firstString(input, ['path'])
     return truncate(oneLine(input.pattern) + (path ? t('conversation.in', { path }) : ''), 160)
+  }
+  if (name.startsWith(COMPUTER_USE_PREFIX)) {
+    const cuSummary = summarizeComputerUseInput(name.slice(COMPUTER_USE_PREFIX.length), input)
+    if (cuSummary !== null) return cuSummary
   }
   const parts = Object.entries(input)
     .slice(0, 3)

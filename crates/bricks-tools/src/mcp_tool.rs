@@ -228,13 +228,16 @@ fn render(
     structured: Option<&Value>,
 ) -> String {
     let mut out = String::new();
+    let mut text_only = String::new();
     let mut images = images.iter();
     for c in content {
         match c {
             McpContent::Text { text } => {
                 out.push_str(text);
+                text_only.push_str(text);
                 if !text.ends_with('\n') {
                     out.push('\n');
+                    text_only.push('\n');
                 }
             }
             McpContent::Image {
@@ -289,17 +292,50 @@ fn render(
             }
         }
     }
-    if let Some(s) = structured {
-        let _ = writeln!(
-            out,
-            "--- structured content ---\n{}",
-            serde_json::to_string_pretty(s).unwrap_or_default()
-        );
+    if let Some(s) = structured
+        && let Some(rendered) = render_structured(s, text_only.trim())
+    {
+        let _ = writeln!(out, "--- structured content ---\n{rendered}");
     }
     if out.is_empty() {
         out.push_str("(the tool returned no content)\n");
     }
     out
+}
+
+const COMPACT_STRUCTURED_MAX_BYTES: usize = 240;
+const COMPACT_STRUCTURED_MAX_LINES: usize = 12;
+
+/// Formats `structuredContent`, stripping a `"summary"` field that repeats the
+/// already-rendered text blocks and collapsing large objects to single-line JSON.
+fn render_structured(s: &Value, rendered_text: &str) -> Option<String> {
+    let owned;
+    let target = match s {
+        Value::Object(map)
+            if !rendered_text.is_empty()
+                && map
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .is_some_and(|summary| summary.trim() == rendered_text) =>
+        {
+            let mut filtered = map.clone();
+            filtered.remove("summary");
+            if filtered.is_empty() {
+                return None;
+            }
+            owned = Value::Object(filtered);
+            &owned
+        }
+        _ => s,
+    };
+    let pretty = serde_json::to_string_pretty(target).ok()?;
+    if pretty.len() <= COMPACT_STRUCTURED_MAX_BYTES
+        && pretty.lines().count() <= COMPACT_STRUCTURED_MAX_LINES
+    {
+        Some(pretty)
+    } else {
+        serde_json::to_string(target).ok()
+    }
 }
 
 #[cfg(test)]
@@ -379,5 +415,54 @@ mod tests {
         big.resize(MAX_IMAGE_BYTES + 1, 0);
         let big = base64::engine::general_purpose::STANDARD.encode(big);
         assert!(decode_image(&big).unwrap_err().starts_with("larger than"));
+    }
+
+    #[test]
+    fn redundant_summary_in_structured_content_is_omitted() {
+        let content = [McpContent::Text {
+            text: "Clicked Submit in Safari".into(),
+        }];
+        // Only "summary", matching the rendered text -> structured block skipped.
+        let only_summary = serde_json::json!({ "summary": "Clicked Submit in Safari" });
+        assert_eq!(
+            render(&content, &[], Some(&only_summary)),
+            "Clicked Submit in Safari\n"
+        );
+
+        // Redundant "summary" alongside extra machine fields -> "summary" stripped, fields kept.
+        let with_extra = serde_json::json!({
+            "summary": "Clicked Submit in Safari",
+            "effect": "focused",
+        });
+        assert_eq!(
+            render(&content, &[], Some(&with_extra)),
+            "Clicked Submit in Safari\n--- structured content ---\n{\n  \"effect\": \"focused\"\n}\n"
+        );
+    }
+
+    #[test]
+    fn large_structured_content_is_serialized_on_a_single_line() {
+        let content = [McpContent::Text {
+            text: "Window snapshot".into(),
+        }];
+        let elements: Vec<_> = (0..15)
+            .map(|i| serde_json::json!({ "id": i, "role": "button", "name": format!("Item {i}") }))
+            .collect();
+        let big = serde_json::json!({
+            "summary": "Window snapshot",
+            "capture_id": "cap_42",
+            "elements": elements,
+        });
+        let rendered = render(&content, &[], Some(&big));
+        let structured_part = rendered
+            .split("--- structured content ---\n")
+            .nth(1)
+            .expect("structured block present");
+        let lines: Vec<&str> = structured_part.trim_end().lines().collect();
+        assert_eq!(lines.len(), 1, "expected compact single line: {rendered}");
+        let parsed: Value = serde_json::from_str(lines[0]).unwrap();
+        assert!(parsed.get("summary").is_none());
+        assert_eq!(parsed["capture_id"], "cap_42");
+        assert_eq!(parsed["elements"].as_array().unwrap().len(), 15);
     }
 }

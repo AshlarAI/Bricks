@@ -6,7 +6,7 @@
   import { t } from '$lib/i18n/i18n.svelte'
   import { sessionToolImage } from '$lib/ipc/client'
   import type { Conversation, ToolItem } from '$lib/state/conversation.svelte'
-  import { basename, isRecord } from '../format'
+  import { basename, formatToolName, isRecord, summarizeInput } from '../format'
 
   let { item, conversation }: { item: ToolItem; conversation: Conversation } = $props()
 
@@ -15,6 +15,16 @@
   const path = $derived(
     isRecord(item.input) && typeof item.input.file_path === 'string' ? item.input.file_path : '',
   )
+  const label = $derived.by(() => {
+    if (path) return basename(path)
+    if (item.name.startsWith('mcp__')) {
+      const toolLabel = formatToolName(item.name)
+      const target = summarizeInput(item.name, item.input)
+      return target ? `${toolLabel} · ${target}` : toolLabel
+    }
+    return t('conversation.imageSeenByTheModel')
+  })
+  const titleText = $derived(path || label)
 
   $effect(() => {
     if (src) return
@@ -36,8 +46,8 @@
 {#if src}
   <img
     {src}
-    alt={path ? basename(path) : t('conversation.imageSeenByTheModel')}
-    title={path}
+    alt={label}
+    title={titleText}
     class="mt-1 ml-5 max-h-64 max-w-[min(100%,28rem)] rounded-md border border-border object-contain"
   />
 {/if}

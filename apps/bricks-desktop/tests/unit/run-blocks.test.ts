@@ -240,6 +240,13 @@ describe('currentStep: what the run does now', () => {
 		expect(currentStep(items)?.label).toBe('Grep');
 	});
 
+	it('formats MCP tool names in currentStep', () => {
+		const items: TimelineItem[] = [
+			{ kind: 'tool', id: 't', toolCallId: 'tc', name: 'mcp__computer-use__click', input: {}, status: 'running' },
+		];
+		expect(currentStep(items)?.label).toBe('Computer Use · click');
+	});
+
 	it('is a sub-agent at work', () => {
 		const items: TimelineItem[] = [{ kind: 'agent', id: 'g', agentId: 'ag-1', execution: 1 }];
 		expect(currentStep(items)).toEqual({ icon: BotIcon, label: 'Agent' });

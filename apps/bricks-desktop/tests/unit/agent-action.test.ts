@@ -42,6 +42,7 @@ describe('agentAction: what a running sub-agent does now', () => {
 		expect(agentAction(agent('running', [tool('Grep', { pattern: 'x' })]), false)).toBe('Recherche dans le code…');
 		expect(agentAction(agent('running', [tool('Edit', { file_path: '/w/a.ts' })]), false)).toBe('Modification de a.ts…');
 		expect(agentAction(agent('running', [tool('WebFetch', {})]), false)).toBe('Recherche sur le web…');
+		expect(agentAction(agent('running', [tool('mcp__computer-use__click', {})]), false)).toBe('Computer Use · click…');
 		expect(agentAction(agent('running', [tool('Mystery', {})]), false)).toBe('Mystery…');
 	});
 

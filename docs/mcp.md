@@ -99,7 +99,7 @@ The version is fixed when the connection opens. The two are never mixed on one c
 * **Cancel.** If a turn is cancelled, Bricks sends `notifications/cancelled` on stdio, or closes the response stream on HTTP.
 * **No retry.** If the connection drops during a call, the call fails with `ConnectionLost` (the tool may have run). The next call reconnects. Nothing is sent twice by itself.
 * **stderr.** The last 50 lines are kept and shown when a connection is lost. Output on stderr is not an error.
-* **Results.** Text, structured content, resource links and the error flag are kept. Images are not sent to the model. Each one becomes a text note such as `[image <type>, <n> bytes - not shown]`. Only the built-in `Read` tool shows images.
+* **Results.** Text, structured content, resource links and the error flag are kept. Valid PNG, JPEG, GIF and WebP images up to 3.75 MB (detected from their bytes) are sent to the model alongside a `[image <type>, <n> bytes]` note, and Computer Use (and other MCP) screenshots render inline in the desktop timeline. Oversized or unsupported images stay as `[image <type>, <n> bytes - not shown: <reason>]` notes.
 * **Shutdown.** Bricks closes stdin, waits, then ends the server's process (TERM, then KILL on Unix).
 
 ## In the agent

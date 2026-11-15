@@ -94,6 +94,9 @@ describe('approvalTrace', () => {
 		expect(approvalTrace('Edit', { decision: 'deny', by: 'non_interactive' })).toBe(
 			'Refusé · Edit · mode non interactif'
 		);
+		expect(approvalTrace('mcp__computer-use__click', { decision: 'allow', by: 'user' })).toBe(
+			'Autorisé · Computer Use · click · par vous'
+		);
 	});
 
 	it('shows a stored value of the former session grant as an allow, without a cause', () => {

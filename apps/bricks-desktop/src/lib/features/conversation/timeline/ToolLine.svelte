@@ -3,6 +3,7 @@
   // timeline and by the sub-agent inspector. The icon is the tool's; the state is
   // said only when the call did not complete (« Échec », « Interrompu »).
   import type { Snippet } from 'svelte'
+  import { formatToolName } from '../format'
   import { TOOL_LINE_LABEL, formatToolDuration, type ToolLineState } from './toolLine'
   import { toolIcon } from './toolIcons'
   import { cn } from '$lib/utils.js'
@@ -18,6 +19,7 @@
   let { name, state, durationMs, children }: Props = $props()
 
   const Icon = $derived(toolIcon(name))
+  const displayName = $derived(formatToolName(name))
   /** Shown once the call has finished, and only when the engine gave a duration. */
   const duration = $derived(state === 'running' ? null : formatToolDuration(durationMs))
 </script>
@@ -27,7 +29,10 @@
     class={cn('size-3.5 shrink-0', state === 'failed' && 'text-destructive')}
     aria-hidden="true"
   />
-  <span class={cn('min-w-0 truncate font-mono text-foreground', state === 'running' && 'shimmer motion-reduce:shimmer-none')}>{name}</span>
+  <span
+    title={displayName !== name ? name : undefined}
+    class={cn('min-w-0 truncate font-mono text-foreground', state === 'running' && 'shimmer motion-reduce:shimmer-none')}
+  >{displayName}</span>
   {@render children?.()}
   {#if state === 'failed'}
     <span class="shrink-0 text-destructive">{TOOL_LINE_LABEL.failed}</span>

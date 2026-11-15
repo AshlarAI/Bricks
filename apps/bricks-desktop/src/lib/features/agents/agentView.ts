@@ -45,6 +45,8 @@ export function agentDurationMs(agent: AgentInfo, now: number): number {
 	return Math.max(0, (agent.endedAt ?? now) - agent.spawnedAt);
 }
 
+import { formatToolName } from '../conversation/format';
+
 export { formatDuration } from '../conversation/format';
 
 function baseName(path: unknown): string | null {
@@ -87,7 +89,7 @@ function toolAction(name: string, input: unknown): string {
 		case 'AgentControl':
 			return t('agents.followingItsSubAgents');
 		default:
-			return name;
+			return formatToolName(name);
 	}
 }
 
