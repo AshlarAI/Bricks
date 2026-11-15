@@ -36,7 +36,8 @@ use chunk::Passage;
 use extract::{Extractor, Unreadable};
 use fetch::{FetchError, Fetcher};
 use rank::Selection;
-use search::{SearchOutcome, Searcher};
+use search::{SearchHit, SearchOptions, SearchOutcome, Searcher};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 use store::{DocEntry, NewDoc, WebStore};
@@ -126,16 +127,53 @@ pub struct ResearchOptions {
 impl WebContext {
     /// Search, read the first pages and select passages for `query`.
     pub async fn research(&self, query: &str, opts: ResearchOptions) -> Research {
+        self.research_with(query, opts, &SearchOptions::default())
+            .await
+    }
+
+    /// Search with explicit domain/recency filters, read pages (filling up from
+    /// later hits when early ones fail), and select passages for `query`.
+    pub async fn research_with(
+        &self,
+        query: &str,
+        opts: ResearchOptions,
+        search_opts: &SearchOptions,
+    ) -> Research {
         let t0 = Instant::now();
-        let search = self.searcher.search(query, opts.results).await;
+        let search = self
+            .searcher
+            .search_with_options(query, opts.results, search_opts)
+            .await;
         let search_ms = t0.elapsed().as_millis() as u64;
-        let targets: Vec<(String, String)> = search
-            .hits
-            .iter()
-            .take(opts.read_pages.min(self.config.fetch.max_pages))
-            .map(|h| (h.source_id.clone(), h.url.clone()))
-            .collect();
-        let (pages, fetch_ms, extract_ms) = self.read_many(&targets).await;
+        let target_count = opts.read_pages.min(self.config.fetch.max_pages);
+        let mut pages: Vec<PageResult> = Vec::new();
+        let mut fetch_ms: u64 = 0;
+        let mut extract_ms: u64 = 0;
+        let mut cursor = 0usize;
+        let mut seen_final = HashSet::new();
+        let fetch_start = Instant::now();
+        let fetch_deadline = fetch_start + self.config.fetch.budget;
+
+        while cursor < search.hits.len() {
+            let ok_count = pages.iter().filter(|p| p.outcome.is_ok()).count();
+            let remaining_needed = target_count.saturating_sub(ok_count);
+            if remaining_needed == 0 {
+                break;
+            }
+            if cursor > 0 && Instant::now() >= fetch_deadline {
+                break;
+            }
+            let end = (cursor + remaining_needed).min(search.hits.len());
+            let batch = &search.hits[cursor..end];
+            cursor = end;
+            let (mut batch_pages, bf_ms, be_ms) = self
+                .read_many(batch, &mut seen_final, fetch_deadline)
+                .await;
+            fetch_ms += bf_ms;
+            extract_ms += be_ms;
+            pages.append(&mut batch_pages);
+        }
+
         let t3 = Instant::now();
         let docs: Vec<Vec<Passage>> = pages
             .iter()
@@ -146,7 +184,7 @@ impl WebContext {
                     .unwrap_or_default()
             })
             .collect();
-        let selection = (!targets.is_empty() && docs.iter().any(|d| !d.is_empty()))
+        let selection = (!pages.is_empty() && docs.iter().any(|d| !d.is_empty()))
             .then(|| rank::select(query, &docs, &self.config.passages));
         let rank_ms = t3.elapsed().as_millis() as u64;
         Research {
@@ -165,57 +203,169 @@ impl WebContext {
 
     /// Download (or take from the store) and extract several pages; results
     /// in the order given. Returns the network and extraction times.
-    async fn read_many(&self, targets: &[(String, String)]) -> (Vec<PageResult>, u64, u64) {
+    async fn read_many(
+        &self,
+        hits: &[SearchHit],
+        seen_final: &mut HashSet<String>,
+        deadline: Instant,
+    ) -> (Vec<PageResult>, u64, u64) {
         let mut cached: Vec<Option<PageDoc>> = Vec::new();
         let mut to_fetch = Vec::new();
-        for (_, url) in targets {
-            match self.stored_url(url) {
+        let ttl = self.config.store.search_ttl_secs;
+        for h in hits {
+            match self.stored_url_with_ttl(&h.url, ttl) {
                 Some(doc) => cached.push(Some(doc)),
                 None => {
                     cached.push(None);
-                    to_fetch.push(url.clone());
+                    to_fetch.push(h.url.clone());
                 }
             }
         }
         let t = Instant::now();
-        let fetched = self.fetcher.fetch_many(&to_fetch).await;
+        let fetched = self.fetcher.fetch_many_until(&to_fetch, deadline).await;
         let fetch_ms = t.elapsed().as_millis() as u64;
         let t = Instant::now();
-        let extractions = futures::future::join_all(fetched.into_iter().map(|r| async move {
+        let extracted_futs = fetched.into_iter().map(|r| async move {
             match r {
-                Err(e) => Err(PageError::Fetch(e)),
-                Ok(page) => self.extract_page(&page).await.map(|x| (page, x)),
+                Err(e) => Err(map_fetch_error(e)),
+                Ok(page) => self.extract_with_alternate(&page).await,
             }
-        }))
-        .await;
-        // Stored in the order of the results, whatever finished first, so
-        // document ids follow the sources.
-        let extractions: Vec<Result<PageDoc, PageError>> = extractions
-            .into_iter()
-            .map(|r| r.and_then(|(page, x)| self.store_page(&page, x)))
-            .collect();
+        });
+        let mut extracted_iter = futures::future::join_all(extracted_futs).await.into_iter();
+        let mut raw_outcomes: Vec<Result<PageDoc, PageError>> = Vec::with_capacity(hits.len());
+        for (h, c) in hits.iter().zip(cached) {
+            if let Some(doc) = c {
+                seen_final.insert(search::dedup_key(&doc.entry.final_url));
+                raw_outcomes.push(Ok(doc));
+                continue;
+            }
+            let res = match extracted_iter.next() {
+                None => Err(PageError::Store("missing".into())),
+                Some(Err(e)) => Err(e),
+                Some(Ok((used_page, x))) => {
+                    let final_key = search::dedup_key(used_page.final_url.as_str());
+                    if !seen_final.insert(final_key) {
+                        Err(PageError::Store(format!(
+                            "duplicate of an earlier page ({})",
+                            used_page.final_url
+                        )))
+                    } else {
+                        self.store_page(&used_page, x)
+                    }
+                }
+            };
+            let res = match res {
+                Err(err) if should_use_provider_content(&err) => {
+                    if let Some(raw_text) = &h.raw_content {
+                        self.store_provider_content(h, raw_text, &err)
+                    } else {
+                        Err(err)
+                    }
+                }
+                other => other,
+            };
+            raw_outcomes.push(res);
+        }
         let extract_ms = t.elapsed().as_millis() as u64;
-        let mut fresh = extractions.into_iter();
-        let pages = targets
+        let pages = hits
             .iter()
-            .zip(cached)
-            .map(|((sid, url), c)| PageResult {
-                source_id: sid.clone(),
-                url: url.clone(),
-                outcome: match c {
-                    Some(doc) => Ok(doc),
-                    None => fresh
-                        .next()
-                        .unwrap_or(Err(PageError::Store("missing".into()))),
-                },
+            .zip(raw_outcomes)
+            .map(|(h, outcome)| PageResult {
+                source_id: h.source_id.clone(),
+                url: h.url.clone(),
+                outcome,
             })
             .collect();
         (pages, fetch_ms, extract_ms)
     }
 
+    async fn extract_with_alternate(
+        &self,
+        page: &fetch::FetchedPage,
+    ) -> Result<(fetch::FetchedPage, extract::Extracted), PageError> {
+        match self.extract_page(page).await {
+            Ok(x) => Ok((page.clone(), x)),
+            Err(orig_err @ PageError::Unreadable(Unreadable::NeedsJavascript { .. })) => {
+                if let Some(alt_url) = extract::find_alternate_markdown(
+                    &page.body,
+                    page.content_type.as_deref(),
+                    &page.final_url,
+                ) && let Ok(mut alt_page) = self.fetcher.fetch(alt_url.as_str()).await
+                    && let Ok(mut x) = self.extract_page(&alt_page).await
+                {
+                    alt_page.requested = page.requested.clone();
+                    x.notes.push(format!(
+                        "loaded alternate Markdown representation ({alt_url})"
+                    ));
+                    return Ok((alt_page, x));
+                }
+                Err(orig_err)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn store_provider_content(
+        &self,
+        hit: &SearchHit,
+        raw_text: &str,
+        fetch_err: &PageError,
+    ) -> Result<PageDoc, PageError> {
+        let mut md = raw_text.trim().to_string();
+        if !md.starts_with("# ") && !hit.title.is_empty() {
+            md = format!("# {}\n\n{md}", hit.title);
+        }
+        let notes = vec![format!(
+            "retrieved from {} search result after direct fetch failed ({fetch_err})",
+            hit.provider
+        )];
+        let strategy = format!("{} (provider content)", hit.provider);
+        let entry = match &self.store {
+            Some(store) => store
+                .put(NewDoc {
+                    requested_url: &hit.url,
+                    final_url: &hit.url,
+                    title: &hit.title,
+                    content_type: Some("text/plain"),
+                    raw: raw_text.as_bytes(),
+                    truncated: false,
+                    markdown: &md,
+                    strategy: &strategy,
+                    notes: &notes,
+                })
+                .map_err(|e| PageError::Store(e.to_string()))?,
+            None => DocEntry {
+                id: "-".into(),
+                requested_url: hit.url.clone(),
+                final_url: hit.url.clone(),
+                title: hit.title.clone(),
+                content_type: Some("text/plain".into()),
+                fetched_at: 0,
+                raw_file: String::new(),
+                raw_bytes: raw_text.len() as u64,
+                truncated: false,
+                markdown_file: String::new(),
+                markdown_chars: md.chars().count(),
+                strategy,
+                notes,
+            },
+        };
+        let p = &self.config.passages;
+        Ok(PageDoc {
+            passages: chunk::split(&md, p.min_chars, p.max_chars),
+            entry,
+            markdown: md,
+            cached: false,
+        })
+    }
+
     fn stored_url(&self, url: &str) -> Option<PageDoc> {
+        self.stored_url_with_ttl(url, 0)
+    }
+
+    fn stored_url_with_ttl(&self, url: &str, max_age_secs: u64) -> Option<PageDoc> {
         let store = self.store.as_ref()?;
-        let entry = store.find_url(url)?;
+        let entry = store.find_fresh_url(url, max_age_secs)?;
         let markdown = store.markdown(&entry).ok()?;
         let p = &self.config.passages;
         Some(PageDoc {
@@ -297,9 +447,9 @@ impl WebContext {
         if !refresh && let Some(doc) = self.stored_url(url) {
             return Ok(doc);
         }
-        let page = self.fetcher.fetch(url).await.map_err(PageError::Fetch)?;
-        let extracted = self.extract_page(&page).await?;
-        self.store_page(&page, extracted)
+        let page = self.fetcher.fetch(url).await.map_err(map_fetch_error)?;
+        let (used_page, extracted) = self.extract_with_alternate(&page).await?;
+        self.store_page(&used_page, extracted)
     }
 
     /// A stored document by id (`D3`).
@@ -331,4 +481,28 @@ pub fn floor_boundary(s: &str, mut i: usize) -> usize {
 /// Byte offset of character `n` (or the end).
 pub fn char_to_byte(s: &str, n: usize) -> usize {
     s.char_indices().nth(n).map(|(b, _)| b).unwrap_or(s.len())
+}
+
+fn map_fetch_error(e: FetchError) -> PageError {
+    match e {
+        FetchError::Binary {
+            mime,
+            declared_length,
+        } => PageError::Unreadable(Unreadable::Binary {
+            mime,
+            bytes: 0,
+            truncated: false,
+            declared: declared_length,
+        }),
+        other => PageError::Fetch(other),
+    }
+}
+
+fn should_use_provider_content(err: &PageError) -> bool {
+    matches!(
+        err,
+        PageError::Unreadable(Unreadable::NeedsJavascript { .. })
+            | PageError::Fetch(FetchError::Http { status: 403 | 429 })
+            | PageError::Fetch(FetchError::Timeout(_))
+    )
 }

@@ -19,6 +19,10 @@ use url::Url;
 pub enum ProviderKind {
     #[serde(alias = "ddg")]
     DuckDuckGo,
+    #[serde(rename = "ddg_lite", alias = "duckduckgo_lite", alias = "ddglite")]
+    DdgLite,
+    #[serde(alias = "searx")]
+    Searxng,
     Brave,
     Tavily,
     Exa,
@@ -28,6 +32,8 @@ impl ProviderKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::DuckDuckGo => "duckduckgo",
+            Self::DdgLite => "ddg_lite",
+            Self::Searxng => "searxng",
             Self::Brave => "brave",
             Self::Tavily => "tavily",
             Self::Exa => "exa",
@@ -35,12 +41,14 @@ impl ProviderKind {
     }
 
     pub fn needs_key(self) -> bool {
-        !matches!(self, Self::DuckDuckGo)
+        matches!(self, Self::Brave | Self::Tavily | Self::Exa)
     }
 
     fn default_endpoint(self) -> &'static str {
         match self {
             Self::DuckDuckGo => "https://html.duckduckgo.com/html/",
+            Self::DdgLite => "https://lite.duckduckgo.com/lite/",
+            Self::Searxng => "http://127.0.0.1:8080/search",
             Self::Brave => "https://api.search.brave.com/res/v1/web/search",
             Self::Tavily => "https://api.tavily.com/search",
             Self::Exa => "https://api.exa.ai/search",
@@ -109,6 +117,10 @@ pub struct SearchConfig {
     pub budget: Duration,
     /// Longest wait honoured for a `Retry-After` / rate-limit reset.
     pub max_retry_wait: Duration,
+    /// Short-lived in-memory cache TTL for identical search queries (0 disables).
+    pub cache_ttl: Duration,
+    /// Cooldown after a provider returns an anti-bot challenge when fallbacks exist (0 disables).
+    pub challenge_cooldown: Duration,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -177,6 +189,8 @@ pub struct PassageConfig {
 pub struct StoreConfig {
     /// Bytes of documents kept for one session (raw and extracted).
     pub max_session_bytes: u64,
+    /// Maximum age in seconds for reusing stored pages in `WebSearch` (0 = no expiry).
+    pub search_ttl_secs: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -191,13 +205,15 @@ pub struct WebConfig {
 pub const DEFAULT_USER_AGENT: &str = concat!(
     "Bricks/",
     env!("CARGO_PKG_VERSION"),
-    " (bricks-web; +https://github.com/pacifio/cersei)"
+    " (bricks-web; +https://github.com/ainsiparlaitzarathoustra/bricks)"
 );
 
 impl Default for WebConfig {
     fn default() -> Self {
         let providers = [
             ProviderKind::DuckDuckGo,
+            ProviderKind::DdgLite,
+            ProviderKind::Searxng,
             ProviderKind::Brave,
             ProviderKind::Tavily,
             ProviderKind::Exa,
@@ -219,6 +235,8 @@ impl Default for WebConfig {
                 timeout: Duration::from_secs(5),
                 budget: Duration::from_secs(12),
                 max_retry_wait: Duration::from_secs(2),
+                cache_ttl: Duration::from_secs(45),
+                challenge_cooldown: Duration::from_secs(60),
                 providers,
             },
             fetch: FetchConfig {
@@ -247,6 +265,7 @@ impl Default for WebConfig {
             },
             store: StoreConfig {
                 max_session_bytes: 64 * 1024 * 1024,
+                search_ttl_secs: 900,
             },
         }
     }
@@ -278,7 +297,11 @@ struct FileSearch {
     timeout_ms: Option<u64>,
     budget_ms: Option<u64>,
     max_retry_wait_ms: Option<u64>,
+    cache_ttl_ms: Option<u64>,
+    challenge_cooldown_ms: Option<u64>,
     duckduckgo: Option<FileProvider>,
+    ddg_lite: Option<FileProvider>,
+    searxng: Option<FileProvider>,
     brave: Option<FileProvider>,
     tavily: Option<FileProvider>,
     exa: Option<FileProvider>,
@@ -329,6 +352,7 @@ struct FilePassages {
 #[serde(deny_unknown_fields)]
 struct FileStore {
     max_session_bytes: Option<u64>,
+    search_ttl_secs: Option<u64>,
 }
 
 /// A loaded configuration and what was noticed while loading it.
@@ -374,8 +398,12 @@ impl WebConfig {
             set_ms(&mut c.search.timeout, s.timeout_ms);
             set_ms(&mut c.search.budget, s.budget_ms);
             set_ms(&mut c.search.max_retry_wait, s.max_retry_wait_ms);
+            set_ms(&mut c.search.cache_ttl, s.cache_ttl_ms);
+            set_ms(&mut c.search.challenge_cooldown, s.challenge_cooldown_ms);
             for (kind, fp) in [
                 (ProviderKind::DuckDuckGo, s.duckduckgo),
+                (ProviderKind::DdgLite, s.ddg_lite),
+                (ProviderKind::Searxng, s.searxng),
                 (ProviderKind::Brave, s.brave),
                 (ProviderKind::Tavily, s.tavily),
                 (ProviderKind::Exa, s.exa),
@@ -423,10 +451,9 @@ impl WebConfig {
             set(&mut c.passages.budget_chars, p.budget_chars);
             set(&mut c.passages.per_source, p.per_source);
         }
-        if let Some(s) = web.store
-            && let Some(v) = s.max_session_bytes
-        {
-            c.store.max_session_bytes = v;
+        if let Some(s) = web.store {
+            set(&mut c.store.max_session_bytes, s.max_session_bytes);
+            set(&mut c.store.search_ttl_secs, s.search_ttl_secs);
         }
         c.validate()?;
         c.resolve_keys(&env, &mut diagnostics);
@@ -445,6 +472,12 @@ impl WebConfig {
         duration("web.search.budget_ms", s.budget, 120_000)?;
         if s.max_retry_wait > s.budget {
             return Err("web.search.max_retry_wait_ms must not exceed budget_ms".into());
+        }
+        if s.cache_ttl.as_millis() > 600_000 {
+            return Err("web.search.cache_ttl_ms must be at most 600000 ms".into());
+        }
+        if s.challenge_cooldown.as_millis() > 600_000 {
+            return Err("web.search.challenge_cooldown_ms must be at most 600000 ms".into());
         }
         for (i, k) in s.fallback.iter().enumerate() {
             if s.fallback[..i].contains(k) {

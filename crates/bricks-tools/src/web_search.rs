@@ -14,7 +14,7 @@ use super::*;
 use crate::tool_report::{ToolBody, ToolReport, ToolStatus};
 use crate::web_runtime::{context, thousands};
 use bricks_web::rank::Relevance;
-use bricks_web::search::{SearchError, SearchOutcome};
+use bricks_web::search::{SearchError, SearchOptions, SearchOutcome, TimeRange};
 use bricks_web::{Research, ResearchOptions};
 use serde::Deserialize;
 use std::fmt::Write as _;
@@ -28,6 +28,9 @@ struct Input {
     query: String,
     num_results: Option<usize>,
     read_pages: Option<usize>,
+    time_range: Option<String>,
+    include_domains: Option<Vec<String>>,
+    exclude_domains: Option<Vec<String>>,
 }
 
 #[async_trait]
@@ -55,7 +58,10 @@ impl Tool for WebSearchTool {
             "properties": {
                 "query": { "type": "string", "description": "Search query" },
                 "num_results": { "type": "integer", "description": "Results to list (default 8, max 20)" },
-                "read_pages": { "type": "integer", "description": "Pages to read for passages (default 5 = web.fetch.max_pages; 0 = results only)" }
+                "read_pages": { "type": "integer", "description": "Pages to read for passages (default 5 = web.fetch.max_pages; 0 = results only)" },
+                "time_range": { "type": "string", "enum": ["day", "week", "month", "year"], "description": "Limit results to recent pages" },
+                "include_domains": { "type": "array", "items": { "type": "string" }, "description": "Only return results from these domains" },
+                "exclude_domains": { "type": "array", "items": { "type": "string" }, "description": "Exclude results from these domains" }
             },
             "required": ["query"]
         })
@@ -69,6 +75,10 @@ impl Tool for WebSearchTool {
         if input.query.trim().is_empty() {
             return ToolResult::error("query is empty");
         }
+        let time_range = match parse_time_range(input.time_range.as_deref()) {
+            Ok(tr) => tr,
+            Err(msg) => return ToolResult::error(msg),
+        };
         let web = match context(ctx) {
             Ok(w) => w,
             Err(e) => return ToolResult::error(format!("web search is not available: {e}")),
@@ -79,7 +89,12 @@ impl Tool for WebSearchTool {
             results: input.num_results.unwrap_or(8).clamp(1, 20),
             read_pages: input.read_pages.unwrap_or(max_pages).min(max_pages),
         };
-        let r = web.research(&input.query, opts).await;
+        let search_opts = SearchOptions {
+            time_range,
+            include_domains: input.include_domains.unwrap_or_default(),
+            exclude_domains: input.exclude_domains.unwrap_or_default(),
+        };
+        let r = web.research_with(&input.query, opts, &search_opts).await;
         let failed = r.search.provider.is_none();
         let text = render(&r, &web);
         let mut report = ToolReport::new(
@@ -355,6 +370,19 @@ fn diagnostics(r: &Research) -> Value {
     })
 }
 
+fn parse_time_range(value: Option<&str>) -> std::result::Result<Option<TimeRange>, String> {
+    match value {
+        None => Ok(None),
+        Some("day") => Ok(Some(TimeRange::Day)),
+        Some("week") => Ok(Some(TimeRange::Week)),
+        Some("month") => Ok(Some(TimeRange::Month)),
+        Some("year") => Ok(Some(TimeRange::Year)),
+        Some(other) => Err(format!(
+            "unknown time_range `{other}` (day, week, month or year)"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,8 +390,22 @@ mod tests {
     #[test]
     fn test_schema() {
         let tool = WebSearchTool;
-        assert!(tool.input_schema()["properties"]["query"].is_object());
+        let schema = tool.input_schema();
+        assert!(schema["properties"]["query"].is_object());
+        assert!(schema["properties"]["time_range"].is_object());
+        assert!(schema["properties"]["include_domains"].is_object());
+        assert!(schema["properties"]["exclude_domains"].is_object());
         assert_eq!(tool.category(), ToolCategory::Web);
         assert_eq!(tool.permission_level(), PermissionLevel::ReadOnly);
+    }
+
+    #[test]
+    fn test_parse_time_range_validation() {
+        assert_eq!(parse_time_range(None).unwrap(), None);
+        assert_eq!(parse_time_range(Some("day")).unwrap(), Some(TimeRange::Day));
+        assert_eq!(parse_time_range(Some("week")).unwrap(), Some(TimeRange::Week));
+        assert_eq!(parse_time_range(Some("month")).unwrap(), Some(TimeRange::Month));
+        assert_eq!(parse_time_range(Some("year")).unwrap(), Some(TimeRange::Year));
+        assert!(parse_time_range(Some("hour")).is_err());
     }
 }

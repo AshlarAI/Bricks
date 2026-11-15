@@ -27,18 +27,22 @@ What to know:
 | provider | key header | default endpoint |
 |---|---|---|
 | `duckduckgo` (default, no key) | none | `https://html.duckduckgo.com/html/` |
+| `ddg_lite` (no key) | none | `https://lite.duckduckgo.com/lite/` |
+| `searxng` (no key) | none | `http://127.0.0.1:8080/search` |
 | `brave` | `X-Subscription-Token` | `https://api.search.brave.com/res/v1/web/search` |
 | `tavily` | `Authorization: Bearer` | `https://api.tavily.com/search` |
 | `exa` | `x-api-key` | `https://api.exa.ai/search` |
 
 ```toml
 [web.search]
-provider = "duckduckgo"   # duckduckgo | brave | tavily | exa
-fallback = []             # for example ["tavily", "duckduckgo"], tried in order
-max_attempts = 3          # provider requests per search, retries included
-timeout_ms = 5000         # one provider request
-budget_ms = 12000         # the whole search, fallbacks included
-max_retry_wait_ms = 2000  # longest rate-limit wait honoured once
+provider = "duckduckgo"      # duckduckgo | ddg_lite | searxng | brave | tavily | exa
+fallback = []                # for example ["ddg_lite", "tavily"], tried in order
+max_attempts = 3             # provider requests per search, retries included
+timeout_ms = 5000            # one provider request
+budget_ms = 12000            # the whole search, fallbacks included
+max_retry_wait_ms = 2000     # longest rate-limit wait honoured once
+cache_ttl_ms = 45000         # in-memory search result cache TTL (0 disables)
+challenge_cooldown_ms = 60000 # skip a challenged provider when fallbacks exist (0 disables)
 
 [web.search.brave]
 api_key_env = "BRAVE_SEARCH_API_KEY"
@@ -145,7 +149,14 @@ per_source = 2        # first pass: at most this many per page
 ### `WebSearch`
 
 Input: `query`, `num_results` (default 8, max 20), `read_pages` (default is
-`max_pages`; 0 means results only).
+`max_pages`; 0 means results only), `time_range` (`day`, `week`, `month`,
+`year`), `include_domains`, `exclude_domains`.
+
+When early pages fail (for example `403`, JavaScript shell, or binary MIME),
+`WebSearch` keeps filling up from later search results within `budget_ms` until
+`read_pages` readable pages are reached. When Tavily or Exa return inline
+page text and a direct fetch is blocked or fails, Bricks stores that fallback
+content instead.
 
 The result contains, in order:
 
@@ -161,13 +172,18 @@ No second model call is made.
 ### `WebFetch`
 
 Input: `url` or `doc` (`D1`...), `max_chars` (characters, default 20 000, max
-40 000), `offset` (characters), `question`, `format` (`markdown`, `raw` or
-`json_summary`), `refresh`.
+40 000), `offset` (characters), `question`, `pattern`, `toc` (boolean),
+`format` (`markdown`, `raw` or `json_summary`), `refresh`.
 
-* **No `question`.** You get the Markdown in order, one window at a time. The
+* **No `question`, `pattern` or `toc`.** You get the Markdown in order, one window at a time. The
   output says which characters are shown, the next offset and how many remain.
-* **With `question`.** You get the passages most related to the question, and
-  how many were left out.
+  Truncated windows starting at `offset = 0` also list leading headings with
+  their offsets.
+* **With `question`.** You get the passages most related to the question (bounded
+  by `max_chars` when provided), and how many were left out.
+* **With `pattern`.** Case-insensitive regex or substring matches across lines,
+  with surrounding context lines and character offsets.
+* **With `toc: true`.** Markdown headings with their character offsets.
 * **`raw`.** The text as served, paged the same way.
 * **`json_summary`.** A summary of a JSON document.
 * A page is downloaded once per session. Later windows, `doc`, and a restored
@@ -180,7 +196,9 @@ Input: `url` or `doc` (`D1`...), `max_chars` (characters, default 20 000, max
   under `web/` (`D1.raw`, `D1.md`, `index.json`). It survives a restore and is
   deleted with the session.
 * When `[web.store] max_session_bytes` (default 64 MiB) is exceeded, the
-  oldest documents are removed.
+  oldest documents are removed. `[web.store] search_ttl_secs` (default 900; 0
+  disables expiry) controls how long `WebSearch` reuses stored pages, while
+  direct `WebFetch` reads remain cached until `refresh: true`.
 * Page text is untrusted content. It is shown as data. Nothing in it changes
   permissions, configuration, tools or prompts.
 

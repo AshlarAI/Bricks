@@ -156,15 +156,31 @@ impl WebStore {
 
     /// The latest document for a URL (requested or final).
     pub fn find_url(&self, url: &str) -> Option<DocEntry> {
+        self.find_fresh_url(url, 0)
+    }
+
+    /// The latest document for a URL fetched within `max_age_secs` (`0` = no expiry).
+    pub fn find_fresh_url(&self, url: &str, max_age_secs: u64) -> Option<DocEntry> {
         let key = crate::search::dedup_key(url);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         self.index
             .lock()
             .docs
             .iter()
             .rev()
             .find(|d| {
-                crate::search::dedup_key(&d.requested_url) == key
-                    || crate::search::dedup_key(&d.final_url) == key
+                let matches_url = crate::search::dedup_key(&d.requested_url) == key
+                    || crate::search::dedup_key(&d.final_url) == key;
+                if !matches_url {
+                    return false;
+                }
+                if max_age_secs == 0 {
+                    return true;
+                }
+                now.saturating_sub(d.fetched_at) <= max_age_secs
             })
             .cloned()
     }

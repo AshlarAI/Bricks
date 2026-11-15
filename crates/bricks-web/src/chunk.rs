@@ -54,9 +54,12 @@ pub fn split(md: &str, min_chars: usize, max_chars: usize) -> Vec<Passage> {
     let blocks = blocks(md);
     let chars = CharIndex::new(md);
     let mut out: Vec<Passage> = Vec::new();
-    let mut cur: Option<(usize, usize, Vec<String>)> = None; // byte range + section
-    let flush = |cur: &mut Option<(usize, usize, Vec<String>)>, out: &mut Vec<Passage>| {
-        if let Some((s, e, sec)) = cur.take() {
+    let mut cur: Option<(usize, usize, Vec<String>, bool)> = None; // byte range + section + has_body
+    let flush = |cur: &mut Option<(usize, usize, Vec<String>, bool)>, out: &mut Vec<Passage>| {
+        if let Some((s, e, sec, has_body)) = cur.take() {
+            if !has_body {
+                return;
+            }
             let text = md[s..e].trim_end();
             if !text.trim().is_empty() {
                 let e = s + text.len();
@@ -81,15 +84,34 @@ pub fn split(md: &str, min_chars: usize, max_chars: usize) -> Vec<Passage> {
             // still too small to stand alone.
             let small = cur
                 .as_ref()
-                .is_some_and(|(s, e, _)| chars.at(*e) - chars.at(*s) < min_chars / 2);
+                .is_some_and(|(s, e, _, _)| chars.at(*e) - chars.at(*s) < min_chars / 2);
             if !small {
                 flush(&mut cur, &mut out);
             }
         }
         if len > max_chars {
-            flush(&mut cur, &mut out);
-            for p in pieces(md, b, max_chars) {
-                let (s, e, fragment, header) = p;
+            let pending_heading_start = cur
+                .as_ref()
+                .filter(|(_, _, _, has_body)| !*has_body)
+                .map(|(s, _, _, _)| *s);
+            let head_chars = pending_heading_start
+                .map(|hs| chars.at(b.start) - chars.at(hs))
+                .filter(|&h| h < max_chars)
+                .unwrap_or(0);
+            if head_chars > 0 {
+                cur = None;
+            } else {
+                flush(&mut cur, &mut out);
+            }
+            for (idx, p) in pieces(md, b, max_chars, head_chars).into_iter().enumerate() {
+                let (mut s, e, fragment, header) = p;
+                if idx == 0
+                    && head_chars > 0
+                    && let Some(hs) = pending_heading_start
+                    && chars.at(e) - chars.at(hs) <= max_chars
+                {
+                    s = hs;
+                }
                 out.push(Passage {
                     index: out.len(),
                     section: b.section.clone(),
@@ -104,13 +126,17 @@ pub fn split(md: &str, min_chars: usize, max_chars: usize) -> Vec<Passage> {
             }
             continue;
         }
+        let is_body = b.kind != BlockKind::Heading;
         match &mut cur {
-            Some((s, e, _)) if chars.at(b.end) - chars.at(*s) <= max_chars => *e = b.end,
+            Some((s, e, _, has_body)) if chars.at(b.end) - chars.at(*s) <= max_chars => {
+                *e = b.end;
+                *has_body |= is_body;
+            }
             Some(_) => {
                 flush(&mut cur, &mut out);
-                cur = Some((b.start, b.end, b.section.clone()));
+                cur = Some((b.start, b.end, b.section.clone(), is_body));
             }
-            None => cur = Some((b.start, b.end, b.section.clone())),
+            None => cur = Some((b.start, b.end, b.section.clone(), is_body)),
         }
     }
     flush(&mut cur, &mut out);
@@ -172,9 +198,15 @@ fn blocks(md: &str) -> Vec<Block> {
             continue;
         }
         let (kind, mut j) = if t.starts_with("```") || t.starts_with("~~~") {
-            let fence = &t[..3];
+            let fch = t.chars().next().unwrap();
+            let flen = t.chars().take_while(|c| *c == fch).count();
             let mut j = i + 1;
-            while j < lines.len() && !lines[j].1.trim_start().starts_with(fence) {
+            while j < lines.len() {
+                let lt = lines[j].1.trim_start();
+                let run = lt.chars().take_while(|c| *c == fch).count();
+                if run >= flen && lt[run..].trim().is_empty() {
+                    break;
+                }
                 j += 1;
             }
             (BlockKind::Code, (j + 1).min(lines.len()))
@@ -230,7 +262,12 @@ fn line_spans(md: &str) -> Vec<(usize, &str)> {
 }
 
 /// Pieces of an oversized block: `(start, end, fragment label, table header)`.
-fn pieces(md: &str, b: &Block, max_chars: usize) -> Vec<(usize, usize, String, Option<String>)> {
+fn pieces(
+    md: &str,
+    b: &Block,
+    max_chars: usize,
+    first_prefix_chars: usize,
+) -> Vec<(usize, usize, String, Option<String>)> {
     let text = &md[b.start..b.end];
     // Cut points (byte offsets within `text`) where a piece may end.
     let cuts: Vec<usize> = match b.kind {
@@ -244,9 +281,15 @@ fn pieces(md: &str, b: &Block, max_chars: usize) -> Vec<(usize, usize, String, O
     let mut chars_since = 0usize;
     let mut last_cut = None;
     let mut prev = 0;
+    let first_limit = max_chars.saturating_sub(first_prefix_chars).max(1);
     for &c in cuts.iter().chain(std::iter::once(&text.len())) {
         let add = text[prev..c].chars().count();
-        if chars_since + add > max_chars && last_cut.is_some() {
+        let limit = if spans.is_empty() {
+            first_limit
+        } else {
+            max_chars
+        };
+        if chars_since + add > limit && last_cut.is_some() {
             let e = last_cut.take().unwrap();
             spans.push((s, e));
             s = e;
@@ -263,15 +306,16 @@ fn pieces(md: &str, b: &Block, max_chars: usize) -> Vec<(usize, usize, String, O
     // A single cut-free run longer than the limit is split at character
     // boundaries as a last resort, and said so.
     let mut final_spans = Vec::new();
-    for (a, z) in spans {
-        if text[a..z].chars().count() <= max_chars {
+    for (idx, (a, z)) in spans.into_iter().enumerate() {
+        let span_limit = if idx == 0 { first_limit } else { max_chars };
+        if text[a..z].chars().count() <= span_limit {
             final_spans.push((a, z));
             continue;
         }
         let mut start = a;
         let mut count = 0;
         for (i, _) in text[a..z].char_indices() {
-            if count == max_chars {
+            if count == span_limit {
                 final_spans.push((start, a + i));
                 start = a + i;
                 count = 0;
@@ -424,5 +468,31 @@ mod tests {
         let ps = split(md, 5, 200);
         assert_eq!(ps.len(), 1);
         assert_eq!(ps[0].char_end, md.trim_end().chars().count());
+    }
+
+    #[test]
+    fn heading_before_oversized_block_does_not_emit_orphan_heading_passage() {
+        let big_para = (0..12)
+            .map(|i| format!("Sentence number {i} explains how retries work."))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let md = format!("# Guide\n\n## Retry details\n\n{big_para}\n");
+        let ps = split(&md, 40, 160);
+        assert!(!ps.is_empty());
+        assert!(
+            ps.iter()
+                .all(|p| p.text.trim() != "## Retry details" && p.text.trim() != "# Guide"),
+            "no heading-only orphan passage: {ps:#?}"
+        );
+        assert!(ps[0].text.contains("## Retry details"));
+    }
+
+    #[test]
+    fn nested_tilde_inside_backtick_fence_stays_one_code_block() {
+        let md = "```md\n~~~\ninside\n~~~\n```\n\nAfter.\n";
+        let bs = blocks(md);
+        assert_eq!(bs.len(), 2);
+        assert_eq!(bs[0].kind, BlockKind::Code);
+        assert_eq!(bs[1].kind, BlockKind::Prose);
     }
 }

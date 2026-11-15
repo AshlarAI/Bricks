@@ -63,6 +63,11 @@ pub enum FetchError {
     BadRedirect,
     #[error("HTTP {status}")]
     Http { status: u16 },
+    #[error("unsupported content type {mime}")]
+    Binary {
+        mime: String,
+        declared_length: Option<u64>,
+    },
     #[error("network error: {0}")]
     Network(String),
     #[error("not started: the download budget of this call was exhausted")]
@@ -110,14 +115,22 @@ impl Fetcher {
         &self.policy
     }
 
-    fn host_slots(&self, url: &Url) -> Arc<Semaphore> {
-        let key = format!(
+    fn host_key(url: &Url) -> String {
+        format!(
             "{}:{}",
             url.host_str().unwrap_or_default().to_ascii_lowercase(),
             url.port_or_known_default().unwrap_or(0)
-        );
-        self.hosts
-            .lock()
+        )
+    }
+
+    fn host_slots(&self, url: &Url) -> Arc<Semaphore> {
+        let key = Self::host_key(url);
+        let mut hosts = self.hosts.lock();
+        if hosts.len() > 256 && !hosts.contains_key(&key) {
+            let per_host = self.cfg.per_host;
+            hosts.retain(|_, sem| Arc::strong_count(sem) > 1 || sem.available_permits() < per_host);
+        }
+        hosts
             .entry(key)
             .or_insert_with(|| Arc::new(Semaphore::new(self.cfg.per_host)))
             .clone()
@@ -135,8 +148,17 @@ impl Fetcher {
         self: &Arc<Self>,
         urls: &[String],
     ) -> Vec<Result<FetchedPage, FetchError>> {
+        self.fetch_many_until(urls, Instant::now() + self.cfg.budget)
+            .await
+    }
+
+    /// Download several pages concurrently bounded by an explicit `deadline`.
+    pub async fn fetch_many_until(
+        self: &Arc<Self>,
+        urls: &[String],
+        deadline: Instant,
+    ) -> Vec<Result<FetchedPage, FetchError>> {
         let budget = Arc::new(AtomicUsize::new(self.cfg.max_total_bytes));
-        let deadline = Instant::now() + self.cfg.budget;
         let mut set = tokio::task::JoinSet::new();
         for (i, url) in urls.iter().enumerate() {
             let (this, url, budget) = (self.clone(), url.clone(), budget.clone());
@@ -162,16 +184,19 @@ impl Fetcher {
         let requested = Url::parse(url).map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
         self.policy.check_url(&requested)?;
         // Waiting for slots counts against the call's budget, not the page's.
+        // Acquire the per-host slot before the global slot so a saturated host
+        // does not starve unrelated hosts.
         let remaining = deadline.saturating_duration_since(Instant::now());
+        let host_key = Self::host_key(&requested);
         let host = self.host_slots(&requested);
-        let permits = tokio::time::timeout(remaining, async {
-            let g = self.global.clone().acquire_owned().await;
+        let (host_permit, global_permit) = tokio::time::timeout(remaining, async {
             let h = host.acquire_owned().await;
-            (g, h)
+            let g = self.global.clone().acquire_owned().await;
+            (h, g)
         })
         .await
         .map_err(|_| FetchError::Budget)?;
-        let _permits = permits;
+        let _global_permit = global_permit;
         if budget.load(Ordering::SeqCst) == 0 {
             return Err(FetchError::Budget);
         }
@@ -183,7 +208,13 @@ impl Fetcher {
             return Err(FetchError::Budget);
         }
         let start = Instant::now();
-        match tokio::time::timeout(limit, self.download(requested, budget, start)).await {
+        let page_deadline = start + limit;
+        match tokio::time::timeout(
+            limit,
+            self.download(requested, host_key, host_permit, budget, start, page_deadline),
+        )
+        .await
+        {
             Ok(r) => r,
             Err(_) => Err(FetchError::Timeout(limit)),
         }
@@ -192,24 +223,26 @@ impl Fetcher {
     async fn download(
         &self,
         requested: Url,
+        mut current_host: String,
+        host_permit: Result<tokio::sync::OwnedSemaphorePermit, tokio::sync::AcquireError>,
         budget: &AtomicUsize,
         start: Instant,
+        page_deadline: Instant,
     ) -> Result<FetchedPage, FetchError> {
+        let mut _host_permit = host_permit.ok();
         let mut current = requested.clone();
         let mut redirects = 0;
         let mut response = loop {
             self.policy.check_url(&current)?;
-            let resp = self
-                .client
-                .get(current.clone())
-                .header(
-                    reqwest::header::ACCEPT,
-                    "text/html,application/xhtml+xml,text/markdown;q=0.9,text/plain;q=0.9,\
-                     application/json;q=0.9,*/*;q=0.5",
-                )
-                .send()
-                .await
-                .map_err(network)?;
+            let next_host = Self::host_key(&current);
+            if next_host != current_host {
+                // Release the previous host slot before acquiring the redirect target's slot.
+                _host_permit = None;
+                let sem = self.host_slots(&current);
+                _host_permit = sem.acquire_owned().await.ok();
+                current_host = next_host;
+            }
+            let resp = self.send_with_retry(&current, page_deadline).await?;
             if resp.status().is_redirection() {
                 if redirects >= self.cfg.max_redirects {
                     return Err(FetchError::TooManyRedirects(self.cfg.max_redirects));
@@ -244,6 +277,12 @@ impl Fetcher {
         let declared_length = header(reqwest::header::CONTENT_LENGTH)
             .and_then(|v| v.parse().ok())
             .or_else(|| response.content_length());
+        if let Some(mime) = crate::extract::is_obvious_binary_mime(content_type.as_deref()) {
+            return Err(FetchError::Binary {
+                mime,
+                declared_length,
+            });
+        }
         let max = self.cfg.max_page_bytes;
         let mut body = Vec::new();
         let mut truncated = false;
@@ -283,6 +322,44 @@ impl Fetcher {
             redirects,
             elapsed: start.elapsed(),
         })
+    }
+
+    async fn send_with_retry(
+        &self,
+        url: &Url,
+        page_deadline: Instant,
+    ) -> Result<reqwest::Response, FetchError> {
+        let mut attempt = 0;
+        loop {
+            let res = self
+                .client
+                .get(url.clone())
+                .header(
+                    reqwest::header::ACCEPT,
+                    "text/html,application/xhtml+xml,text/markdown;q=0.9,text/plain;q=0.9,\
+                     application/json;q=0.9,*/*;q=0.5",
+                )
+                .send()
+                .await;
+            match res {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    let transient = e.is_connect() || e.is_request();
+                    let err = network(e);
+                    if attempt == 0
+                        && transient
+                        && !matches!(err, FetchError::Policy(_))
+                        && page_deadline.saturating_duration_since(Instant::now())
+                            > Duration::from_millis(300)
+                    {
+                        attempt += 1;
+                        tokio::time::sleep(Duration::from_millis(75)).await;
+                        continue;
+                    }
+                    return Err(err);
+                }
+            }
+        }
     }
 }
 

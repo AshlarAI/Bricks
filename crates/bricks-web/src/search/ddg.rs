@@ -8,7 +8,7 @@
 //! Requests carry the configured, identified User-Agent; no challenge is
 //! answered or worked around.
 
-use super::{RawHit, SearchError};
+use super::{RawHit, SearchError, SearchOptions, TimeRange, parse_retry_after_ms, scoped_query};
 use crate::config::{ProviderConfig, ProviderKind};
 use dom_query::Document;
 use url::Url;
@@ -17,10 +17,35 @@ pub(crate) async fn search(
     client: &reqwest::Client,
     p: &ProviderConfig,
     query: &str,
+    opts: &SearchOptions,
 ) -> Result<Vec<RawHit>, SearchError> {
+    search_inner(client, p, query, opts, false).await
+}
+
+pub(crate) async fn search_lite(
+    client: &reqwest::Client,
+    p: &ProviderConfig,
+    query: &str,
+    opts: &SearchOptions,
+) -> Result<Vec<RawHit>, SearchError> {
+    search_inner(client, p, query, opts, true).await
+}
+
+async fn search_inner(
+    client: &reqwest::Client,
+    p: &ProviderConfig,
+    query: &str,
+    opts: &SearchOptions,
+    lite: bool,
+) -> Result<Vec<RawHit>, SearchError> {
+    let q_str = scoped_query(query, opts);
+    let mut params = vec![("q", q_str)];
+    if let Some(df) = ddg_df(opts.time_range) {
+        params.push(("df", df.to_string()));
+    }
     let resp = client
         .get(p.endpoint.clone())
-        .query(&[("q", query)])
+        .query(&params)
         .header(reqwest::header::ACCEPT, "text/html")
         .send()
         .await
@@ -32,11 +57,24 @@ pub(crate) async fn search(
             }
         })?;
     let status = resp.status().as_u16();
-    let body = read_limited(resp, 2_000_000).await?;
-    parse(status, &body, &p.endpoint)
+    let retry_after = parse_retry_after_ms(resp.headers().get("retry-after"));
+    let body = read_limited_text(resp, 2_000_000).await?;
+    parse_status(status, retry_after, &body, &p.endpoint, lite)
 }
 
-async fn read_limited(mut resp: reqwest::Response, max: usize) -> Result<String, SearchError> {
+fn ddg_df(tr: Option<TimeRange>) -> Option<&'static str> {
+    match tr? {
+        TimeRange::Day => Some("d"),
+        TimeRange::Week => Some("w"),
+        TimeRange::Month => Some("m"),
+        TimeRange::Year => Some("y"),
+    }
+}
+
+pub(crate) async fn read_limited_text(
+    mut resp: reqwest::Response,
+    max: usize,
+) -> Result<String, SearchError> {
     let mut buf = Vec::new();
     while let Some(c) = resp
         .chunk()
@@ -55,13 +93,31 @@ async fn read_limited(mut resp: reqwest::Response, max: usize) -> Result<String,
 
 /// Classify and parse a results page.
 pub fn parse(status: u16, body: &str, endpoint: &Url) -> Result<Vec<RawHit>, SearchError> {
+    parse_status(status, None, body, endpoint, false)
+}
+
+/// Classify and parse a DuckDuckGo Lite results page.
+pub fn parse_lite(status: u16, body: &str, endpoint: &Url) -> Result<Vec<RawHit>, SearchError> {
+    parse_status(status, None, body, endpoint, true)
+}
+
+fn parse_status(
+    status: u16,
+    retry_after_ms: Option<u64>,
+    body: &str,
+    endpoint: &Url,
+    lite: bool,
+) -> Result<Vec<RawHit>, SearchError> {
     let lower = body.to_ascii_lowercase();
     if is_challenge(&lower) {
         return Err(SearchError::Challenge);
     }
     match status {
         200 => {}
-        403 | 429 => {
+        429 => {
+            return Err(SearchError::RateLimited { retry_after_ms });
+        }
+        403 => {
             return Err(SearchError::Http {
                 status,
                 detail: "the service refused the request".into(),
@@ -75,6 +131,9 @@ pub fn parse(status: u16, body: &str, endpoint: &Url) -> Result<Vec<RawHit>, Sea
         }
     }
     let doc = Document::from(body);
+    if lite {
+        return parse_lite_doc(&doc, &lower, endpoint);
+    }
     let mut hits = Vec::new();
     let mut rank = 0;
     for node in doc.select("div.result, div.web-result").iter() {
@@ -101,6 +160,7 @@ pub fn parse(status: u16, body: &str, endpoint: &Url) -> Result<Vec<RawHit>, Sea
             snippet,
             provider: ProviderKind::DuckDuckGo,
             rank,
+            raw_content: None,
         });
     }
     if !hits.is_empty() {
@@ -109,6 +169,45 @@ pub fn parse(status: u16, body: &str, endpoint: &Url) -> Result<Vec<RawHit>, Sea
     let no_results = doc.select(".no-results, .result--no-result").length() > 0
         || lower.contains("no results.")
         || lower.contains("no more results");
+    if no_results {
+        return Ok(Vec::new());
+    }
+    Err(SearchError::StructureChanged)
+}
+
+fn parse_lite_doc(doc: &Document, lower: &str, endpoint: &Url) -> Result<Vec<RawHit>, SearchError> {
+    let mut hits = Vec::new();
+    let mut rank = 0;
+    let snippets: Vec<String> = doc
+        .select("td.result-snippet")
+        .iter()
+        .map(|n| clean(&n.text()))
+        .collect();
+    for (idx, link) in doc.select("a.result-link").iter().enumerate() {
+        let Some(href) = link.attr("href") else {
+            continue;
+        };
+        rank += 1;
+        let Some(url) = result_url(&href, endpoint) else {
+            continue;
+        };
+        let title = clean(&link.text());
+        let snippet = snippets.get(idx).cloned().unwrap_or_default();
+        hits.push(RawHit {
+            title: if title.is_empty() { url.clone() } else { title },
+            url,
+            snippet,
+            provider: ProviderKind::DdgLite,
+            rank,
+            raw_content: None,
+        });
+    }
+    if !hits.is_empty() {
+        return Ok(hits);
+    }
+    let no_results = lower.contains("no results")
+        || lower.contains("no more results")
+        || doc.select(".no-results").length() > 0;
     if no_results {
         return Ok(Vec::new());
     }

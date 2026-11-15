@@ -11,9 +11,10 @@
 //! error messages quote at most a short excerpt of the body with the key
 //! masked.
 
-use super::{RawHit, SearchError, excerpt};
+use super::{RawHit, SearchError, SearchOptions, TimeRange, excerpt, scoped_query};
 use crate::config::{ProviderConfig, ProviderKind, Secret};
 use serde_json::{Value, json};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) async fn search(
     client: &reqwest::Client,
@@ -21,13 +22,26 @@ pub(crate) async fn search(
     key: &Secret,
     query: &str,
     count: usize,
+    opts: &SearchOptions,
 ) -> Result<Vec<RawHit>, SearchError> {
     let count = count.clamp(1, 20);
     let req = match p.kind {
         ProviderKind::Brave => {
-            let mut q = vec![("q", query.to_string()), ("count", count.to_string())];
+            let mut q = vec![
+                ("q", scoped_query(query, opts)),
+                ("count", count.to_string()),
+            ];
             if let Some(c) = &p.mode {
                 q.push(("country", c.clone()));
+            }
+            if let Some(tr) = opts.time_range {
+                let f = match tr {
+                    TimeRange::Day => "pd",
+                    TimeRange::Week => "pw",
+                    TimeRange::Month => "pm",
+                    TimeRange::Year => "py",
+                };
+                q.push(("freshness", f.to_string()));
             }
             client
                 .get(p.endpoint.clone())
@@ -35,23 +49,65 @@ pub(crate) async fn search(
                 .header("X-Subscription-Token", key.expose())
                 .header(reqwest::header::ACCEPT, "application/json")
         }
-        ProviderKind::Tavily => client
-            .post(p.endpoint.clone())
-            .bearer_auth(key.expose())
-            .json(&json!({
+        ProviderKind::Tavily => {
+            let mut body = json!({
                 "query": query,
                 "max_results": count,
                 "search_depth": p.mode.as_deref().unwrap_or("basic"),
-            })),
-        ProviderKind::Exa => client
-            .post(p.endpoint.clone())
-            .header("x-api-key", key.expose())
-            .json(&json!({
+                "include_raw_content": true,
+            });
+            if let Some(obj) = body.as_object_mut() {
+                if let Some(tr) = opts.time_range {
+                    let v = match tr {
+                        TimeRange::Day => "day",
+                        TimeRange::Week => "week",
+                        TimeRange::Month => "month",
+                        TimeRange::Year => "year",
+                    };
+                    obj.insert("time_range".into(), json!(v));
+                }
+                let inc = clean_domains(&opts.include_domains);
+                if !inc.is_empty() {
+                    obj.insert("include_domains".into(), json!(inc));
+                }
+                let exc = clean_domains(&opts.exclude_domains);
+                if !exc.is_empty() {
+                    obj.insert("exclude_domains".into(), json!(exc));
+                }
+            }
+            client
+                .post(p.endpoint.clone())
+                .bearer_auth(key.expose())
+                .json(&body)
+        }
+        ProviderKind::Exa => {
+            let mut body = json!({
                 "query": query,
                 "numResults": count,
                 "type": p.mode.as_deref().unwrap_or("auto"),
-            })),
-        ProviderKind::DuckDuckGo => unreachable!("not a keyed provider"),
+                "contents": { "text": { "maxCharacters": 8000 } },
+            });
+            if let Some(obj) = body.as_object_mut() {
+                if let Some(tr) = opts.time_range {
+                    obj.insert("startPublishedDate".into(), json!(exa_start_date(tr)));
+                }
+                let inc = clean_domains(&opts.include_domains);
+                if !inc.is_empty() {
+                    obj.insert("includeDomains".into(), json!(inc));
+                }
+                let exc = clean_domains(&opts.exclude_domains);
+                if !exc.is_empty() {
+                    obj.insert("excludeDomains".into(), json!(exc));
+                }
+            }
+            client
+                .post(p.endpoint.clone())
+                .header("x-api-key", key.expose())
+                .json(&body)
+        }
+        ProviderKind::DuckDuckGo | ProviderKind::DdgLite | ProviderKind::Searxng => {
+            unreachable!("not a keyed provider")
+        }
     };
     let resp = req.send().await.map_err(|e| {
         if e.is_timeout() {
@@ -127,7 +183,9 @@ pub fn parse(kind: ProviderKind, v: &Value) -> Result<Vec<RawHit>, SearchError> 
         ProviderKind::Brave => (v.pointer("/web/results"), "description"),
         ProviderKind::Tavily => (v.get("results"), "content"),
         ProviderKind::Exa => (v.get("results"), "text"),
-        ProviderKind::DuckDuckGo => unreachable!(),
+        ProviderKind::DuckDuckGo | ProviderKind::DdgLite | ProviderKind::Searxng => {
+            unreachable!()
+        }
     };
     let Some(list) = list else {
         // Brave omits `web` when there is nothing to return.
@@ -153,11 +211,8 @@ pub fn parse(kind: ProviderKind, v: &Value) -> Result<Vec<RawHit>, SearchError> 
             continue;
         }
         let title = r.get("title").and_then(Value::as_str).unwrap_or(url);
-        let mut snippet = r
-            .get(snippet_key)
-            .and_then(Value::as_str)
-            .map(strip_tags)
-            .unwrap_or_default();
+        let raw_text = r.get(snippet_key).and_then(Value::as_str);
+        let mut snippet = raw_text.map(strip_tags).unwrap_or_default();
         if kind == ProviderKind::Exa && snippet.is_empty() {
             snippet = r
                 .get("highlights")
@@ -170,15 +225,68 @@ pub fn parse(kind: ProviderKind, v: &Value) -> Result<Vec<RawHit>, SearchError> 
                 })
                 .unwrap_or_default();
         }
+        let raw_content = match kind {
+            ProviderKind::Tavily => r
+                .get("raw_content")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| s.chars().count() >= 200)
+                .map(str::to_string),
+            ProviderKind::Exa => raw_text
+                .map(str::trim)
+                .filter(|s| s.chars().count() >= 400)
+                .map(str::to_string),
+            _ => None,
+        };
         out.push(RawHit {
             title: strip_tags(title),
             url: url.to_string(),
             snippet: snippet.chars().take(500).collect(),
             provider: kind,
             rank: i + 1,
+            raw_content,
         });
     }
     Ok(out)
+}
+
+fn clean_domains(domains: &[String]) -> Vec<String> {
+    domains
+        .iter()
+        .map(|d| d.trim().trim_start_matches('.').to_string())
+        .filter(|d| !d.is_empty())
+        .collect()
+}
+
+fn exa_start_date(tr: TimeRange) -> String {
+    let days = match tr {
+        TimeRange::Day => 1,
+        TimeRange::Week => 7,
+        TimeRange::Month => 30,
+        TimeRange::Year => 365,
+    };
+    let secs = SystemTime::now()
+        .checked_sub(Duration::from_secs(days * 86_400))
+        .unwrap_or(UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (y, m, d) = civil_from_days((secs / 86_400) as i64);
+    format!("{y:04}-{m:02}-{d:02}T00:00:00.000Z")
+}
+
+/// Howard Hinnant's civil-from-days algorithm (days since 1970-01-01).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (y + i64::from(m <= 2), m as u32, d as u32)
 }
 
 /// Brave highlights terms with `<strong>`; snippets are text.

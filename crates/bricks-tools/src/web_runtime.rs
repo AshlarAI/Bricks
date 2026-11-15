@@ -18,6 +18,8 @@ pub struct WebRuntime(pub Arc<WebContext>);
 static DEFAULTS: once_cell::sync::Lazy<dashmap::DashMap<String, Arc<WebContext>>> =
     once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
+const MAX_DEFAULT_SESSIONS: usize = 32;
+
 /// The session's web context.
 pub fn context(ctx: &ToolContext) -> Result<Arc<WebContext>, String> {
     if let Some(rt) = ctx.extensions.get::<WebRuntime>() {
@@ -33,6 +35,11 @@ pub fn context(ctx: &ToolContext) -> Result<Arc<WebContext>, String> {
         .join(sanitize(&ctx.session_id));
     let store = Arc::new(WebStore::open(dir, config.store.max_session_bytes));
     let c = Arc::new(WebContext::new(config, Some(store))?);
+    if DEFAULTS.len() >= MAX_DEFAULT_SESSIONS
+        && let Some(evict_key) = DEFAULTS.iter().next().map(|e| e.key().clone())
+    {
+        DEFAULTS.remove(&evict_key);
+    }
     DEFAULTS.insert(ctx.session_id.clone(), c.clone());
     Ok(c)
 }

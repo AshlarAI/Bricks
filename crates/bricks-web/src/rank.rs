@@ -138,14 +138,23 @@ fn norm(s: &str) -> String {
     out
 }
 
-/// Plural `s`/`x` of longer alphabetic words (both languages).
+/// Plural `s` / `-ies` / `-es` normalization of longer alphabetic words (both languages).
 fn stem(t: &str) -> String {
-    if t.chars().count() > 4
-        && t.chars().all(|c| c.is_alphabetic())
-        && let Some(s) = t.strip_suffix('s')
-        && !s.ends_with('s')
-    {
-        return s.to_string();
+    let chars = t.chars().count();
+    if chars > 4 && t.chars().all(|c| c.is_alphabetic()) {
+        if let Some(stem) = t.strip_suffix("ies") {
+            return format!("{stem}y");
+        }
+        for suffix in ["ches", "shes", "sses", "xes", "zes"] {
+            if t.ends_with(suffix) {
+                return t[..t.len() - 2].to_string();
+            }
+        }
+        if let Some(s) = t.strip_suffix('s')
+            && !s.ends_with(['s', 'u'])
+        {
+            return s.to_string();
+        }
     }
     t.to_string()
 }
@@ -198,29 +207,72 @@ pub struct Selection {
     pub left_for_budget: usize,
 }
 
-/// Score every candidate (deterministic order: score, then page, then
-/// position).
-pub fn score(query: &str, candidates: &[Candidate<'_>]) -> Vec<Scored> {
-    let corpus: Vec<&str> = candidates.iter().map(|c| c.passage.text.as_str()).collect();
+struct Prepared {
+    indexed_text: String,
+    tokens: HashSet<String>,
+    facts: (BTreeSet<String>, usize),
+    section_tokens: HashSet<String>,
+}
+
+fn prepare_candidates(candidates: &[Candidate<'_>]) -> Vec<Prepared> {
+    candidates
+        .iter()
+        .map(|c| {
+            let indexed_text = if c.passage.section.is_empty() {
+                c.passage.text.clone()
+            } else {
+                format!("{}\n{}", c.passage.section.join(" "), c.passage.text)
+            };
+            let tokens: HashSet<String> = tokenize(&c.passage.text).into_iter().collect();
+            let section_tokens: HashSet<String> = c
+                .passage
+                .section
+                .iter()
+                .flat_map(|s| tokenize(s))
+                .collect();
+            let facts = facts(&c.passage.text);
+            Prepared {
+                indexed_text,
+                tokens,
+                facts,
+                section_tokens,
+            }
+        })
+        .collect()
+}
+
+fn score_prepared(query: &str, candidates: &[Candidate<'_>], prep: &[Prepared]) -> Vec<Scored> {
+    let corpus: Vec<&str> = prep.iter().map(|p| p.indexed_text.as_str()).collect();
     let embedder: Embedder<u32, LexTokenizer> =
         EmbedderBuilder::with_tokenizer_and_fit_to_corpus(LexTokenizer, &corpus).build();
     let mut scorer = Scorer::<usize, u32>::new();
-    for (i, c) in candidates.iter().enumerate() {
-        scorer.upsert(&i, embedder.embed(&c.passage.text));
+    for (i, p) in prep.iter().enumerate() {
+        scorer.upsert(&i, embedder.embed(&p.indexed_text));
     }
     let q_embed = embedder.embed(query);
     let q_terms: BTreeSet<String> = tokenize(query).into_iter().collect();
     let mut out: Vec<Scored> = candidates
         .iter()
+        .zip(prep)
         .enumerate()
-        .map(|(i, c)| {
-            let score = scorer.score(&i, &q_embed).unwrap_or(0.0);
-            let terms: HashSet<String> = tokenize(&c.passage.text).into_iter().collect();
-            let present = q_terms.iter().filter(|t| terms.contains(*t)).count();
+        .map(|(i, (c, p))| {
+            let raw = scorer.score(&i, &q_embed).unwrap_or(0.0);
+            let mut score = if raw.is_finite() && raw > 0.0 { raw } else { 0.0 };
+            if score > 0.0 {
+                let sec_hit = q_terms.iter().any(|t| p.section_tokens.contains(t));
+                if sec_hit {
+                    score *= 1.15;
+                }
+                score /= 1.0 + 0.03 * c.source as f32;
+            }
+            let present = q_terms
+                .iter()
+                .filter(|t| p.tokens.contains(*t) || p.section_tokens.contains(*t))
+                .count();
             Scored {
                 source: c.source,
                 passage: c.passage.index,
-                score: if score.is_finite() { score } else { 0.0 },
+                score,
                 coverage: if q_terms.is_empty() {
                     0.0
                 } else {
@@ -238,6 +290,13 @@ pub fn score(query: &str, candidates: &[Candidate<'_>]) -> Vec<Scored> {
     out
 }
 
+/// Score every candidate (deterministic order: score, then page, then
+/// position).
+pub fn score(query: &str, candidates: &[Candidate<'_>]) -> Vec<Scored> {
+    let prep = prepare_candidates(candidates);
+    score_prepared(query, candidates, &prep)
+}
+
 /// Choose passages for `query` among the pages' passages.
 pub fn select(query: &str, pages: &[Vec<Passage>], cfg: &PassageConfig) -> Selection {
     let candidates: Vec<Candidate<'_>> = pages
@@ -245,7 +304,13 @@ pub fn select(query: &str, pages: &[Vec<Passage>], cfg: &PassageConfig) -> Selec
         .enumerate()
         .flat_map(|(source, ps)| ps.iter().map(move |passage| Candidate { source, passage }))
         .collect();
-    let scored = score(query, &candidates);
+    let prep = prepare_candidates(&candidates);
+    let index_of: std::collections::HashMap<(usize, usize), usize> = candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| ((c.source, c.passage.index), i))
+        .collect();
+    let scored = score_prepared(query, &candidates, &prep);
     let best_cov = scored.iter().map(|s| s.coverage).fold(0.0f32, f32::max);
     let relevance = if scored.iter().all(|s| s.score <= 0.0) {
         Relevance::None
@@ -287,11 +352,17 @@ pub fn select(query: &str, pages: &[Vec<Passage>], cfg: &PassageConfig) -> Selec
                 continue;
             }
             let t = text(s.source, s.passage);
+            let cand_idx = index_of.get(&(s.source, s.passage)).copied();
             if let Some(kept) = sel
                 .picked
                 .iter()
                 .map(|p| (p.scored.source, p.scored.passage))
-                .find(|(ks, kp)| near_duplicate(text(*ks, *kp), t))
+                .find(|(ks, kp)| match (cand_idx, index_of.get(&(*ks, *kp)).copied()) {
+                    (Some(ci), Some(ki)) => {
+                        near_duplicate_tokens(text(*ks, *kp), t, &prep[ki], &prep[ci])
+                    }
+                    _ => near_duplicate(text(*ks, *kp), t),
+                })
             {
                 sel.duplicates.push(((s.source, s.passage), kept));
                 taken.insert((s.source, s.passage));
@@ -376,6 +447,18 @@ fn starts_mid_thought(t: &str) -> bool {
         )
 }
 
+fn near_duplicate_tokens(a_text: &str, b_text: &str, a: &Prepared, b: &Prepared) -> bool {
+    if a.facts != b.facts {
+        return false;
+    }
+    if a.tokens.is_empty() || b.tokens.is_empty() {
+        return a_text.trim() == b_text.trim();
+    }
+    let inter = a.tokens.intersection(&b.tokens).count() as f32;
+    let union = a.tokens.union(&b.tokens).count() as f32;
+    inter / union >= 0.85
+}
+
 /// Same content, give or take wording — and the same facts.
 pub fn near_duplicate(a: &str, b: &str) -> bool {
     if facts(a) != facts(b) {
@@ -403,36 +486,43 @@ fn facts(t: &str) -> (BTreeSet<String>, usize) {
         .filter(|w| w.chars().any(|c| c.is_ascii_digit()))
         .map(str::to_string)
         .collect();
-    let negations = lower
+    let words: Vec<&str> = lower
         .split(|c: char| !c.is_alphanumeric() && c != '\'')
-        .filter(|w| {
-            matches!(
-                *w,
-                "not"
-                    | "no"
-                    | "never"
-                    | "none"
-                    | "cannot"
-                    | "without"
-                    | "don't"
-                    | "doesn't"
-                    | "isn't"
-                    | "aren't"
-                    | "won't"
-                    | "can't"
-                    | "ne"
-                    | "n'"
-                    | "pas"
-                    | "jamais"
-                    | "aucun"
-                    | "aucune"
-                    | "sans"
-                    | "non"
-                    | "plus"
-            )
-        })
-        .count()
-        + lower.matches("n't").count();
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut negations = lower.matches("n't").count();
+    for (idx, w) in words.iter().enumerate() {
+        let is_neg = matches!(
+            *w,
+            "not"
+                | "no"
+                | "never"
+                | "none"
+                | "cannot"
+                | "without"
+                | "don't"
+                | "doesn't"
+                | "isn't"
+                | "aren't"
+                | "won't"
+                | "can't"
+                | "ne"
+                | "n'"
+                | "pas"
+                | "jamais"
+                | "aucun"
+                | "aucune"
+                | "sans"
+                | "non"
+        ) || (*w == "plus"
+            && idx > 0
+            && words[idx.saturating_sub(6)..idx]
+                .iter()
+                .any(|p| matches!(*p, "ne" | "n'" | "non" | "sans") || p.starts_with("n'")));
+        if is_neg {
+            negations += 1;
+        }
+    }
     (numbers, negations)
 }
 
@@ -448,7 +538,7 @@ mod tests {
             "configure",
             "max_retries",
             "max",
-            "retrie",
+            "retry",
             "httpclient",
             "http",
             "client",
@@ -580,5 +670,35 @@ mod tests {
             })
             .sum();
         assert!(total <= 300);
+    }
+
+    #[test]
+    fn stemming_matches_ies_and_plus_in_english_is_not_negation() {
+        let q = tokenize("retry policy");
+        let p = tokenize("Automatic retries are configurable");
+        assert!(q.iter().any(|t| p.contains(t)), "q={q:?} p={p:?}");
+        assert!(near_duplicate(
+            "The timeout is 30 seconds plus jitter for all requests.",
+            "The timeout is 30 seconds with jitter for all requests."
+        ));
+        assert!(!near_duplicate(
+            "Le délai n'est plus de 30 secondes.",
+            "Le délai est de 30 secondes."
+        ));
+    }
+
+    #[test]
+    fn section_headings_contribute_to_bm25_recall() {
+        let md = "# Client\n\n## Retry Policy\n\nFirst paragraph introduces the configuration builder.\n\nSecond paragraph: default is 3 attempts with exponential backoff.\n";
+        let ps = split(md, 20, 95);
+        assert!(ps.len() >= 2, "{ps:#?}");
+        let sel = select("retry policy default", std::slice::from_ref(&ps), &cfg());
+        assert_eq!(sel.relevance, Relevance::Found);
+        assert!(
+            sel.picked
+                .iter()
+                .any(|p| ps[p.scored.passage].text.contains("default is 3")),
+            "{sel:?}"
+        );
     }
 }

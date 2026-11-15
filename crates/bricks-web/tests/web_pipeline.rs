@@ -764,3 +764,415 @@ async fn research_reads_pages_selects_traceable_passages_and_survives_a_restore(
     );
     assert!(restored.stored("D2").is_some());
 }
+
+#[tokio::test]
+async fn ddg_rate_limit_retries_challenge_cooldown_falls_back_and_cache_dedups() {
+    let ddg_calls = Arc::new(AtomicUsize::new(0));
+    let searx_calls = Arc::new(AtomicUsize::new(0));
+    let lite_calls = Arc::new(AtomicUsize::new(0));
+    let ddg_c = ddg_calls.clone();
+    let searx_c = searx_calls.clone();
+    let lite_c = lite_calls.clone();
+
+    let server = TestServer::start(move |req| {
+        let ddg_c = ddg_c.clone();
+        let searx_c = searx_c.clone();
+        let lite_c = lite_c.clone();
+        async move {
+            let q = req.query("q").unwrap_or_default();
+            match req.path() {
+                "/html/" => {
+                    let n = ddg_c.fetch_add(1, Ordering::SeqCst);
+                    if q == "rate" && n == 0 {
+                        Reply::text(429, "text/html", "Too Many Requests")
+                            .header("retry-after", "0")
+                    } else if q == "rate" {
+                        Reply::html(
+                            fixture("ddg/results.html")
+                                .replace("{{BASE_ENC}}", "https%3A%2F%2Fdocs.example.com")
+                                .replace("{{BASE}}", "https://blog.example.fr"),
+                        )
+                    } else {
+                        Reply::html(fixture("ddg/challenge.html"))
+                    }
+                }
+                "/searx" => {
+                    searx_c.fetch_add(1, Ordering::SeqCst);
+                    if q == "challenge_once" {
+                        Reply::text(503, "text/plain", "temporarily unavailable")
+                    } else {
+                        Reply::json(
+                            200,
+                            r#"{"results":[{"title":"SearX Hit","url":"https://docs.example.com/searx","content":"Clean JSON result"}]}"#,
+                        )
+                    }
+                }
+                "/lite/" => {
+                    lite_c.fetch_add(1, Ordering::SeqCst);
+                    Reply::html(
+                        r#"<html><body><table>
+                        <tr><td><a class="result-link" href="https://lite.example.org/guide">Lite Guide</a></td></tr>
+                        <tr><td class="result-snippet">Fallback snippet from DDG Lite.</td></tr>
+                        </table></body></html>"#,
+                    )
+                }
+                _ => Reply::new(404),
+            }
+        }
+    })
+    .await;
+
+    let mut c = local_config();
+    c.search.fallback = vec![ProviderKind::Searxng, ProviderKind::DdgLite];
+    c.search.max_attempts = 5;
+    c.search.cache_ttl = Duration::from_secs(30);
+    c.search.challenge_cooldown = Duration::from_secs(60);
+    endpoint(&server, ProviderKind::DuckDuckGo, "/html/", &mut c);
+    endpoint(&server, ProviderKind::Searxng, "/searx", &mut c);
+    endpoint(&server, ProviderKind::DdgLite, "/lite/", &mut c);
+
+    let s = Searcher::new(c.search.clone(), &c.fetch.user_agent).unwrap();
+
+    // 1) DDG 429 maps to RateLimited and retries DDG once immediately.
+    let rate = s.search("rate", 5).await;
+    assert_eq!(rate.provider, Some(ProviderKind::DuckDuckGo));
+    assert!(matches!(
+        rate.attempts[0].outcome,
+        Err(SearchError::RateLimited { .. })
+    ));
+    assert_eq!(ddg_calls.load(Ordering::SeqCst), 2);
+
+    // 2) Identical cached query does not hit DDG again.
+    let cached = s.search("rate", 5).await;
+    assert_eq!(cached.hits.len(), rate.hits.len());
+    assert_eq!(ddg_calls.load(Ordering::SeqCst), 2);
+
+    // 3) Challenge puts DuckDuckGo into cooldown and cascades through Searxng (503) to DdgLite.
+    let chal = s.search("challenge_once", 5).await;
+    assert_eq!(chal.provider, Some(ProviderKind::DdgLite));
+    assert_eq!(chal.hits[0].url, "https://lite.example.org/guide");
+    assert_eq!(ddg_calls.load(Ordering::SeqCst), 3);
+
+    // 4) Subsequent query skips DuckDuckGo without sending a network request to it.
+    let next = s.search("after_cooldown", 5).await;
+    assert_eq!(next.provider, Some(ProviderKind::Searxng));
+    assert_eq!(next.hits[0].url, "https://docs.example.com/searx");
+    assert_eq!(
+        ddg_calls.load(Ordering::SeqCst),
+        3,
+        "cooldown must skip DDG over the wire when fallbacks exist"
+    );
+    assert!(matches!(
+        next.attempts[0].outcome,
+        Err(SearchError::Unavailable(_))
+    ));
+}
+
+#[tokio::test]
+async fn research_fills_up_when_early_hits_fail_and_drops_binary_early() {
+    let server = TestServer::start(|req| async move {
+        let base = format!("http://{}", req.header("host").unwrap_or_default());
+        let searx_json = format!(
+            r#"{{"results":[
+                {{"title":"Blocked","url":"{base}/blocked","content":"403 page"}},
+                {{"title":"Binary","url":"{base}/spec.pdf","content":"pdf"}},
+                {{"title":"Good One","url":"{base}/good1.html","content":"first readable"}},
+                {{"title":"Good Two","url":"{base}/good2.html","content":"second readable"}}
+            ]}}"#
+        );
+        match req.path() {
+            "/searx" => Reply::json(200, &searx_json),
+            "/blocked" => Reply::text(403, "text/html", "Forbidden"),
+            "/spec.pdf" => Reply::text(200, "application/pdf", b"%PDF-1.7\n%binary".to_vec()),
+            "/good1.html" => Reply::html(fixture("pages/retry.html")),
+            "/good2.html" => Reply::html(fixture("pages/timeouts_fr.html")),
+            _ => Reply::new(404),
+        }
+    })
+    .await;
+
+    let mut c = local_config();
+    c.search.provider = ProviderKind::Searxng;
+    endpoint(&server, ProviderKind::Searxng, "/searx", &mut c);
+    let ctx = WebContext::new(c, None).unwrap();
+
+    let r = ctx
+        .research(
+            "retry policy timeouts",
+            ResearchOptions {
+                results: 6,
+                read_pages: 2,
+            },
+        )
+        .await;
+
+    let ok_ids: Vec<&str> = r
+        .pages
+        .iter()
+        .filter(|p| p.outcome.is_ok())
+        .map(|p| p.source_id.as_str())
+        .collect();
+    assert_eq!(ok_ids, vec!["S3", "S4"]);
+    assert!(matches!(
+        r.pages[0].outcome,
+        Err(PageError::Fetch(FetchError::Http { status: 403, .. }))
+    ));
+    assert!(matches!(
+        r.pages[1].outcome,
+        Err(PageError::Unreadable(Unreadable::Binary { bytes: 0, .. }))
+    ));
+}
+
+#[tokio::test]
+async fn tavily_raw_content_rescues_403_and_alternate_markdown_or_jsonld_rescues_js_shell() {
+    let server = TestServer::start(|req| async move {
+        let base = format!("http://{}", req.header("host").unwrap_or_default());
+        match req.path() {
+            "/tavily" => Reply::json(
+                200,
+                &format!(
+                    r##"{{"results":[
+                    {{"title":"WAF Protected","url":"{base}/waf.html","content":"short snippet","raw_content":"# WAF Article\n\nRecovered retry policy body from Tavily raw_content with detailed idempotency rules, exponential backoff intervals, jitter configuration, and upstream 503 handling.\n\nEnsure max_retries stays bounded across non-idempotent requests."}},
+                    {{"title":"Alt Markdown","url":"{base}/spa-alt.html","content":"alt md","raw_content":null}},
+                    {{"title":"JSON-LD SPA","url":"{base}/spa-jsonld.html","content":"jsonld","raw_content":null}}
+                ]}}"##
+                ),
+            ),
+            "/waf.html" => Reply::text(403, "text/html", "Blocked by WAF"),
+            "/spa-alt.html" => Reply::html(format!(
+                r#"<!doctype html><html><head>
+                    <title>Docs</title>
+                    <link rel="alternate" type="text/markdown" href="{base}/spa-alt.md">
+                </head><body><div id="root"></div><script src="/app.js"></script></body></html>"#
+            )),
+            "/spa-alt.md" => Reply::text(
+                200,
+                "text/markdown; charset=utf-8",
+                "# Alternate Markdown Docs\n\nFull documentation served cleanly without executing JavaScript.",
+            ),
+            "/spa-jsonld.html" => Reply::html(
+                r#"<!doctype html><html><head>
+                    <title>JSON-LD Post</title>
+                    <meta name="description" content="Fallback summary for retry delays.">
+                    <script type="application/ld+json">{"@type":"Article","headline":"Retry Architecture","articleBody":"Use bounded exponential backoff with jitter when upstream services return transient 503 responses. Never retry non-idempotent mutations without an explicit idempotency key and respect Retry-After headers when rate limited."}</script>
+                </head><body><div id="app"></div><script src="/bundle.js"></script></body></html>"#,
+            ),
+            _ => Reply::new(404),
+        }
+    })
+    .await;
+
+    let mut c = local_config();
+    c.search.provider = ProviderKind::Tavily;
+    endpoint(&server, ProviderKind::Tavily, "/tavily", &mut c);
+    let ctx = WebContext::new(c, None).unwrap();
+
+    let r = ctx
+        .research(
+            "retry policy idempotency",
+            ResearchOptions {
+                results: 5,
+                read_pages: 3,
+            },
+        )
+        .await;
+
+    assert_eq!(r.pages.len(), 3);
+    let p0 = r.pages[0].outcome.as_ref().expect("tavily raw_content rescue");
+    assert!(p0.markdown.contains("WAF Article"));
+    assert_eq!(p0.entry.final_url, server.url("/waf.html"));
+
+    let p1 = r.pages[1].outcome.as_ref().expect("alternate markdown rescue");
+    assert!(p1.markdown.contains("Alternate Markdown Docs"));
+    assert_eq!(p1.entry.final_url, server.url("/spa-alt.md"));
+
+    let p2 = r.pages[2].outcome.as_ref().expect("json-ld rescue");
+    assert!(p2.markdown.contains("exponential backoff"));
+    assert!(p2.markdown.contains("Fallback summary"));
+}
+
+#[tokio::test]
+async fn store_search_ttl_expires_stale_results_while_direct_read_stays_cached() {
+    let body = fixture("pages/retry.html");
+    let server = TestServer::start(move |req| {
+        let body = body.clone();
+        async move {
+            let base = format!("http://{}", req.header("host").unwrap_or_default());
+            match req.path() {
+                "/searx" => Reply::json(
+                    200,
+                    &format!(
+                        r#"{{"results":[{{"title":"Retry","url":"{base}/docs/retry.html","content":"retry"}} ]}}"#
+                    ),
+                ),
+                "/docs/retry.html" => Reply::html(body.clone()),
+                _ => Reply::new(404),
+            }
+        }
+    })
+    .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = local_config();
+    c.search.provider = ProviderKind::Searxng;
+    c.search.cache_ttl = Duration::ZERO;
+    c.store.search_ttl_secs = 60;
+    endpoint(&server, ProviderKind::Searxng, "/searx", &mut c);
+
+    let store_path = dir.path().join("web");
+    let ctx = WebContext::new(
+        c.clone(),
+        Some(Arc::new(WebStore::open(&store_path, c.store.max_session_bytes))),
+    )
+    .unwrap();
+    let r1 = ctx
+        .research(
+            "retry",
+            ResearchOptions {
+                results: 2,
+                read_pages: 1,
+            },
+        )
+        .await;
+    assert!(!r1.pages[0].outcome.as_ref().unwrap().cached);
+    drop(ctx);
+
+    // Backdate `fetched_at` in index.json past `search_ttl_secs = 60`.
+    let idx_path = store_path.join("index.json");
+    let raw = std::fs::read_to_string(&idx_path).unwrap();
+    let needle = format!(
+        "\"fetched_at\": {}",
+        WebStore::open(&store_path, c.store.max_session_bytes)
+            .get("D1")
+            .unwrap()
+            .fetched_at
+    );
+    let stale = raw.replace(&needle, "\"fetched_at\": 1");
+    assert_ne!(stale, raw, "fetched_at must be backdated in index.json");
+    std::fs::write(&idx_path, stale).unwrap();
+
+    // Direct WebFetch (`read`) ignores search TTL and serves the stored snapshot.
+    let restored = WebContext::new(
+        c,
+        Some(Arc::new(WebStore::open(&store_path, 64 << 20))),
+    )
+    .unwrap();
+    let doc = restored
+        .read(&server.url("/docs/retry.html"), false)
+        .await
+        .unwrap();
+    assert!(doc.cached);
+    let fetches_before = server
+        .requests()
+        .iter()
+        .filter(|q| q.path() == "/docs/retry.html")
+        .count();
+    assert_eq!(fetches_before, 1);
+
+    // WebSearch (`research`) treats the stale entry as expired and refreshes it.
+    let r2 = restored
+        .research(
+            "retry",
+            ResearchOptions {
+                results: 2,
+                read_pages: 1,
+            },
+        )
+        .await;
+    assert!(!r2.pages[0].outcome.as_ref().unwrap().cached);
+    let fetches_after = server
+        .requests()
+        .iter()
+        .filter(|q| q.path() == "/docs/retry.html")
+        .count();
+    assert_eq!(fetches_after, 2);
+}
+
+#[tokio::test]
+async fn redirect_enforces_per_host_concurrency_on_target_host() {
+    let active_target = Arc::new(AtomicUsize::new(0));
+    let max_active_target = Arc::new(AtomicUsize::new(0));
+    let a = active_target.clone();
+    let m = max_active_target.clone();
+
+    let target = TestServer::start(move |req| {
+        let a = a.clone();
+        let m = m.clone();
+        async move {
+            let cur = a.fetch_add(1, Ordering::SeqCst) + 1;
+            m.fetch_max(cur, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            a.fetch_sub(1, Ordering::SeqCst);
+            Reply::html(format!("<html><body><p>{}</p></body></html>", req.path()))
+        }
+    })
+    .await;
+
+    let target_base = target.url("");
+    let redirector = TestServer::start(move |req| {
+        let tb = target_base.clone();
+        async move {
+            let dest = format!("{tb}{}", req.path());
+            Reply::new(302).header("location", &dest)
+        }
+    })
+    .await;
+
+    let mut c = local_config();
+    c.fetch.per_host = 1;
+    c.fetch.concurrency = 4;
+    c.fetch.page_timeout = Duration::from_secs(2);
+    c.fetch.budget = Duration::from_secs(3);
+    let fetcher = Arc::new(Fetcher::new(c.fetch).unwrap());
+
+    let urls = vec![
+        redirector.url("/a"),
+        redirector.url("/b"),
+        redirector.url("/c"),
+    ];
+    let results = fetcher.fetch_many(&urls).await;
+    assert!(results.iter().all(|r| r.is_ok()), "{results:?}");
+    assert_eq!(max_active_target.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn search_retries_once_on_transient_network_drop() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        // First connection: drop immediately to simulate TCP reset / early EOF.
+        let (stream1, _) = listener.accept().await.unwrap();
+        drop(stream1);
+        // Second connection (automatic retry): return valid SearXNG JSON.
+        let (mut stream2, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 2048];
+        let _ = stream2.read(&mut buf).await;
+        let body = r#"{"results":[{"title":"Recovered Hit","url":"https://docs.example.com/ok","content":"Retried cleanly"}]}"#;
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream2.write_all(resp.as_bytes()).await;
+    });
+
+    let mut c = local_config();
+    c.search.provider = ProviderKind::Searxng;
+    c.search.max_retry_wait = Duration::from_millis(500);
+    let p = c
+        .search
+        .providers
+        .iter_mut()
+        .find(|p| p.kind == ProviderKind::Searxng)
+        .unwrap();
+    p.endpoint = Url::parse(&format!("http://{addr}/search")).unwrap();
+
+    let s = Searcher::new(c.search, &c.fetch.user_agent).unwrap();
+    let out = s.search("retry", 5).await;
+    let _ = handle.await;
+
+    assert_eq!(out.provider, Some(ProviderKind::Searxng));
+    assert_eq!(out.attempts.len(), 2);
+    assert!(matches!(out.attempts[0].outcome, Err(SearchError::Network(_))));
+    assert_eq!(out.hits[0].title, "Recovered Hit");
+}

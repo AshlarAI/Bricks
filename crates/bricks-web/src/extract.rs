@@ -234,8 +234,34 @@ pub fn extract(src: &Source<'_>, cfg: &ExtractConfig) -> Result<Extracted, Unrea
     Ok(out)
 }
 
+/// Check early (from HTTP headers alone) whether `Content-Type` is an
+/// obvious non-readable binary format.
+pub fn is_obvious_binary_mime(content_type: Option<&str>) -> Option<String> {
+    let m = content_type
+        .and_then(|ct| ct.split(';').next())
+        .map(|m| m.trim().to_ascii_lowercase())?;
+    if m.starts_with("image/")
+        || m.starts_with("audio/")
+        || m.starts_with("video/")
+        || m.starts_with("font/")
+        || m == "application/pdf"
+        || m == "application/zip"
+        || m == "application/gzip"
+        || m == "application/x-tar"
+        || m == "application/x-bzip2"
+        || m == "application/x-xz"
+    {
+        Some(m)
+    } else {
+        None
+    }
+}
+
 /// `Ok(kind)` for readable content, `Err(mime)` for binary content.
 fn classify(mime: Option<&str>, body: &[u8]) -> Result<DocKind, String> {
+    if let Some(bin) = is_obvious_binary_mime(mime) {
+        return Err(bin);
+    }
     match mime {
         Some("text/html" | "application/xhtml+xml") => return Ok(DocKind::Html),
         Some("text/markdown" | "text/x-markdown") => return Ok(DocKind::Markdown),
@@ -243,17 +269,6 @@ fn classify(mime: Option<&str>, body: &[u8]) -> Result<DocKind, String> {
             return Ok(DocKind::Json);
         }
         Some(m) if m.starts_with("text/") => return Ok(DocKind::Text),
-        Some(m)
-            if m.starts_with("image/")
-                || m.starts_with("audio/")
-                || m.starts_with("video/")
-                || m.starts_with("font/")
-                || m == "application/pdf"
-                || m == "application/zip"
-                || m == "application/gzip" =>
-        {
-            return Err(m.to_string());
-        }
         _ => {}
     }
     // Unknown or generic type: sniff.
@@ -391,31 +406,58 @@ const NOISE: &str = "script, style, noscript, template, svg, canvas, iframe, obj
                      [role=banner], [role=contentinfo], [aria-hidden=true], .sidebar, \
                      .navbar, .breadcrumb, .breadcrumbs, .toc, #toc, .cookie, .cookies";
 
+/// Find `<link rel="alternate" type="text/markdown" href="...">` in an HTML body.
+pub fn find_alternate_markdown(body: &[u8], content_type: Option<&str>, base_url: &Url) -> Option<Url> {
+    let (text, _, _) = decode(body, content_type, true).ok()?;
+    let doc = dom_query::Document::from(text.as_str());
+    alternate_markdown_from_doc(&doc, base_url)
+}
+
+fn alternate_markdown_from_doc(doc: &dom_query::Document, base_url: &Url) -> Option<Url> {
+    for node in doc.select("link[rel][href]").iter() {
+        let rel = node.attr("rel").unwrap_or_default().to_ascii_lowercase();
+        let ty = node.attr("type").unwrap_or_default().to_ascii_lowercase();
+        if rel.split_whitespace().any(|r| r == "alternate")
+            && matches!(ty.split(';').next().map(str::trim), Some("text/markdown" | "text/x-markdown"))
+            && let Some(href) = node.attr("href")
+            && let Ok(u) = base_url.join(href.trim())
+            && matches!(u.scheme(), "http" | "https")
+        {
+            return Some(u);
+        }
+    }
+    None
+}
+
 fn html(
     text: &str,
     url: &Url,
     cfg: &ExtractConfig,
     mut notes: Vec<String>,
 ) -> Result<Extracted, Unreadable> {
-    let elements = text.matches('<').count();
-    if elements > cfg.max_elements * 2 {
-        return Err(Unreadable::TooLarge {
-            elements: elements / 2,
-            limit: cfg.max_elements,
-        });
+    if text.matches('<').count() > cfg.max_elements * 2 {
+        let elements = count_html_elements(text);
+        if elements > cfg.max_elements {
+            return Err(Unreadable::TooLarge {
+                elements,
+                limit: cfg.max_elements,
+            });
+        }
     }
+    let doc = dom_query::Document::from(text);
+    let fallback_meta = extract_metadata_fallback(&doc);
     let readability = {
         let rcfg = dom_smoothie::Config {
             text_mode: dom_smoothie::TextMode::Markdown,
             max_elements_to_parse: cfg.max_elements,
             ..Default::default()
         };
-        dom_smoothie::Readability::new(text, Some(url.as_str()), Some(rcfg))
+        dom_smoothie::Readability::with_document(doc.clone(), Some(url.as_str()), Some(rcfg))
             .ok()
             .and_then(|mut r| r.parse().ok())
             .map(|a| (a.title.to_string(), tidy(&a.text_content)))
     };
-    let (root, conservative, page_title) = conservative(text, url);
+    let (root, conservative, page_title) = conservative(doc, url);
     let r_len = readability
         .as_ref()
         .map(|(_, m)| m.chars().count())
@@ -423,20 +465,28 @@ fn html(
     let c_len = conservative.chars().count();
     let r_blocks = readability.as_ref().map(|(_, m)| blocks(m)).unwrap_or(0);
     let c_blocks = blocks(&conservative);
+    let r_headings = readability
+        .as_ref()
+        .map(|(_, m)| heading_count(m))
+        .unwrap_or(0);
+    let c_headings = heading_count(&conservative);
     // Readability is kept when it keeps the substance; the conservative
-    // extraction when Readability failed, is very short, or dropped code
-    // blocks and tables the page's main container has.
+    // extraction when Readability failed, is very short, dropped code
+    // blocks/tables or sections, or missed over half the main container.
     let use_conservative = readability.is_none()
         || r_len < cfg.min_reliable_chars.min(c_len)
         || (root != "body" && c_blocks > r_blocks)
+        || (root != "body" && c_len > r_len && c_headings > r_headings + 1)
         || (root != "body" && r_len * 2 < c_len);
-    let (title, markdown, strategy) = if use_conservative {
+    let (title, mut markdown, mut strategy) = if use_conservative {
         if readability.is_some() {
             notes.push(format!(
                 "Readability kept {r_len} characters; the <{root}> element was used instead \
                  ({c_len} characters{})",
                 if c_blocks > r_blocks {
                     format!(", {c_blocks} code blocks/tables against {r_blocks}")
+                } else if c_headings > r_headings + 1 {
+                    format!(", {c_headings} headings against {r_headings}")
                 } else {
                     String::new()
                 }
@@ -458,7 +508,20 @@ fn html(
         }
         (t, m, Strategy::Readability)
     };
-    let chars = markdown.chars().count();
+    let mut chars = markdown.chars().count();
+    if (chars == 0 || (chars < 200 && looks_like_js_shell(text)))
+        && let Some(meta_text) = fallback_meta
+    {
+        notes.push(
+            "the page body was minimal or JavaScript-rendered; extracted embedded metadata / JSON-LD"
+                .into(),
+        );
+        markdown = meta_text;
+        strategy = Strategy::Conservative {
+            root: "metadata".into(),
+        };
+        chars = markdown.chars().count();
+    }
     if chars < 200 && looks_like_js_shell(text) {
         return Err(Unreadable::NeedsJavascript { title, chars });
     }
@@ -485,9 +548,87 @@ fn html(
     })
 }
 
+/// Count opening HTML tags outside `<script>`, `<style>`, and `<svg>` blocks.
+fn count_html_elements(text: &str) -> usize {
+    let lower = text.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    let mut count = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            let rest = &lower[i + 1..];
+            if rest.starts_with("script") {
+                if let Some(end) = rest.find("</script>") {
+                    i += 1 + end + 9;
+                    continue;
+                }
+            } else if rest.starts_with("style") {
+                if let Some(end) = rest.find("</style>") {
+                    i += 1 + end + 8;
+                    continue;
+                }
+            } else if rest.starts_with("svg") {
+                if let Some(end) = rest.find("</svg>") {
+                    i += 1 + end + 6;
+                    continue;
+                }
+            } else if rest.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic()) {
+                count += 1;
+            }
+        }
+        i += 1;
+    }
+    count
+}
+
+fn extract_metadata_fallback(doc: &dom_query::Document) -> Option<String> {
+    let mut parts = Vec::new();
+    for script in doc.select("script[type=\"application/ld+json\"]").iter() {
+        let raw = script.text();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) {
+            collect_ld_json_text(&v, &mut parts);
+        }
+    }
+    for sel in ["meta[name=description]", "meta[property=\"og:description\"]"] {
+        if let Some(content) = doc.select(sel).attr("content") {
+            let s = content.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !s.is_empty() && !parts.iter().any(|p| p == &s) {
+                parts.push(s);
+            }
+        }
+    }
+    let joined = parts.join("\n\n");
+    (joined.chars().count() >= 120).then_some(joined)
+}
+
+fn collect_ld_json_text(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(map) => {
+            for key in ["headline", "name", "description", "articleBody", "text"] {
+                if let Some(s) = map.get(key).and_then(serde_json::Value::as_str) {
+                    let clean = s.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if clean.chars().count() >= 40 && !out.iter().any(|p| p == &clean) {
+                        out.push(clean);
+                    }
+                }
+            }
+            for child in map.values() {
+                if child.is_object() || child.is_array() {
+                    collect_ld_json_text(child, out);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_ld_json_text(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The main container as Markdown: `(root name, markdown, <title>)`.
-fn conservative(text: &str, url: &Url) -> (String, String, String) {
-    let doc = dom_query::Document::from(text);
+fn conservative(doc: dom_query::Document, url: &Url) -> (String, String, String) {
     let page_title = doc
         .select("title")
         .text()
@@ -498,13 +639,21 @@ fn conservative(text: &str, url: &Url) -> (String, String, String) {
     // A header inside the main container usually holds the page heading:
     // only top-level page headers are chrome.
     doc.select("body > header").remove();
-    for (attr, sel) in [("href", "a[href]"), ("src", "img[src]")] {
-        for node in doc.select(sel).iter() {
-            if let Some(v) = node.attr(attr)
-                && let Ok(abs) = url.join(v.trim())
-            {
-                node.set_attr(attr, abs.as_str());
+    for node in doc.select("img[src]").iter() {
+        if let Some(v) = node.attr("src") {
+            let trimmed = v.trim();
+            if trimmed.to_ascii_lowercase().starts_with("data:") {
+                node.remove_attr("src");
+            } else if let Ok(abs) = url.join(trimmed) {
+                node.set_attr("src", abs.as_str());
             }
+        }
+    }
+    for node in doc.select("a[href]").iter() {
+        if let Some(v) = node.attr("href")
+            && let Ok(abs) = url.join(v.trim())
+        {
+            node.set_attr("href", abs.as_str());
         }
     }
     for root in [
@@ -552,6 +701,32 @@ fn blocks(md: &str) -> usize {
     n
 }
 
+fn heading_count(md: &str) -> usize {
+    let mut n = 0;
+    let mut fence: Option<(char, usize)> = None;
+    for line in md.lines() {
+        let t = line.trim_start();
+        if let Some((fch, flen)) = fence {
+            let run = t.chars().take_while(|c| *c == fch).count();
+            if run >= flen && t[run..].trim().is_empty() {
+                fence = None;
+            }
+            continue;
+        }
+        if t.starts_with("```") || t.starts_with("~~~") {
+            let fch = t.chars().next().unwrap();
+            let flen = t.chars().take_while(|c| *c == fch).count();
+            fence = Some((fch, flen));
+            continue;
+        }
+        let level = t.chars().take_while(|c| *c == '#').count();
+        if (1..=6).contains(&level) && t[level..].starts_with(' ') {
+            n += 1;
+        }
+    }
+    n
+}
+
 fn looks_like_js_shell(html: &str) -> bool {
     let l = html.to_ascii_lowercase();
     let scripts = l.matches("<script").count();
@@ -578,14 +753,31 @@ fn looks_like_js_shell(html: &str) -> bool {
 /// meaning (`\*`, `\_`, `\|`, `\[`, a line-leading `\#`, `1\.`, `\-`) stay.
 pub fn tidy(md: &str) -> String {
     let mut out = String::with_capacity(md.len());
-    let mut fence = false;
+    let mut fence: Option<(char, usize)> = None;
     let mut blank = 0;
     for line in md.lines() {
         let t = line.trim_end();
-        if t.trim_start().starts_with("```") {
-            fence = !fence;
+        let trimmed = t.trim_start();
+        if let Some((fch, flen)) = fence {
+            let run = trimmed.chars().take_while(|c| *c == fch).count();
+            if run >= flen && trimmed[run..].trim().is_empty() {
+                fence = None;
+            }
+            out.push_str(t);
+            out.push('\n');
+            blank = 0;
+            continue;
         }
-        if t.is_empty() && !fence {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            let fch = trimmed.chars().next().unwrap();
+            let flen = trimmed.chars().take_while(|c| *c == fch).count();
+            fence = Some((fch, flen));
+            out.push_str(t);
+            out.push('\n');
+            blank = 0;
+            continue;
+        }
+        if t.is_empty() {
             blank += 1;
             if blank > 1 {
                 continue;
@@ -593,28 +785,49 @@ pub fn tidy(md: &str) -> String {
         } else {
             blank = 0;
         }
-        if fence {
-            out.push_str(t);
-        } else {
-            out.push_str(&unescape_line(t));
-        }
+        let cleaned = strip_data_image_uris(&unescape_line(t));
+        out.push_str(&cleaned);
         out.push('\n');
     }
     out.trim().to_string() + "\n"
 }
 
+fn strip_data_image_uris(line: &str) -> String {
+    let mut out = line.to_string();
+    while let Some(pos) = out.find("](data:image/") {
+        let Some(end) = out[pos + 2..].find(')') else {
+            break;
+        };
+        out.replace_range(pos + 2..pos + 2 + end, "data:image");
+    }
+    out
+}
+
 fn unescape_line(line: &str) -> String {
     let chars: Vec<char> = line.chars().collect();
     let mut out = String::with_capacity(line.len());
-    let mut in_code = false;
+    let mut code_delim: usize = 0;
     let first_text = chars.iter().position(|c| !c.is_whitespace()).unwrap_or(0);
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
         if c == '`' {
-            in_code = !in_code;
+            let mut run = 0;
+            while i + run < chars.len() && chars[i + run] == '`' {
+                run += 1;
+            }
+            if code_delim == 0 {
+                code_delim = run;
+            } else if run == code_delim {
+                code_delim = 0;
+            }
+            for _ in 0..run {
+                out.push('`');
+            }
+            i += run;
+            continue;
         }
-        if c == '\\' && !in_code && i + 1 < chars.len() {
+        if c == '\\' && code_delim == 0 && i + 1 < chars.len() {
             let n = chars[i + 1];
             let leading = i == first_text;
             let after_digits =
@@ -720,5 +933,56 @@ mod tests {
             run("text/html", html),
             Err(Unreadable::NeedsJavascript { .. })
         ));
+    }
+
+    #[test]
+    fn tidy_handles_tildes_double_backticks_and_data_uris() {
+        let md = "Text ``a\\.b`` and ![logo](data:image/png;base64,AAAA) end\n~~~\nv2\\.1\n~~~\n";
+        let out = tidy(md);
+        assert!(out.contains("``a\\.b``"), "{out}");
+        assert!(out.contains("![logo](data:image)"), "{out}");
+        assert!(out.contains("~~~\nv2\\.1\n~~~"), "{out}");
+    }
+
+    #[test]
+    fn large_inline_scripts_do_not_trigger_too_large_false_positive() {
+        let script_noise = "if (a < b && c < d) {} ".repeat(400);
+        let page = format!(
+            "<html><head><title>Doc</title><script>{script_noise}</script></head>\
+             <body><main><p>Actual documentation content that is long enough to be read cleanly.</p></main></body></html>"
+        );
+        let url = Url::parse("https://docs.example.com/p").unwrap();
+        let mut c = cfg();
+        c.max_elements = 100;
+        let res = extract(
+            &Source {
+                url: &url,
+                content_type: Some("text/html"),
+                body: page.as_bytes(),
+                truncated: false,
+                declared_length: None,
+            },
+            &c,
+        )
+        .unwrap();
+        assert!(res.markdown.contains("Actual documentation content"));
+    }
+
+    #[test]
+    fn multi_section_listing_keeps_all_sections_over_truncated_readability() {
+        let html = r#"<!doctype html><html><head><title>Blog</title></head><body>
+            <main>
+                <h1>Blog</h1>
+                <article><a href="/blog/one"><h2>Announcing 2.12</h2></a><p>Big release notes with permission handling and updater signing improvements across desktop targets and bundler pipelines for all supported platforms.</p></article>
+                <article><a href="/blog/two"><h2>Board Elections</h2></a><p>Annual governance update for the community members and contributors.</p></article>
+                <article><a href="/blog/three"><h2>Security Advisory</h2></a><p>Details about advisory fixes and upgrade recommendations.</p></article>
+                <article><a href="/blog/four"><h2>Release Archive</h2></a><p>Older posts covering previous milestones and plugin APIs.</p></article>
+            </main>
+        </body></html>"#;
+        let res = run("text/html", html.as_bytes()).unwrap();
+        assert!(res.markdown.contains("Announcing 2.12"), "{}", res.markdown);
+        assert!(res.markdown.contains("Board Elections"), "{}", res.markdown);
+        assert!(res.markdown.contains("Security Advisory"), "{}", res.markdown);
+        assert!(res.markdown.contains("Release Archive"), "{}", res.markdown);
     }
 }
