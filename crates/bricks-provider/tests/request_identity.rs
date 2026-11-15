@@ -67,11 +67,7 @@ fn setup(replies: Vec<Reply>) -> (Mock, ProviderRegistry) {
 
 fn provider(reg: &ProviderRegistry, sel: &str) -> ConfiguredProvider {
     // The key comes through an injected lookup: no key is written anywhere.
-    model(reg, sel)
-        .provider()
-        .api_key(KEY)
-        .build()
-        .unwrap()
+    model(reg, sel).provider().api_key(KEY).build().unwrap()
 }
 
 fn options(profile: Option<&str>) -> ProviderOptions {

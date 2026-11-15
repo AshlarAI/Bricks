@@ -1,6 +1,6 @@
-use crate::i18n::{msg, tr};
 use crate::contract::*;
 use crate::engine::AppState;
+use crate::i18n::{msg, tr};
 use crate::services::join_error;
 use std::sync::Arc;
 use tauri::{State, ipc::Channel};
@@ -46,7 +46,9 @@ pub fn app_icon_show(app: tauri::AppHandle, dark: bool) -> IpcResult<()> {
                 unsafe { app.setApplicationIconImage(Some(&image)) };
             }
         });
-        shown.map_err(|e| crate::services::error(crate::contract::IpcErrorCode::Internal, e.to_string()))?;
+        shown.map_err(|e| {
+            crate::services::error(crate::contract::IpcErrorCode::Internal, e.to_string())
+        })?;
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, dark);
@@ -55,7 +57,10 @@ pub fn app_icon_show(app: tauri::AppHandle, dark: bool) -> IpcResult<()> {
 
 /// Keeps the computer from sleeping (`true`) or lets it sleep again.
 #[tauri::command]
-pub fn keep_awake_set(keep: State<'_, crate::services::keep_awake::KeepAwake>, active: bool) -> IpcResult<()> {
+pub fn keep_awake_set(
+    keep: State<'_, crate::services::keep_awake::KeepAwake>,
+    active: bool,
+) -> IpcResult<()> {
     keep.set(active)
         .map_err(|e| crate::services::io_error(&tr!(msg::KEEPING_THE_COMPUTER_AWAKE), e))
 }
@@ -81,8 +86,14 @@ pub(crate) async fn save_preferences(state: &AppState, prefs: Preferences) -> Ip
 pub async fn permissions_default_get(state: State<'_, AppState>) -> IpcResult<PermissionsDefault> {
     let store = state.permissions.clone();
     tokio::task::spawn_blocking(move || match store.default_policy() {
-        Ok(policy) => PermissionsDefault { policy, error: None },
-        Err(e) => PermissionsDefault { policy: None, error: Some(e) },
+        Ok(policy) => PermissionsDefault {
+            policy,
+            error: None,
+        },
+        Err(e) => PermissionsDefault {
+            policy: None,
+            error: Some(e),
+        },
     })
     .await
     .map_err(join_error)
@@ -118,13 +129,22 @@ mod tests {
     async fn the_default_permissions_are_chosen_once_and_kept() {
         let home = tempfile::tempdir().unwrap();
         let state = AppState::assemble(home.path().to_path_buf(), Err("pas de registre".into()));
-        assert_eq!(state.permissions.default_policy().unwrap(), None, "not chosen yet");
+        assert_eq!(
+            state.permissions.default_policy().unwrap(),
+            None,
+            "not chosen yet"
+        );
 
         let mut policy = SessionPolicy::chosen(PermissionProfile::Execute);
         policy.chosen = false;
         set_default_permissions(&state, policy).await.unwrap();
-        let next_start = AppState::assemble(home.path().to_path_buf(), Err("pas de registre".into()));
-        let kept = next_start.permissions.default_policy().unwrap().expect("saved");
+        let next_start =
+            AppState::assemble(home.path().to_path_buf(), Err("pas de registre".into()));
+        let kept = next_start
+            .permissions
+            .default_policy()
+            .unwrap()
+            .expect("saved");
         assert_eq!(kept.profile, PermissionProfile::Execute);
         assert!(kept.chosen, "a saved default is a choice");
     }
@@ -133,12 +153,18 @@ mod tests {
 /// Subscribes the window to every session's events; returns the
 /// subscription id.
 #[tauri::command]
-pub async fn events_subscribe(state: State<'_, AppState>, channel: Channel<DesktopEvent>) -> IpcResult<String> {
+pub async fn events_subscribe(
+    state: State<'_, AppState>,
+    channel: Channel<DesktopEvent>,
+) -> IpcResult<String> {
     Ok(state.hub.subscribe(channel))
 }
 
 #[tauri::command]
-pub async fn events_unsubscribe(state: State<'_, AppState>, subscription_id: String) -> IpcResult<()> {
+pub async fn events_unsubscribe(
+    state: State<'_, AppState>,
+    subscription_id: String,
+) -> IpcResult<()> {
     // Unknown ids are not an error: the subscription is gone either way.
     state.hub.unsubscribe(&subscription_id);
     Ok(())

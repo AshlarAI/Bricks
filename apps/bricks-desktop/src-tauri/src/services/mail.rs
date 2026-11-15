@@ -86,7 +86,8 @@ impl Mailbox {
                 for mut mail in list {
                     if !mail.state.is_final() {
                         mail.state = MailState::Failed;
-                        mail.reason = Some("interrupted: Bricks was closed before the answer".into());
+                        mail.reason =
+                            Some("interrupted: Bricks was closed before the answer".into());
                     }
                     mails.insert(mail.id.clone(), mail);
                 }
@@ -243,7 +244,10 @@ mod tests {
         assert_eq!(mailbox.get(&mail.id).unwrap().state, MailState::InProgress);
         mailbox.answered(&mail.id, "salut".into(), "succeeded".into());
         assert!(!mailbox.is_replying("b"));
-        let done = mailbox.wait(&mail.id, Duration::from_millis(10)).await.unwrap();
+        let done = mailbox
+            .wait(&mail.id, Duration::from_millis(10))
+            .await
+            .unwrap();
         assert_eq!(done.answer.as_deref(), Some("salut"));
         let log = std::fs::read_to_string(log_path(dir.path(), "a")).unwrap();
         assert!(log.contains("\"answered\""), "{log}");
@@ -254,15 +258,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mailbox = std::sync::Arc::new(Mailbox::at(dir.path()));
         let mail = mailbox.record("a", "b", "B", "x");
-        let early = mailbox.wait(&mail.id, Duration::from_millis(30)).await.unwrap();
-        assert_eq!(early.state, MailState::Sent, "a timeout returns the message as it is");
+        let early = mailbox
+            .wait(&mail.id, Duration::from_millis(30))
+            .await
+            .unwrap();
+        assert_eq!(
+            early.state,
+            MailState::Sent,
+            "a timeout returns the message as it is"
+        );
         let m = std::sync::Arc::clone(&mailbox);
         let id = mail.id.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(20)).await;
             m.answered(&id, "ok".into(), "succeeded".into());
         });
-        let done = mailbox.wait(&mail.id, Duration::from_secs(5)).await.unwrap();
+        let done = mailbox
+            .wait(&mail.id, Duration::from_secs(5))
+            .await
+            .unwrap();
         assert_eq!(done.state, MailState::Answered);
     }
 
@@ -273,7 +287,10 @@ mod tests {
         let answered = mailbox.record("a", "b", "B", "1");
         mailbox.answered(&answered.id, "r".into(), "succeeded".into());
         mailbox.failed(&answered.id, "late".into());
-        assert_eq!(mailbox.get(&answered.id).unwrap().state, MailState::Answered);
+        assert_eq!(
+            mailbox.get(&answered.id).unwrap().state,
+            MailState::Answered
+        );
         let pending = mailbox.record("a", "c", "C", "2");
         drop(mailbox);
         let again = Mailbox::at(dir.path());

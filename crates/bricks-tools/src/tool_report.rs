@@ -278,7 +278,9 @@ mod tests {
             r.starts_with("⏱ [Bash] Interrupted after timeout of 120s (121000 ms) — no exit code"),
             "{r}"
         );
-        assert!(r.contains("[Interrupted after timeout of 120s — partial output below]\n--- stdout ---\npartial"));
+        assert!(r.contains(
+            "[Interrupted after timeout of 120s — partial output below]\n--- stdout ---\npartial"
+        ));
         assert!(!r.contains("code 0"));
 
         // A file tool: no exit code is invented.

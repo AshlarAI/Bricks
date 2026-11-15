@@ -146,7 +146,10 @@ mod tests {
                 running: i % 2 == 0,
             });
         }
-        assert!(started.elapsed() < Duration::from_secs(5), "publishing never waits");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "publishing never waits"
+        );
 
         // Released, the window takes events again; the missed session is
         // announced on a later publication.

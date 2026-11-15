@@ -4,8 +4,8 @@
 
 use super::hub::Hub;
 use crate::contract::{
-    AttachmentRef, ChangeFile, ChangeRecord, DesktopEvent, HistoryMessage, OpenedSession,
-    RunLabel, RunRecord, SessionItem,
+    AttachmentRef, ChangeFile, ChangeRecord, DesktopEvent, HistoryMessage, OpenedSession, RunLabel,
+    RunRecord, SessionItem,
 };
 use crate::services::attachment_runs::{self, RunAttachments};
 use crate::services::changes::{NewChange, StoredPatch, new_record_id};
@@ -34,8 +34,14 @@ pub const RUNNING_RING_CAPACITY: usize = 50_000;
 /// (`tag`: the message's id). Runs without a tag announce nothing here.
 #[derive(Debug, Clone)]
 pub enum RunNotice {
-    Started { tag: String },
-    Finished { tag: String, text: String, outcome: String },
+    Started {
+        tag: String,
+    },
+    Finished {
+        tag: String,
+        text: String,
+        outcome: String,
+    },
 }
 
 pub struct OpenSession {
@@ -179,7 +185,9 @@ impl OpenSession {
         // A revision's run puts its message where the revised one was.
         let revised = match &command {
             Command::Submit { .. } => None,
-            Command::Revise { user_index, .. } => Some(u32::try_from(*user_index).unwrap_or(u32::MAX)),
+            Command::Revise { user_index, .. } => {
+                Some(u32::try_from(*user_index).unwrap_or(u32::MAX))
+            }
             _ => return self.controller.send(command),
         };
         let _gate = self.submit_gate.lock().await;
@@ -193,16 +201,13 @@ impl OpenSession {
         } else {
             Some(run_labels::user_count(&self.controller.history().await))
         };
-        self.live
-            .lock()
-            .expected
-            .push_back(Expected {
-                label,
-                base,
-                attachments,
-                revision: revised.is_some(),
-                tag,
-            });
+        self.live.lock().expected.push_back(Expected {
+            label,
+            base,
+            attachments,
+            revision: revised.is_some(),
+            tag,
+        });
         let sent = self.controller.send(command);
         if sent.is_err() {
             // Refused: nothing started. The record just pushed is the newest.
@@ -257,7 +262,8 @@ impl OpenSession {
             recent.extend(live.ring.iter().cloned());
             (recent, live.last_seq)
         };
-        let snapshot = serde_json::to_value(self.controller.snapshot()).unwrap_or(serde_json::Value::Null);
+        let snapshot =
+            serde_json::to_value(self.controller.snapshot()).unwrap_or(serde_json::Value::Null);
         let run_labels = self.load_run_labels().await;
         let run_records = self.load_run_records().await;
         OpenedSession {
@@ -300,7 +306,10 @@ impl OpenSession {
         match tauri::async_runtime::spawn_blocking(move || labels.list(&session_id)).await {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
-                eprintln!("bricks-desktop: run labels of {} : {}", self.session_id, e.message);
+                eprintln!(
+                    "bricks-desktop: run labels of {} : {}",
+                    self.session_id, e.message
+                );
                 Vec::new()
             }
             Err(e) => {
@@ -629,7 +638,8 @@ fn spawn_label(hub: Arc<Hub>, entry: Arc<OpenSession>, pending: PendingLabel) {
             label: label.clone(),
         };
         let labels = Arc::clone(&entry.labels);
-        let result = tauri::async_runtime::spawn_blocking(move || labels.append(&session_id, &label)).await;
+        let result =
+            tauri::async_runtime::spawn_blocking(move || labels.append(&session_id, &label)).await;
         match result {
             Ok(Ok(true)) => hub.publish(announced),
             Ok(Ok(false)) => {}
@@ -797,7 +807,11 @@ mod tests {
             push_ring(&mut live, event("text_delta"));
         }
         assert_eq!(live.ring.len(), RUNNING_RING_CAPACITY);
-        assert_eq!(live.ring_head, Some(event("run_started")), "the start is kept apart");
+        assert_eq!(
+            live.ring_head,
+            Some(event("run_started")),
+            "the start is kept apart"
+        );
         assert_eq!(live.ring.front(), Some(&event("text_delta")));
     }
 

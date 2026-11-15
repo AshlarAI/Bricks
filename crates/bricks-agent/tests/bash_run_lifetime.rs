@@ -10,9 +10,9 @@
 mod common;
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use bricks_tools::shell::procs;
 use serde_json::json;
 use std::path::Path;

@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "bricks"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-agent"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -548,7 +548,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-agentlang"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "bricks-tools",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-agentrl"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-cli"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bricks-agent",
  "bricks-config",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-compression"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "bricks-types",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-config"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bricks-agent",
  "bricks-embeddings",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-desktop"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -700,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-embeddings"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "bricks-types",
@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-hooks"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "bricks-types",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-lsp"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bricks-lsp",
  "dashmap",
@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-mcp"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bricks-testkit",
  "bricks-types",
@@ -769,7 +769,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-memory"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "bricks-embeddings",
@@ -793,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-provider"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -814,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-semantic"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bricks-lsp",
  "bricks-types",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-skills"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "libc",
  "parking_lot 0.12.5",
@@ -855,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-tbench"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "bricks-agent",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-testkit"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "futures",
  "tokio",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-tools"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-tools-derive"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -944,7 +944,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-types"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-vms"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-web"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "bm25",
  "bricks-testkit",
@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "bricks-workflows"
-version = "26.11.14"
+version = "26.11.15"
 dependencies = [
  "async-trait",
  "bricks-agent",
@@ -3897,27 +3897,6 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
-
-[[package]]
-name = "longmem-bench"
-version = "26.11.14"
-dependencies = [
- "anyhow",
- "async-trait",
- "bricks-embeddings",
- "bricks-memory",
- "bricks-provider",
- "bricks-types",
- "chrono",
- "clap",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "lru"

@@ -117,11 +117,7 @@ fn setup(replies: Vec<Reply>) -> (Mock, ProviderRegistry) {
 fn provider(reg: &ProviderRegistry, sel: &str) -> ConfiguredProvider {
     // The key is injected through the builder: no key, not even
     // a fake one, is written into a fixture.
-    model(reg, sel)
-        .provider()
-        .api_key(KEY)
-        .build()
-        .unwrap()
+    model(reg, sel).provider().api_key(KEY).build().unwrap()
 }
 
 fn tools() -> Vec<ToolDefinition> {
@@ -774,11 +770,17 @@ max_output_tokens = 10
         assert!(e.to_string().contains("Bricks settings"), "{e}");
     }
     // A variable is never read.
-    let t = text.replace("auth = \"bearer\"\n", "auth = \"bearer\"\napi_key_env = \"PATH\"\n");
+    let t = text.replace(
+        "auth = \"bearer\"\n",
+        "auth = \"bearer\"\napi_key_env = \"PATH\"\n",
+    );
     let reg = ProviderRegistry::from_toml_str(&t, "t").unwrap();
     assert!(reg.resolve("p/m").unwrap().provider().build().is_err());
     // The key written in the file.
-    let t = text.replace("auth = \"bearer\"\n", "auth = \"bearer\"\napi_key = \" sk-file-1111 \"\n");
+    let t = text.replace(
+        "auth = \"bearer\"\n",
+        "auth = \"bearer\"\napi_key = \" sk-file-1111 \"\n",
+    );
     let reg = ProviderRegistry::from_toml_str(&t, "t").unwrap();
     let p = reg.resolve("p/m").unwrap().provider().build().unwrap();
     assert!(!format!("{p:?}").contains("sk-file-1111"));

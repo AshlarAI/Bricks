@@ -178,7 +178,10 @@ async fn a_revision_cuts_the_history_before_the_message_and_runs_again_from_it()
     assert_eq!(reqs.len(), 3, "two answers, then the revised run");
     let revised = request_text(&reqs[2].1);
     assert!(revised.contains("Premier corrigé"), "{revised}");
-    assert!(!revised.contains("Second") && !revised.contains("réponse 1"), "{revised}");
+    assert!(
+        !revised.contains("Second") && !revised.contains("réponse 1"),
+        "{revised}"
+    );
 }
 
 #[tokio::test]
@@ -271,7 +274,9 @@ async fn a_revision_with_an_index_past_the_history_is_refused() {
         .unwrap_err();
     assert!(err.contains("no longer in the active context"), "{err}");
     let rejected = until(&mut env.events, "command_rejected").await;
-    assert!(matches!(rejected.event, Event::CommandRejected { ref command, .. } if command == "revise"));
+    assert!(
+        matches!(rejected.event, Event::CommandRejected { ref command, .. } if command == "revise")
+    );
     env.ctl.wait_idle().await;
 
     assert_eq!(texts(&env.ctl.history().await), ["Premier", "réponse 1"]);
@@ -299,16 +304,27 @@ async fn a_revision_during_a_run_is_refused_and_the_run_goes_on() {
         .unwrap_err();
     assert!(err.contains("in progress"), "{err}");
     let rejected = until(&mut env.events, "command_rejected").await;
-    assert!(matches!(rejected.event, Event::CommandRejected { ref command, .. } if command == "revise"));
+    assert!(
+        matches!(rejected.event, Event::CommandRejected { ref command, .. } if command == "revise")
+    );
     // Still the same run: it is running, and no history was cut.
     assert!(matches!(env.ctl.activity(), Activity::Running { .. }));
     assert!(env.ctl.agent().compaction_snapshots().is_empty());
 
     env.ctl.send(Command::Cancel).unwrap();
     let fin = until(&mut env.events, "run_finished").await;
-    assert!(matches!(fin.event, Event::RunFinished { outcome: RunOutcome::Cancelled, .. }));
+    assert!(matches!(
+        fin.event,
+        Event::RunFinished {
+            outcome: RunOutcome::Cancelled,
+            ..
+        }
+    ));
     env.ctl.wait_idle().await;
-    assert_eq!(texts(&env.ctl.history().await).first().map(String::as_str), Some("long"));
+    assert_eq!(
+        texts(&env.ctl.history().await).first().map(String::as_str),
+        Some("long")
+    );
 }
 
 #[tokio::test]

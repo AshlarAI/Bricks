@@ -273,12 +273,28 @@ pub enum HistoryRole {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HistoryBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     /// Reasoning the provider exposed.
-    Thinking { text: String },
-    ToolUse { id: String, name: String, #[ts(type = "unknown")] input: serde_json::Value },
-    ToolResult { tool_use_id: String, content: String, is_error: bool },
-    Image { path: Option<String>, media_type: Option<String> },
+    Thinking {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        #[ts(type = "unknown")]
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        is_error: bool,
+    },
+    Image {
+        path: Option<String>,
+        media_type: Option<String>,
+    },
 }
 
 // ─── Events (one Tauri Channel per window, every session multiplexed) ──────
@@ -293,20 +309,37 @@ pub enum DesktopEvent {
         envelope: serde_json::Value,
     },
     /// Ownership/activity of a session changed.
-    SessionState { session_id: String, open: bool, running: bool },
+    SessionState {
+        session_id: String,
+        open: bool,
+        running: bool,
+    },
     /// Title or metadata changed (rename, first prompt).
-    SessionUpdated { session: SessionItem },
-    SessionDeleted { session_id: String },
+    SessionUpdated {
+        session: SessionItem,
+    },
+    SessionDeleted {
+        session_id: String,
+    },
     /// A new entry in the persistent change journal.
-    ChangeRecorded { record: ChangeRecord },
+    ChangeRecorded {
+        record: ChangeRecord,
+    },
     /// Deltas were dropped for this subscriber (slow consumer): reload
     /// the session with `session_open`.
-    Lagged { session_id: String },
+    Lagged {
+        session_id: String,
+    },
     /// A run was started from a typed command (e.g. `/skill debug …`):
     /// presentation label for its user message.
-    RunLabeled { session_id: String, label: RunLabel },
+    RunLabeled {
+        session_id: String,
+        label: RunLabel,
+    },
     /// Application updater state changed.
-    UpdateStateChanged { state: UpdateStatus },
+    UpdateStateChanged {
+        state: UpdateStatus,
+    },
 }
 
 // ─── Application Updater ─────────────────────────────────────────────────────
@@ -528,8 +561,12 @@ pub struct PtyOpenRequest {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PtyEvent {
     /// Output bytes, base64.
-    Data { data: String },
-    Exit { code: Option<i32> },
+    Data {
+        data: String,
+    },
+    Exit {
+        code: Option<i32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -784,7 +821,9 @@ pub enum SlashAction {
         #[ts(type = "import('../engine').Command")]
         command: serde_json::Value,
     },
-    Present { present: SlashPresent },
+    Present {
+        present: SlashPresent,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -800,7 +839,9 @@ pub enum SlashPresent {
     CostDetails,
     Session,
     SessionPicker,
-    Resume { session_id: String },
+    Resume {
+        session_id: String,
+    },
     Diff,
     Tools,
     Mcp,
@@ -808,7 +849,10 @@ pub enum SlashPresent {
     Help,
     Quit,
     /// `kind`: `file` | `folder` | `image`; the path as typed (quotes removed).
-    Attach { kind: String, path: String },
+    Attach {
+        kind: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

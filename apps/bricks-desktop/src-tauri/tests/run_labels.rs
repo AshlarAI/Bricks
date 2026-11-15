@@ -49,19 +49,30 @@ fn a_run_labelled_before_the_restart_is_not_labelled_again_after_it() {
     assert!(store_in(home.path()).append("sess-1", &first).unwrap());
 
     let after = store_in(home.path());
-    assert!(!after.append("sess-1", &label("run_a", "/skill debug", "corrige le test", 9)).unwrap());
+    assert!(
+        !after
+            .append(
+                "sess-1",
+                &label("run_a", "/skill debug", "corrige le test", 9)
+            )
+            .unwrap()
+    );
     assert_eq!(after.list("sess-1").unwrap(), vec![first]);
 }
 
 #[test]
 fn labels_stay_apart_per_session_after_a_restart() {
     let home = tempfile::tempdir().unwrap();
-    assert!(store_in(home.path())
-        .append("sess-1", &label("run_a", "/skill debug", "x", 1))
-        .unwrap());
-    assert!(store_in(home.path())
-        .append("sess-2", &label("run_b", "/skill review", "y", 2))
-        .unwrap());
+    assert!(
+        store_in(home.path())
+            .append("sess-1", &label("run_a", "/skill debug", "x", 1))
+            .unwrap()
+    );
+    assert!(
+        store_in(home.path())
+            .append("sess-2", &label("run_b", "/skill review", "y", 2))
+            .unwrap()
+    );
 
     let after = store_in(home.path());
     assert_eq!(after.list("sess-1").unwrap()[0].run_id, "run_a");
@@ -73,9 +84,11 @@ fn labels_stay_apart_per_session_after_a_restart() {
 #[test]
 fn a_deleted_session_has_no_labels_after_a_restart() {
     let home = tempfile::tempdir().unwrap();
-    assert!(store_in(home.path())
-        .append("sess-1", &label("run_a", "/skill debug", "x", 1))
-        .unwrap());
+    assert!(
+        store_in(home.path())
+            .append("sess-1", &label("run_a", "/skill debug", "x", 1))
+            .unwrap()
+    );
     store_in(home.path()).delete("sess-1").unwrap();
 
     let after = store_in(home.path());
@@ -90,7 +103,11 @@ fn a_label_cut_short_by_a_crash_does_not_hide_the_labels_after_a_restart() {
     store_in(home.path()).append("sess-1", &first).unwrap();
 
     // A write cut short by a crash: a broken line without its newline.
-    let file = home.path().join("desktop").join("run-labels").join("sess-1.jsonl");
+    let file = home
+        .path()
+        .join("desktop")
+        .join("run-labels")
+        .join("sess-1.jsonl");
     let mut text = std::fs::read_to_string(&file).unwrap();
     text.push_str("{\"run_id\":\"run_x\",\"lab");
     std::fs::write(&file, text).unwrap();

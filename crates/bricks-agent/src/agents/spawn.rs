@@ -370,7 +370,10 @@ pub enum SubAgentEvent {
         execution: u32,
     },
     /// What the child wrote in one turn, whole (before its tool calls).
-    Text { agent_id: String, text: String },
+    Text {
+        agent_id: String,
+        text: String,
+    },
     ToolStarted {
         agent_id: String,
         tool_call_id: String,
@@ -1258,7 +1261,16 @@ impl AgentSpawner {
             let child_info = info.clone();
             let handle = tokio::spawn(async move {
                 let r = this
-                    .run_one(p, child_info, iso, reasoning, snap, pc, cancel, ChildStart::launch())
+                    .run_one(
+                        p,
+                        child_info,
+                        iso,
+                        reasoning,
+                        snap,
+                        pc,
+                        cancel,
+                        ChildStart::launch(),
+                    )
                     .await;
                 let _ = tx.send(r);
             });
@@ -1388,9 +1400,11 @@ impl AgentSpawner {
         {
             neutral_profile()
         } else {
-            let p = self.profiles.snapshot().get(&launch.profile).map_err(|e| {
-                SpawnError::Refused(format!("`{id}` cannot be resumed: {e}."))
-            })?;
+            let p = self
+                .profiles
+                .snapshot()
+                .get(&launch.profile)
+                .map_err(|e| SpawnError::Refused(format!("`{id}` cannot be resumed: {e}.")))?;
             if p.source.revision != launch.profile_revision {
                 return Err(SpawnError::Refused(format!(
                     "`{id}` cannot be resumed: profile `{}` changed since its launch.",
@@ -1414,9 +1428,9 @@ impl AgentSpawner {
         }
         let skills = self.profile_skills(&profile, &ctx.extensions)?;
         for was in &launch.skills {
-            let same = skills.iter().any(|a| {
-                a.name == was.name && Some(&a.revision) == was.revision.as_ref()
-            });
+            let same = skills
+                .iter()
+                .any(|a| a.name == was.name && Some(&a.revision) == was.revision.as_ref());
             if !same {
                 return Err(SpawnError::Refused(format!(
                     "`{id}` cannot be resumed: its skill `{}` changed or is no longer available.",
@@ -2016,8 +2030,7 @@ impl AgentSpawner {
     ) -> Result<(Agent, Vec<SkillLoad>, Vec<String>), String> {
         // The parent's tools (rebuilt), delegation tools of this runtime, and
         // memory tools resolved uniformly with `resume`.
-        let (tools, child_memory) =
-            self.build_child_tools(profile, pc.long_term_memory.as_ref());
+        let (tools, child_memory) = self.build_child_tools(profile, pc.long_term_memory.as_ref());
         let names: Vec<String> = tools.iter().map(|t| t.name().to_string()).collect();
         let ext = subagent::child_extensions(pc.depth);
         // Services: the code engine only within the same workspace (a
@@ -2141,7 +2154,8 @@ impl AgentSpawner {
             .ok_or("this session keeps no sub-agent transcripts")?;
         let text = std::fs::read(dir.join(format!("{id}.json")))
             .map_err(|_| format!("the transcript of `{id}` is missing"))?;
-        serde_json::from_slice(&text).map_err(|e| format!("the transcript of `{id}` is unreadable: {e}"))
+        serde_json::from_slice(&text)
+            .map_err(|e| format!("the transcript of `{id}` is unreadable: {e}"))
     }
 
     fn finish_without_run(
@@ -2349,6 +2363,83 @@ pub fn render_result(r: &AgentResult) -> String {
     out
 }
 
+type ChildMemoryTools = (
+    Vec<Box<dyn bricks_tools::Tool>>,
+    Option<Arc<dyn bricks_memory::LongTermMemory>>,
+);
+
+/// Filter or attach `memory_search` / `memory_write` on a child tool list so
+/// neither leaks from inherited parent tools when disallowed, nor stays missing
+/// when the parent's memory was attached dynamically.
+fn apply_child_memory_tools(
+    tools: &mut Vec<Box<dyn bricks_tools::Tool>>,
+    has_memory: bool,
+    access: super::profile::MemoryAccess,
+) {
+    let allow_search = has_memory && access != super::profile::MemoryAccess::Off;
+    let allow_write = allow_search && access == super::profile::MemoryAccess::ReadWrite;
+    tools.retain(|t| match t.name() {
+        "memory_search" => allow_search,
+        "memory_write" => allow_write,
+        _ => true,
+    });
+    if allow_search && !tools.iter().any(|t| t.name() == "memory_search") {
+        tools.push(Box::new(bricks_tools::memory_tools::MemorySearchTool));
+    }
+    if allow_write && !tools.iter().any(|t| t.name() == "memory_write") {
+        tools.push(Box::new(bricks_tools::memory_tools::MemoryWriteTool));
+    }
+}
+
+impl AgentSpawner {
+    fn resolve_child_memory(
+        &self,
+        profile: &AgentProfile,
+        parent_memory: Option<&Arc<dyn bricks_memory::LongTermMemory>>,
+    ) -> (
+        super::profile::MemoryAccess,
+        Option<Arc<dyn bricks_memory::LongTermMemory>>,
+    ) {
+        let access = profile
+            .memory
+            .unwrap_or(if self.bricks.agents.subagent_memory_write {
+                super::profile::MemoryAccess::ReadWrite
+            } else {
+                super::profile::MemoryAccess::ReadOnly
+            });
+        let memory = match access {
+            super::profile::MemoryAccess::Off => None,
+            super::profile::MemoryAccess::ReadOnly | super::profile::MemoryAccess::ReadWrite => {
+                parent_memory.cloned()
+            }
+        };
+        (access, memory)
+    }
+
+    fn build_child_tools(
+        self: &Arc<Self>,
+        profile: &AgentProfile,
+        parent_memory: Option<&Arc<dyn bricks_memory::LongTermMemory>>,
+    ) -> ChildMemoryTools {
+        let mut tools = subagent::child_tools((self.tools)(), &[]);
+        tools.push(Box::new(super::tool::NativeAgentTool::new(Arc::clone(
+            self,
+        ))));
+        tools.push(Box::new(super::tool::AgentControlTool::new(Arc::clone(
+            self,
+        ))));
+        tools.push(Box::new(super::tool::AgentProfilesTool::new(Arc::clone(
+            self,
+        ))));
+        if !tools.iter().any(|t| t.name() == "Messagent") {
+            tools.push(Box::new(super::messagent::MessagentTool));
+        }
+        let (memory_access, child_memory) = self.resolve_child_memory(profile, parent_memory);
+        apply_child_memory_tools(&mut tools, child_memory.is_some(), memory_access);
+        (tools, child_memory)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2540,7 +2631,10 @@ mod tests {
 
             // ASK: the child's Write runs; nobody is asked.
             let d = child.check(&request()).await;
-            assert!(matches!(d, PermissionDecision::Allow), "{interactive}: {d:?}");
+            assert!(
+                matches!(d, PermissionDecision::Allow),
+                "{interactive}: {d:?}"
+            );
             assert!(broker.pending().is_empty(), "{interactive}");
 
             // EXECUTE, reached by the running child at its next decision.
@@ -2603,78 +2697,5 @@ mod tests {
         let mut t = Vec::new();
         apply_child_memory_tools(&mut t, true, MemoryAccess::ReadWrite);
         assert_eq!(names(&t), vec!["memory_search", "memory_write"]);
-    }
-}
-
-/// Filter or attach `memory_search` / `memory_write` on a child tool list so
-/// neither leaks from inherited parent tools when disallowed, nor stays missing
-/// when the parent's memory was attached dynamically.
-fn apply_child_memory_tools(
-    tools: &mut Vec<Box<dyn bricks_tools::Tool>>,
-    has_memory: bool,
-    access: super::profile::MemoryAccess,
-) {
-    let allow_search = has_memory && access != super::profile::MemoryAccess::Off;
-    let allow_write = allow_search && access == super::profile::MemoryAccess::ReadWrite;
-    tools.retain(|t| match t.name() {
-        "memory_search" => allow_search,
-        "memory_write" => allow_write,
-        _ => true,
-    });
-    if allow_search && !tools.iter().any(|t| t.name() == "memory_search") {
-        tools.push(Box::new(bricks_tools::memory_tools::MemorySearchTool));
-    }
-    if allow_write && !tools.iter().any(|t| t.name() == "memory_write") {
-        tools.push(Box::new(bricks_tools::memory_tools::MemoryWriteTool));
-    }
-}
-
-impl AgentSpawner {
-    fn resolve_child_memory(
-        &self,
-        profile: &AgentProfile,
-        parent_memory: Option<&Arc<dyn bricks_memory::LongTermMemory>>,
-    ) -> (
-        super::profile::MemoryAccess,
-        Option<Arc<dyn bricks_memory::LongTermMemory>>,
-    ) {
-        let access = profile.memory.unwrap_or(if self.bricks.agents.subagent_memory_write {
-            super::profile::MemoryAccess::ReadWrite
-        } else {
-            super::profile::MemoryAccess::ReadOnly
-        });
-        let memory = match access {
-            super::profile::MemoryAccess::Off => None,
-            super::profile::MemoryAccess::ReadOnly | super::profile::MemoryAccess::ReadWrite => {
-                parent_memory.cloned()
-            }
-        };
-        (access, memory)
-    }
-
-    fn build_child_tools(
-        self: &Arc<Self>,
-        profile: &AgentProfile,
-        parent_memory: Option<&Arc<dyn bricks_memory::LongTermMemory>>,
-    ) -> (
-        Vec<Box<dyn bricks_tools::Tool>>,
-        Option<Arc<dyn bricks_memory::LongTermMemory>>,
-    ) {
-        let mut tools = subagent::child_tools((self.tools)(), &[]);
-        tools.push(Box::new(super::tool::NativeAgentTool::new(Arc::clone(
-            self,
-        ))));
-        tools.push(Box::new(super::tool::AgentControlTool::new(Arc::clone(
-            self,
-        ))));
-        tools.push(Box::new(super::tool::AgentProfilesTool::new(Arc::clone(
-            self,
-        ))));
-        if !tools.iter().any(|t| t.name() == "Messagent") {
-            tools.push(Box::new(super::messagent::MessagentTool));
-        }
-        let (memory_access, child_memory) = self.resolve_child_memory(profile, parent_memory);
-        apply_child_memory_tools(&mut tools, child_memory.is_some(), memory_access);
-        (tools, child_memory)
     }
 }

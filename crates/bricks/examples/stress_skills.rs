@@ -78,7 +78,8 @@ fn main() {
             .into_iter()
             .map(|e| e.name)
             .collect();
-        for n in ["create-skills"] {
+        {
+            let n = "create-skills";
             check!(
                 format!("built-in `{n}` is listed"),
                 names.iter().any(|x| x == n)

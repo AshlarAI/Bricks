@@ -4,11 +4,12 @@
 //! opened afterwards.
 
 use crate::contract::{
-    IpcResult, McpAppCallResult, McpAppView, McpServerInput, McpServerItem, McpServersView, McpTestResult,
+    IpcResult, McpAppCallResult, McpAppView, McpServerInput, McpServerItem, McpServersView,
+    McpTestResult,
 };
 use crate::engine::AppState;
 use crate::services::{invalid, not_found};
-use bricks_config::mcp::{self, Decision, ServerEntry, Selection, Source};
+use bricks_config::mcp::{self, Decision, Selection, ServerEntry, Source};
 use bricks_mcp::{McpManager, McpServerConfig, McpServerStatus};
 use std::path::PathBuf;
 use tauri::State;
@@ -48,7 +49,12 @@ fn view(selection: Selection, project: Option<PathBuf>) -> McpServersView {
                     Source::User => "user".into(),
                     Source::Project => "project".into(),
                 },
-                transport: if s.entry.config.url.is_some() { "http" } else { "stdio" }.into(),
+                transport: if s.entry.config.url.is_some() {
+                    "http"
+                } else {
+                    "stdio"
+                }
+                .into(),
                 target: target(&s.entry.config),
                 enabled: s.entry.enabled,
                 decision: s.decision.map(|d| {
@@ -77,7 +83,10 @@ fn rejected(message: String) -> crate::contract::IpcError {
 }
 
 #[tauri::command]
-pub fn mcp_servers(state: State<'_, AppState>, project_id: Option<String>) -> IpcResult<McpServersView> {
+pub fn mcp_servers(
+    state: State<'_, AppState>,
+    project_id: Option<String>,
+) -> IpcResult<McpServersView> {
     current(&state, project_id.as_deref())
 }
 
@@ -154,7 +163,11 @@ pub fn mcp_add(
 }
 
 #[tauri::command]
-pub fn mcp_remove(state: State<'_, AppState>, name: String, project_id: Option<String>) -> IpcResult<McpServersView> {
+pub fn mcp_remove(
+    state: State<'_, AppState>,
+    name: String,
+    project_id: Option<String>,
+) -> IpcResult<McpServersView> {
     if !mcp::remove_user(&home(), &name).map_err(rejected)? {
         return Err(not_found(format!("no MCP server of yours named '{name}'")));
     }
@@ -196,7 +209,9 @@ fn runnable(state: &AppState, name: &str, project_id: Option<&str>) -> IpcResult
         .find(|s| s.entry.config.name == name && !s.shadowed)
         .ok_or_else(|| not_found(format!("no MCP server named '{name}'")))?;
     if server.source == Source::Project && server.decision != Some(Decision::Approved) {
-        return Err(rejected(format!("'{name}' is declared by the project: approve it first")));
+        return Err(rejected(format!(
+            "'{name}' is declared by the project: approve it first"
+        )));
     }
     Ok(server.entry.config)
 }
@@ -204,7 +219,12 @@ fn runnable(state: &AppState, name: &str, project_id: Option<&str>) -> IpcResult
 /// One connection to `config`, or why it failed.
 async fn connect(config: &McpServerConfig) -> Result<McpManager, String> {
     let manager = McpManager::connect(std::slice::from_ref(config)).await;
-    match manager.statuses().await.into_iter().find(|(n, _)| *n == config.name) {
+    match manager
+        .statuses()
+        .await
+        .into_iter()
+        .find(|(n, _)| *n == config.name)
+    {
         Some((_, McpServerStatus::Connected)) => Ok(manager),
         Some((_, McpServerStatus::Error(e))) => Err(e),
         _ => Err(format!("'{}' is not connected", config.name)),
@@ -271,12 +291,20 @@ pub async fn mcp_app_load(
             .client(&name)
             .await
             .ok_or_else(|| rejected(format!("'{name}' is not connected")))?;
-        let contents = client.read_resource(&uri).await.map_err(|e| rejected(e.to_string()))?;
+        let contents = client
+            .read_resource(&uri)
+            .await
+            .map_err(|e| rejected(e.to_string()))?;
         let html = contents
             .into_iter()
             .find_map(|c| match c {
-                bricks_mcp::McpContent::Resource { text: Some(text), mime_type, .. }
-                    if mime_type.as_deref().is_none_or(|m| m.starts_with("text/html")) =>
+                bricks_mcp::McpContent::Resource {
+                    text: Some(text),
+                    mime_type,
+                    ..
+                } if mime_type
+                    .as_deref()
+                    .is_none_or(|m| m.starts_with("text/html")) =>
                 {
                     Some(text)
                 }
@@ -336,7 +364,10 @@ mod tests {
             split_command(r#"npx -y "@scope/server one" '/a b/c' x"#).unwrap(),
             vec!["npx", "-y", "@scope/server one", "/a b/c", "x"]
         );
-        assert_eq!(split_command(r#"run "" end"#).unwrap(), vec!["run", "", "end"]);
+        assert_eq!(
+            split_command(r#"run "" end"#).unwrap(),
+            vec!["run", "", "end"]
+        );
         assert!(split_command("a \"b").is_err());
         assert!(split_command("   ").unwrap().is_empty());
     }

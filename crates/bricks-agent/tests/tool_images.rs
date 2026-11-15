@@ -130,7 +130,11 @@ async fn with_tool_result_transport_the_image_sits_inside_its_result() {
     let file = write_png(dir.path(), "shot.png", 640, 480, 0);
     let bytes = std::fs::read(&file).unwrap();
     let script = Script::new(vec![
-        Reply::tool("v1", "Read", json!({ "file_path": file.display().to_string() })),
+        Reply::tool(
+            "v1",
+            "Read",
+            json!({ "file_path": file.display().to_string() }),
+        ),
         Reply::text("I see it"),
     ]);
     let a = agent(dir.path(), ImageTransport::ToolResult, &script);
@@ -138,18 +142,28 @@ async fn with_tool_result_transport_the_image_sits_inside_its_result() {
 
     let reqs = script.requests();
     let turn = round_turn(&reqs[1].1.messages);
-    assert_eq!(turn.len(), 1, "the image is inside the result, nothing follows it");
+    assert_eq!(
+        turn.len(),
+        1,
+        "the image is inside the result, nothing follows it"
+    );
     let (content, is_error) = result_of(turn, "v1");
     assert_eq!(is_error, Some(false));
     let ToolResultContent::Blocks(inner) = content else {
         panic!("an image result is a block content: {content:?}");
     };
     assert_eq!(inner.len(), 2);
-    assert!(text_of(content).contains("image/png, 640×480"), "{}", text_of(content));
+    assert!(
+        text_of(content).contains("image/png, 640×480"),
+        "{}",
+        text_of(content)
+    );
     let (media, data) = image_data(&inner[1]).expect("the image follows the text");
     assert_eq!(media, "image/png");
     assert_eq!(
-        base64::engine::general_purpose::STANDARD.decode(&data).unwrap(),
+        base64::engine::general_purpose::STANDARD
+            .decode(&data)
+            .unwrap(),
         bytes,
         "the model receives the file's bytes"
     );
@@ -171,7 +185,11 @@ async fn with_user_turn_transport_the_result_is_text_and_the_labelled_image_foll
     let file = write_png(dir.path(), "plan.png", 320, 200, 5);
     let bytes_len = std::fs::read(&file).unwrap().len();
     let script = Script::new(vec![
-        Reply::tool("v1", "Read", json!({ "file_path": file.display().to_string() })),
+        Reply::tool(
+            "v1",
+            "Read",
+            json!({ "file_path": file.display().to_string() }),
+        ),
         Reply::text("I see it"),
     ]);
     let a = agent(dir.path(), ImageTransport::UserTurn, &script);
@@ -190,7 +208,10 @@ async fn with_user_turn_transport_the_result_is_text_and_the_labelled_image_foll
         label,
         &format!("[image from tool call v1] {expected_path}, image/png, {bytes_len} bytes")
     );
-    assert!(image_data(&turn[2]).is_some(), "the image follows its label");
+    assert!(
+        image_data(&turn[2]).is_some(),
+        "the image follows its label"
+    );
 
     // The raw history carries the same turn.
     let raw = a.raw_history();
@@ -204,7 +225,11 @@ async fn with_no_transport_the_result_says_the_image_was_not_shown() {
     let dir = tempfile::tempdir().unwrap();
     let file = write_png(dir.path(), "hidden.png", 16, 16, 0);
     let script = Script::new(vec![
-        Reply::tool("v1", "Read", json!({ "file_path": file.display().to_string() })),
+        Reply::tool(
+            "v1",
+            "Read",
+            json!({ "file_path": file.display().to_string() }),
+        ),
         Reply::text("ok"),
     ]);
     agent(dir.path(), ImageTransport::None, &script)
@@ -214,14 +239,21 @@ async fn with_no_transport_the_result_says_the_image_was_not_shown() {
 
     let reqs = script.requests();
     let turn = round_turn(&reqs[1].1.messages);
-    assert_eq!(turn.len(), 1, "no image block reaches a model that does not accept one");
+    assert_eq!(
+        turn.len(),
+        1,
+        "no image block reaches a model that does not accept one"
+    );
     let (content, _) = result_of(turn, "v1");
     let text = text_of(content);
     assert!(
         text.ends_with("[the image was not shown: the current model does not accept images]"),
         "{text}"
     );
-    assert!(text.contains("image/png, 16×16"), "the image's own text stays: {text}");
+    assert!(
+        text.contains("image/png, 16×16"),
+        "the image's own text stays: {text}"
+    );
 }
 
 #[tokio::test]
@@ -232,9 +264,17 @@ async fn several_images_follow_every_result_of_the_round_in_call_order() {
     std::fs::write(dir.path().join("notes.txt"), "un texte").unwrap();
     let script = Script::new(vec![
         Reply::tools(vec![
-            ("v1", "Read", json!({ "file_path": first.display().to_string() })),
+            (
+                "v1",
+                "Read",
+                json!({ "file_path": first.display().to_string() }),
+            ),
             ("r1", "Read", json!({ "file_path": "notes.txt" })),
-            ("v2", "Read", json!({ "file_path": second.display().to_string() })),
+            (
+                "v2",
+                "Read",
+                json!({ "file_path": second.display().to_string() }),
+            ),
         ]),
         Reply::text("ok"),
     ]);
@@ -265,14 +305,20 @@ async fn several_images_follow_every_result_of_the_round_in_call_order() {
         })
         .collect();
     assert_eq!(labels.len(), 2);
-    assert!(labels[0].starts_with("[image from tool call v1]"), "{labels:?}");
-    assert!(labels[1].starts_with("[image from tool call v2]"), "{labels:?}");
-    let sizes: Vec<(String, String)> = turn[3..]
-        .iter()
-        .filter_map(image_data)
-        .collect();
+    assert!(
+        labels[0].starts_with("[image from tool call v1]"),
+        "{labels:?}"
+    );
+    assert!(
+        labels[1].starts_with("[image from tool call v2]"),
+        "{labels:?}"
+    );
+    let sizes: Vec<(String, String)> = turn[3..].iter().filter_map(image_data).collect();
     assert_eq!(sizes.len(), 2);
-    assert_ne!(sizes[0].1, sizes[1].1, "each label is followed by its own image");
+    assert_ne!(
+        sizes[0].1, sizes[1].1,
+        "each label is followed by its own image"
+    );
 }
 
 #[tokio::test]
@@ -293,12 +339,18 @@ async fn a_view_that_fails_carries_no_image_on_any_transport() {
             Reply::tool("v1", "Read", json!({ "file_path": "fake.png" })),
             Reply::text("ok"),
         ]);
-        agent(dir.path(), transport, &script).run("look").await.unwrap();
+        agent(dir.path(), transport, &script)
+            .run("look")
+            .await
+            .unwrap();
         let reqs = script.requests();
         let turn = round_turn(&reqs[1].1.messages);
         assert_eq!(turn.len(), 1, "{transport:?}: {turn:?}");
         let (content, is_error) = result_of(turn, "v1");
         assert_eq!(is_error, Some(true), "{transport:?}");
-        assert!(matches!(content, ToolResultContent::Text(_)), "{transport:?}");
+        assert!(
+            matches!(content, ToolResultContent::Text(_)),
+            "{transport:?}"
+        );
     }
 }

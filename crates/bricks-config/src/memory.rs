@@ -35,8 +35,8 @@ fn find_provider_credentials(
     let exact = providers.iter().find(|p| p.id.eq_ignore_ascii_case(kind));
     let matched = exact.or_else(|| providers.iter().find(|p| provider_matches_kind(p, kind)))?;
     let key = matched.key()?.to_string();
-    let base_url = (kind == "openai" && !matched.endpoint.trim().is_empty())
-        .then(|| matched.endpoint.clone());
+    let base_url =
+        (kind == "openai" && !matched.endpoint.trim().is_empty()).then(|| matched.endpoint.clone());
     Some((key, base_url))
 }
 
@@ -335,14 +335,18 @@ limits = { max_input_tokens = 128000, max_output_tokens = 8192 }
             .expect("extractor should resolve from authenticated provider");
         assert!(ext.id().contains("gpt-5-mini"), "got {}", ext.id());
 
-        let explicit =
-            resolve_extractor(Some("openai/flagship"), Some(&reg), &ExtractionConfig::default())
-                .unwrap()
-                .expect("explicit extractor should resolve");
+        let explicit = resolve_extractor(
+            Some("openai/flagship"),
+            Some(&reg),
+            &ExtractionConfig::default(),
+        )
+        .unwrap()
+        .expect("explicit extractor should resolve");
         assert!(explicit.id().contains("gpt-5"), "got {}", explicit.id());
 
         let no_key_reg = sample_registry(false, false);
-        let none = resolve_extractor(None, Some(&no_key_reg), &ExtractionConfig::default()).unwrap();
+        let none =
+            resolve_extractor(None, Some(&no_key_reg), &ExtractionConfig::default()).unwrap();
         assert!(none.is_none());
     }
 }

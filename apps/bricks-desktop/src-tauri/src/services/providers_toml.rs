@@ -111,7 +111,10 @@ pub fn apply(text: &str, edit: &Edit, origin: &str) -> IpcResult<String> {
             }
         }
         Edit::StripReasoningDefaults => {
-            if let Some(providers) = doc.get_mut("providers").and_then(Item::as_array_of_tables_mut) {
+            if let Some(providers) = doc
+                .get_mut("providers")
+                .and_then(Item::as_array_of_tables_mut)
+            {
                 for provider in providers.iter_mut() {
                     let Some(models) = provider
                         .get_mut("models")
@@ -562,7 +565,7 @@ fn check_profiles(profiles: &[ReasoningProfileEdit]) -> IpcResult<()> {
 /// The shape a JSON Pointer must have (RFC 6901), checked before writing.
 fn check_pointer(pointer: &str) -> Result<(), String> {
     if pointer.is_empty() {
-        return Err(tr!(msg::AN_EMPTY_POINTER_WOULD_REMOVE_THE).into());
+        return Err(tr!(msg::AN_EMPTY_POINTER_WOULD_REMOVE_THE));
     }
     if !pointer.starts_with('/') {
         return Err(tr!(msg::ISNT_A_JSON_POINTER_IT_MUST, pointer = pointer));
@@ -581,13 +584,13 @@ fn check_pointer(pointer: &str) -> Result<(), String> {
 fn json_to_toml(value: &Json) -> Result<Value, String> {
     Ok(match value {
         Json::Null => {
-            return Err(tr!(msg::AN_EMPTY_VALUE_NULL_CANT_BE).into());
+            return Err(tr!(msg::AN_EMPTY_VALUE_NULL_CANT_BE));
         }
         Json::Bool(b) => Value::from(*b),
         Json::Number(n) => match n.as_i64() {
             Some(i) => Value::from(i),
             None if n.is_f64() => Value::from(n.as_f64().unwrap_or_default()),
-            None => return Err(tr!(msg::NUMBER_OUTSIDE_THE_RANGE_OF_TOML).into()),
+            None => return Err(tr!(msg::NUMBER_OUTSIDE_THE_RANGE_OF_TOML)),
         },
         Json::String(s) => Value::from(s.as_str()),
         Json::Array(items) => {
@@ -941,13 +944,19 @@ mod tests {
         let next = apply(PROVIDERS, &edit, "test").unwrap();
         assert!(!next.contains("api_key_env"), "{next}");
         assert!(next.contains("api_key = \"sk-from-var\""), "{next}");
-        assert!(next.contains("SECRET-KEY-VALUE"), "other providers keep theirs");
+        assert!(
+            next.contains("SECRET-KEY-VALUE"),
+            "other providers keep theirs"
+        );
         let dropped = Edit::DropKeyVariable {
             provider_id: "cloud".into(),
             key: None,
         };
         let next = apply(PROVIDERS, &dropped, "test").unwrap();
-        assert_eq!(next, PROVIDERS.replace("api_key_env = \"BRICKS_TEST_CLOUD_KEY\"\n", ""));
+        assert_eq!(
+            next,
+            PROVIDERS.replace("api_key_env = \"BRICKS_TEST_CLOUD_KEY\"\n", "")
+        );
     }
 
     #[test]

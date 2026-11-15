@@ -15,7 +15,10 @@ use crate::contract::{IpcErrorCode, PtyEvent, PtyInfo};
 const WAIT: Duration = Duration::from_secs(15);
 
 fn sh() -> ShellSpec {
-    ShellSpec { program: "/bin/sh".into(), args: Vec::new() }
+    ShellSpec {
+        program: "/bin/sh".into(),
+        args: Vec::new(),
+    }
 }
 
 fn open(manager: &PtyManager, cwd: &Path, project: &str) -> (PtyInfo, Receiver<PtyEvent>) {
@@ -40,7 +43,9 @@ fn run_until_exit(rx: &Receiver<PtyEvent>) -> (String, Option<i32>) {
             PtyEvent::Data { data } => {
                 output.extend(STANDARD.decode(data).expect("valid base64"));
             }
-            PtyEvent::Exit { code } => return (String::from_utf8_lossy(&output).into_owned(), code),
+            PtyEvent::Exit { code } => {
+                return (String::from_utf8_lossy(&output).into_owned(), code);
+            }
         }
     }
 }
@@ -57,10 +62,18 @@ fn shell_runs_in_the_project_folder_and_exits_cleanly() {
     manager.write(&info.id, "exit\n").unwrap();
     let (output, code) = run_until_exit(&rx);
 
-    let folder = dir.path().file_name().unwrap().to_string_lossy().into_owned();
+    let folder = dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     assert!(output.contains(&folder), "output was {output:?}");
     assert_eq!(code, Some(0));
-    assert!(manager.list(None).is_empty(), "an exited terminal leaves the registry");
+    assert!(
+        manager.list(None).is_empty(),
+        "an exited terminal leaves the registry"
+    );
     let err = manager.write(&info.id, "echo late\n").unwrap_err();
     assert_eq!(err.code, IpcErrorCode::NotFound);
 }
@@ -169,7 +182,10 @@ fn consumer_refused_mid_flood_still_reaps_the_shell() {
         };
         let info = manager.open(params, &sh(), sink).unwrap();
         manager
-            .write(&info.id, "while :; do echo flood flood flood flood flood flood flood; done\n")
+            .write(
+                &info.id,
+                "while :; do echo flood flood flood flood flood flood flood; done\n",
+            )
             .unwrap();
 
         let deadline = Instant::now() + WAIT;

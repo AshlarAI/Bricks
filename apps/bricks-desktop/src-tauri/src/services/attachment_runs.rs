@@ -13,11 +13,11 @@
 //! to. Records of an older session do not exist: its messages show no
 //! attachment, as before.
 
-use crate::i18n::{msg, tr};
 use super::attachments::{copy_path, session_attachments};
 use super::conversations::message_text;
 use super::io_error;
 use crate::contract::{AttachmentRef, HistoryBlock, HistoryMessage, IpcErrorCode, IpcResult};
+use crate::i18n::{msg, tr};
 use bricks_types::{Message, Role};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -336,7 +336,10 @@ mod revision_tests {
         assert_eq!(set_aside_from(&files, 1).unwrap(), 2);
 
         let kept = load(&files);
-        assert_eq!(kept.iter().map(|r| r.run_id.as_str()).collect::<Vec<_>>(), ["r0"]);
+        assert_eq!(
+            kept.iter().map(|r| r.run_id.as_str()).collect::<Vec<_>>(),
+            ["r0"]
+        );
         assert!(referenced(&files).contains(&"a".repeat(32)));
         let aside = std::fs::read_to_string(files.join("attachments.revised.jsonl")).unwrap();
         assert_eq!(aside.lines().count(), 2);

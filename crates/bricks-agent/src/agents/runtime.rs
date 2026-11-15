@@ -267,7 +267,8 @@ impl ActivityLease {
         {
             Ok(Some(g)) => {
                 *writer = Some(g);
-                self.claimed.store(true, std::sync::atomic::Ordering::SeqCst);
+                self.claimed
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 Ok(true)
             }
             Ok(None) => Ok(false),
@@ -699,11 +700,7 @@ impl AgentRuntime {
 
     /// The identity's details once known (its worktree, branch, skills)
     /// and what its execution uses: `status` and the manifest stay true.
-    pub fn update_launch(
-        &self,
-        info: &SpawnInfo,
-        launch: Option<super::spawn::LaunchRecord>,
-    ) {
+    pub fn update_launch(&self, info: &SpawnInfo, launch: Option<super::spawn::LaunchRecord>) {
         {
             let mut recs = self.records.lock();
             if let Some(r) = recs.iter_mut().find(|r| r.info.agent_id == info.agent_id) {
@@ -1551,7 +1548,11 @@ mod tests {
             cm.drain_messages(),
             vec!["[Messagent m0003 from sub_0000 to team]\nall".to_string()]
         );
-        assert_eq!(c1.pending_messages(), 2, "the team reaches the other sub-agent");
+        assert_eq!(
+            c1.pending_messages(),
+            2,
+            "the team reaches the other sub-agent"
+        );
         assert_eq!(c0.pending_messages(), 1, "the sender is not a recipient");
 
         let from_main = messagent(
@@ -1561,7 +1562,11 @@ mod tests {
         )
         .await;
         assert_eq!(from_main.content, "m0004 sent to the team.");
-        assert_eq!(cm.pending_messages(), 0, "the orchestrator is not its own recipient");
+        assert_eq!(
+            cm.pending_messages(),
+            0,
+            "the orchestrator is not its own recipient"
+        );
         assert_eq!(c0.pending_messages(), 2);
         assert_eq!(c1.pending_messages(), 3);
     }
@@ -1575,14 +1580,26 @@ mod tests {
         let c1 = running(&rt, "sub_0001");
         let too_large = "x".repeat(super::super::messagent::MAX_TEXT_BYTES + 1);
         let refused = [
-            (json!({"action": "send", "to": "sub_0000", "content": "  \n"}), "the message is empty; nothing was sent."),
+            (
+                json!({"action": "send", "to": "sub_0000", "content": "  \n"}),
+                "the message is empty; nothing was sent.",
+            ),
             (
                 json!({"action": "send", "to": "sub_0000", "content": too_large}),
                 "is over 15872 bytes",
             ),
-            (json!({"action": "send", "to": "sub_9999", "content": "x"}), "no agent `sub_9999` in this team; nothing was sent."),
-            (json!({"action": "send", "to": "sub_0000", "content": "x", "reply_to": "m9999"}), "no message `m9999` to reply to; nothing was sent."),
-            (json!({"action": "send", "content": "x"}), "`send` needs `to`"),
+            (
+                json!({"action": "send", "to": "sub_9999", "content": "x"}),
+                "no agent `sub_9999` in this team; nothing was sent.",
+            ),
+            (
+                json!({"action": "send", "to": "sub_0000", "content": "x", "reply_to": "m9999"}),
+                "no message `m9999` to reply to; nothing was sent.",
+            ),
+            (
+                json!({"action": "send", "content": "x"}),
+                "`send` needs `to`",
+            ),
         ];
         for (input, why) in refused {
             let r = messagent(&rt, None, input).await;
@@ -1595,7 +1612,11 @@ mod tests {
             json!({"action": "send", "to": "sub_0000", "content": "me"}),
         )
         .await;
-        assert!(myself.is_error && myself.content.contains("yourself"), "{}", myself.content);
+        assert!(
+            myself.is_error && myself.content.contains("yourself"),
+            "{}",
+            myself.content
+        );
         assert_eq!(c0.pending_messages(), 0);
         assert_eq!(c1.pending_messages(), 0);
 
@@ -1682,7 +1703,12 @@ mod tests {
         let rt = runtime(None);
         running(&rt, "sub_0000");
         let (first, _) = rt
-            .post(MAIN, Target::Agents(vec!["sub_0000".into()]), "start".into(), None)
+            .post(
+                MAIN,
+                Target::Agents(vec!["sub_0000".into()]),
+                "start".into(),
+                None,
+            )
             .unwrap();
         assert_eq!(first.chain, 0);
         let mut last = first.id;
@@ -1736,26 +1762,45 @@ mod tests {
             let rt = Arc::clone(&rt);
             async move { messagent(&rt, who, input).await.content }
         };
-        messagent(&rt, None, json!({"action": "send", "to": "team", "content": "one"})).await;
+        messagent(
+            &rt,
+            None,
+            json!({"action": "send", "to": "team", "content": "one"}),
+        )
+        .await;
         // A member who joins later has not got it: `read` gives it, once.
         running(&rt, "sub_0001");
         let first = read(Some("sub_0001"), json!({"action": "read"})).await;
-        assert!(first.contains("[Messagent m0001 from main to team]\none"), "{first}");
+        assert!(
+            first.contains("[Messagent m0001 from main to team]\none"),
+            "{first}"
+        );
         assert_eq!(
             read(Some("sub_0001"), json!({"action": "read"})).await,
             "No new message in the team thread."
         );
         // A team post reaches both queues: nothing is left for `read`.
-        messagent(&rt, Some("sub_0000"), json!({"action": "send", "to": "team", "content": "two"})).await;
+        messagent(
+            &rt,
+            Some("sub_0000"),
+            json!({"action": "send", "to": "team", "content": "two"}),
+        )
+        .await;
         assert_eq!(
             read(Some("sub_0001"), json!({"action": "read"})).await,
             "No new message in the team thread."
         );
         let whole = read(Some("sub_0001"), json!({"action": "read", "all": true})).await;
-        assert!(whole.contains("\none") && whole.contains("\ntwo"), "{whole}");
+        assert!(
+            whole.contains("\none") && whole.contains("\ntwo"),
+            "{whole}"
+        );
         // The orchestrator got `two` in its queue: `read` does not give it again.
         let main_reads = read(None, json!({"action": "read"})).await;
-        assert!(main_reads.contains("\none") && !main_reads.contains("\ntwo"), "{main_reads}");
+        assert!(
+            main_reads.contains("\none") && !main_reads.contains("\ntwo"),
+            "{main_reads}"
+        );
     }
 
     /// `members` lists the orchestrator, then every sub-agent, with its state.
@@ -1769,9 +1814,21 @@ mod tests {
         let listed = messagent(&rt, Some("sub_0000"), json!({"action": "members"})).await;
         assert!(!listed.is_error, "{}", listed.content);
         let lines: Vec<&str> = listed.content.lines().collect();
-        assert_eq!(lines[0], "- main · Orchestrateur · running", "{}", listed.content);
-        assert_eq!(lines[1], "- sub_0000 · Agent p · running (you)", "{}", listed.content);
-        assert_eq!(lines[2], "- sub_0001 · Agent p · completed", "{}", listed.content);
+        assert_eq!(
+            lines[0], "- main · Orchestrateur · running",
+            "{}",
+            listed.content
+        );
+        assert_eq!(
+            lines[1], "- sub_0000 · Agent p · running (you)",
+            "{}",
+            listed.content
+        );
+        assert_eq!(
+            lines[2], "- sub_0001 · Agent p · completed",
+            "{}",
+            listed.content
+        );
     }
 
     /// What is sent to the orchestrator between its runs waits for its next
@@ -1781,16 +1838,34 @@ mod tests {
         use super::super::messagent::{MAIN, Target};
         let rt = runtime(None);
         running(&rt, "sub_0000");
-        rt.post("sub_0000", Target::Agents(vec![MAIN.into()]), "waiting".into(), None)
-            .unwrap();
+        rt.post(
+            "sub_0000",
+            Target::Agents(vec![MAIN.into()]),
+            "waiting".into(),
+            None,
+        )
+        .unwrap();
         assert_eq!(rt.waiting_for(MAIN), 1);
         let queue = orchestrator_queue(&rt);
-        assert_eq!(queue.pending_messages(), 1, "moved into the run that starts");
+        assert_eq!(
+            queue.pending_messages(),
+            1,
+            "moved into the run that starts"
+        );
         assert_eq!(rt.waiting_for(MAIN), 1);
-        assert_eq!(queue.drain_messages().len(), 1, "the run reads it between its turns");
+        assert_eq!(
+            queue.drain_messages().len(),
+            1,
+            "the run reads it between its turns"
+        );
         rt.set_main_controls(None);
-        rt.post("sub_0000", Target::Agents(vec![MAIN.into()]), "later".into(), None)
-            .unwrap();
+        rt.post(
+            "sub_0000",
+            Target::Agents(vec![MAIN.into()]),
+            "later".into(),
+            None,
+        )
+        .unwrap();
         assert_eq!(rt.waiting_for(MAIN), 1, "kept until the next run");
         let next = orchestrator_queue(&rt);
         assert_eq!(next.pending_messages(), 1, "and moved into it");
@@ -1806,14 +1881,21 @@ mod tests {
         running(&rt, "sub_0000");
         let cancel = CancellationToken::new();
         assert_eq!(
-            rt.wait_event(MAIN, &[], Duration::from_millis(30), &cancel).await,
+            rt.wait_event(MAIN, &[], Duration::from_millis(30), &cancel)
+                .await,
             WaitOutcome::TimedOut
         );
-        rt.post("sub_0000", Target::Agents(vec![MAIN.into()]), "hi".into(), None)
-            .unwrap();
+        rt.post(
+            "sub_0000",
+            Target::Agents(vec![MAIN.into()]),
+            "hi".into(),
+            None,
+        )
+        .unwrap();
         for _ in 0..2 {
             assert_eq!(
-                rt.wait_event(MAIN, &[], Duration::from_secs(5), &cancel).await,
+                rt.wait_event(MAIN, &[], Duration::from_secs(5), &cancel)
+                    .await,
                 WaitOutcome::Delivered(1),
                 "read next turn, not consumed here"
             );
@@ -1896,9 +1978,19 @@ mod tests {
         use serde_json::json;
         let rt = runtime(None);
         running(&rt, "sub_0000");
-        messagent(&rt, None, json!({"action": "send", "to": "team", "content": "one"})).await;
+        messagent(
+            &rt,
+            None,
+            json!({"action": "send", "to": "team", "content": "one"}),
+        )
+        .await;
         running(&rt, "sub_0001");
-        messagent(&rt, None, json!({"action": "send", "to": "team", "content": "two"})).await;
+        messagent(
+            &rt,
+            None,
+            json!({"action": "send", "to": "team", "content": "two"}),
+        )
+        .await;
         let got = messagent(&rt, Some("sub_0001"), json!({"action": "read"})).await;
         assert!(!got.content.contains("\ntwo"), "{}", got.content);
     }
@@ -1940,7 +2032,6 @@ mod tests {
         );
     }
 
-
     /// A manifest written by an earlier version, with a termination kind this
     /// version does not know, loads: the record is kept as historical and the
     /// file is not replaced by a backup.
@@ -1974,7 +2065,13 @@ mod tests {
         assert_eq!(on_disk[0]["result"]["termination"]["kind"], "max_turns");
         let backups = std::fs::read_dir(d.path())
             .unwrap()
-            .filter(|e| e.as_ref().unwrap().path().to_string_lossy().ends_with(".bak"))
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .to_string_lossy()
+                    .ends_with(".bak")
+            })
             .count();
         assert_eq!(backups, 0, "readable: no backup needed");
     }
@@ -2025,7 +2122,10 @@ mod tests {
         let never = CancellationToken::new();
         let lease = shared_lease(&s, "sub_0000", d.path(), &never).await;
         assert_eq!(lease.writer_dir(), Some(d.path()));
-        assert!(writers_for(d.path()).holder().is_none(), "nothing claimed at launch");
+        assert!(
+            writers_for(d.path()).holder().is_none(),
+            "nothing claimed at launch"
+        );
         let other = tokio::time::timeout(
             Duration::from_secs(1),
             writers_for(d.path()).acquire("sub_0001", &never, |_| {}),
@@ -2046,9 +2146,15 @@ mod tests {
         let s = Scheduler::new(limits(2, 3, 10, 4));
         let never = CancellationToken::new();
         let lease = shared_lease(&s, "sub_0000", d.path(), &never).await;
-        assert_eq!(lease.claim_writer(Duration::from_millis(50)).await, Ok(true));
+        assert_eq!(
+            lease.claim_writer(Duration::from_millis(50)).await,
+            Ok(true)
+        );
         assert_eq!(writers_for(d.path()).holder().as_deref(), Some("sub_0000"));
-        assert_eq!(lease.claim_writer(Duration::from_millis(50)).await, Ok(true));
+        assert_eq!(
+            lease.claim_writer(Duration::from_millis(50)).await,
+            Ok(true)
+        );
         lease.release().await;
         assert!(writers_for(d.path()).holder().is_none());
     }
@@ -2075,7 +2181,10 @@ mod tests {
             "not taken from its holder"
         );
         drop(other);
-        assert_eq!(lease.claim_writer(Duration::from_millis(50)).await, Ok(true));
+        assert_eq!(
+            lease.claim_writer(Duration::from_millis(50)).await,
+            Ok(true)
+        );
         assert_eq!(writers_for(d.path()).holder().as_deref(), Some("sub_0000"));
         lease.release().await;
     }
@@ -2091,7 +2200,10 @@ mod tests {
         let writer = shared_lease(&s, "sub_0001", d.path(), &never).await;
         reader.waiting(async {}).await;
         assert!(writers_for(d.path()).holder().is_none());
-        assert_eq!(writer.claim_writer(Duration::from_millis(50)).await, Ok(true));
+        assert_eq!(
+            writer.claim_writer(Duration::from_millis(50)).await,
+            Ok(true)
+        );
         assert_eq!(writers_for(d.path()).holder().as_deref(), Some("sub_0001"));
         writer.release().await;
         reader.release().await;
@@ -2105,9 +2217,14 @@ mod tests {
         let s = Scheduler::new(limits(2, 3, 10, 4));
         let never = CancellationToken::new();
         let lease = shared_lease(&s, "sub_0000", d.path(), &never).await;
-        assert_eq!(lease.claim_writer(Duration::from_millis(50)).await, Ok(true));
+        assert_eq!(
+            lease.claim_writer(Duration::from_millis(50)).await,
+            Ok(true)
+        );
         let dir = d.path().to_path_buf();
-        let during = lease.waiting(async move { writers_for(&dir).holder() }).await;
+        let during = lease
+            .waiting(async move { writers_for(&dir).holder() })
+            .await;
         assert_eq!(during, None, "released while waiting");
         assert_eq!(
             writers_for(d.path()).holder().as_deref(),
@@ -2160,10 +2277,13 @@ mod tests {
         let listed = messagent(&rt, Some("sub_0000"), json!({"action": "members"})).await;
         assert!(!listed.is_error, "{}", listed.content);
         let lines: Vec<&str> = listed.content.lines().collect();
-        assert_eq!(lines[1], "- sub_0000 · Agent p · running (you)", "{}", listed.content);
         assert_eq!(
-            lines[2],
-            "- sub_0001 · Agent p · running · worktree /wt/sub_0001",
+            lines[1], "- sub_0000 · Agent p · running (you)",
+            "{}",
+            listed.content
+        );
+        assert_eq!(
+            lines[2], "- sub_0001 · Agent p · running · worktree /wt/sub_0001",
             "{}",
             listed.content
         );

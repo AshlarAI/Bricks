@@ -810,10 +810,11 @@ mod tests {
     #[test]
     fn an_assistant_turn_without_text_has_null_content() {
         let mut r = req();
-        r.messages.push(Message::assistant_blocks(vec![ContentBlock::Thinking {
-            thinking: "plan".into(),
-            signature: String::new(),
-        }]));
+        r.messages
+            .push(Message::assistant_blocks(vec![ContentBlock::Thinking {
+                thinking: "plan".into(),
+                signature: String::new(),
+            }]));
         r.messages.push(Message::user("next"));
         r.messages.push(Message::assistant_blocks(vec![
             ContentBlock::Thinking {
@@ -955,7 +956,11 @@ mod tests {
         ]));
         let body = build_body(&ctx(&compat(), true), &r).unwrap();
         let m = body["messages"].as_array().unwrap();
-        assert_eq!(m.len(), 5, "user, assistant, two tool messages, one user turn");
+        assert_eq!(
+            m.len(),
+            5,
+            "user, assistant, two tool messages, one user turn"
+        );
         assert_eq!(
             m[2],
             json!({"role":"tool","tool_call_id":"call_1","content":"Image a.png"})

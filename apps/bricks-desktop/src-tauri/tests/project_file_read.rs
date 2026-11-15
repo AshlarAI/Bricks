@@ -29,10 +29,14 @@ fn numbered(n: u32) -> Vec<u8> {
 
 /// The lines `ligne first` to `ligne first + count - 1`, as the window holds them.
 fn expected_lines(first: u32, count: u32) -> Vec<String> {
-    (first..first + count).map(|i| format!("ligne {i}")).collect()
+    (first..first + count)
+        .map(|i| format!("ligne {i}"))
+        .collect()
 }
 
-fn code_of<T: std::fmt::Debug>(result: Result<T, bricks_desktop_lib::contract::IpcError>) -> (IpcErrorCode, String) {
+fn code_of<T: std::fmt::Debug>(
+    result: Result<T, bricks_desktop_lib::contract::IpcError>,
+) -> (IpcErrorCode, String) {
     let error = result.expect_err("an error is expected");
     (error.code, error.message)
 }
@@ -77,7 +81,11 @@ fn a_short_range_in_a_short_file_comes_with_its_context() {
     let dir = project();
     write(dir.path(), "src/main.rs", &numbered(10));
     let window = read_window(dir.path(), "src/main.rs", Some(3), Some(5)).unwrap();
-    assert_eq!(window.lines.len(), 10, "a ten-line file fits the window: whole");
+    assert_eq!(
+        window.lines.len(),
+        10,
+        "a ten-line file fits the window: whole"
+    );
     assert_eq!(window.start, 1);
     assert!(!window.truncated);
     assert_eq!(window.language.as_deref(), Some("rust"));
@@ -131,14 +139,25 @@ fn every_range_is_held_by_a_window_of_400_lines() {
         let dir = project();
         write(dir.path(), "f.txt", &numbered(total));
         for line in (1..=total).step_by(37) {
-            for end in [line, line + 1, line + 9, line + 150, line + 399, line + 400, total] {
+            for end in [
+                line,
+                line + 1,
+                line + 9,
+                line + 150,
+                line + 399,
+                line + 400,
+                total,
+            ] {
                 let end = end.min(total);
                 let window = read_window(dir.path(), "f.txt", Some(line), Some(end)).unwrap();
                 let first = window.start;
                 let count = u32::try_from(window.lines.len()).unwrap();
                 assert_eq!(count, 400, "{total} lines, range {line}..={end}");
                 assert_eq!(window.lines[0], format!("ligne {first}"));
-                assert!(first <= line, "{total} lines, range {line}..={end}: starts at {first}");
+                assert!(
+                    first <= line,
+                    "{total} lines, range {line}..={end}: starts at {first}"
+                );
                 if end - line + 1 < 400 {
                     assert!(first + count > end, "{total} lines, range {line}..={end}");
                 } else {
@@ -199,7 +218,13 @@ fn an_absent_file_is_not_found() {
 fn paths_outside_the_project_are_refused() {
     let dir = project();
     write(dir.path(), "inside.txt", b"x\n");
-    for rel in ["../secret.txt", "a/../../secret.txt", "/etc/hosts", "", "./inside.txt"] {
+    for rel in [
+        "../secret.txt",
+        "a/../../secret.txt",
+        "/etc/hosts",
+        "",
+        "./inside.txt",
+    ] {
         let (code, _) = code_of(read_window(dir.path(), rel, None, None));
         assert_eq!(code, IpcErrorCode::Invalid, "refused: {rel:?}");
     }
@@ -220,8 +245,11 @@ fn a_symbolic_link_leaving_the_project_is_refused() {
     let project = project();
     let outside = project_outside();
     write(outside.path(), "secret.txt", b"hors projet\n");
-    std::os::unix::fs::symlink(outside.path().join("secret.txt"), project.path().join("link.txt"))
-        .unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("secret.txt"),
+        project.path().join("link.txt"),
+    )
+    .unwrap();
     let (code, message) = code_of(read_window(project.path(), "link.txt", None, None));
     assert_eq!(code, IpcErrorCode::Invalid);
     assert!(message.contains("leaves the project"), "{message}");
@@ -232,8 +260,11 @@ fn a_symbolic_link_leaving_the_project_is_refused() {
 fn a_symbolic_link_inside_the_project_is_followed() {
     let dir = project();
     write(dir.path(), "real/notes.md", b"# titre\n");
-    std::os::unix::fs::symlink(dir.path().join("real/notes.md"), dir.path().join("alias.md"))
-        .unwrap();
+    std::os::unix::fs::symlink(
+        dir.path().join("real/notes.md"),
+        dir.path().join("alias.md"),
+    )
+    .unwrap();
     let window = read_window(dir.path(), "alias.md", None, None).unwrap();
     assert_eq!(window.lines, ["# titre"]);
     assert_eq!(window.language.as_deref(), Some("markdown"));
@@ -280,7 +311,11 @@ fn a_large_file_is_read_up_to_the_limit_only() {
 #[test]
 fn spaces_and_unicode_in_names_work() {
     let dir = project();
-    write(dir.path(), "dossier avec espaces/été élève.md", "été\n".as_bytes());
+    write(
+        dir.path(),
+        "dossier avec espaces/été élève.md",
+        "été\n".as_bytes(),
+    );
     let window = read_window(dir.path(), "dossier avec espaces/été élève.md", None, None).unwrap();
     assert_eq!(window.lines, ["été"]);
     assert_eq!(window.language.as_deref(), Some("markdown"));
@@ -335,7 +370,10 @@ fn a_line_equal_to_the_total_is_the_last_line_of_the_file() {
 #[test]
 fn an_unknown_project_is_not_found() {
     let home = project();
-    let state = AppState::assemble(home.path().to_path_buf(), Err("registre absent".to_string()));
+    let state = AppState::assemble(
+        home.path().to_path_buf(),
+        Err("registre absent".to_string()),
+    );
     let (code, _) = code_of(state.project_path("projet-inconnu"));
     assert_eq!(code, IpcErrorCode::NotFound);
 }

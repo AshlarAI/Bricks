@@ -541,6 +541,8 @@ mod tests {
         let p = parse_profile("---\nname: a\ndescription: d\n---\n", src()).unwrap();
         assert_eq!(p.memory, None);
 
-        assert!(parse_profile("---\nname: a\ndescription: d\nmemory: admin\n---\n", src()).is_err());
+        assert!(
+            parse_profile("---\nname: a\ndescription: d\nmemory: admin\n---\n", src()).is_err()
+        );
     }
 }

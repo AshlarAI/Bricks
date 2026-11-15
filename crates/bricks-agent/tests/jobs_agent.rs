@@ -89,7 +89,10 @@ fn serve_with(mut next: impl FnMut(&str) -> String + Send + 'static) -> String {
 /// The job ids named in `text`, each once, in order of appearance.
 fn job_ids_in(text: &str) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
-    for m in regex::Regex::new(r"job_[0-9a-f]{12}").unwrap().find_iter(text) {
+    for m in regex::Regex::new(r"job_[0-9a-f]{12}")
+        .unwrap()
+        .find_iter(text)
+    {
         if !ids.iter().any(|i| i == m.as_str()) {
             ids.push(m.as_str().to_string());
         }
@@ -163,14 +166,21 @@ fn a_handle_in_the_extensions_takes_every_job_tool() {
         .build();
     assert!(agent.is_ok(), "a handle assembles the tools");
     let handle = ext.get::<JobsHandle>().expect("the handle");
-    assert!(Arc::ptr_eq(&handle.0, &session), "the handle is the session's");
+    assert!(
+        Arc::ptr_eq(&handle.0, &session),
+        "the handle is the session's"
+    );
 }
 
 #[tokio::test]
 async fn tools_without_a_handle_bring_their_registry_and_the_agent_installs_one() {
     let work = tempfile::tempdir().unwrap();
     let url = serve(vec![
-        tool_call("c1", "Bash", json!({ "command": "sleep 30", "background": true })),
+        tool_call(
+            "c1",
+            "Bash",
+            json!({ "command": "sleep 30", "background": true }),
+        ),
         text("ok"),
     ]);
     let ext = Extensions::default();
@@ -179,7 +189,9 @@ async fn tools_without_a_handle_bring_their_registry_and_the_agent_installs_one(
         .extensions(ext.clone())
         .build()
         .unwrap();
-    let handle = ext.get::<JobsHandle>().expect("a handle is installed for coding()");
+    let handle = ext
+        .get::<JobsHandle>()
+        .expect("a handle is installed for coding()");
     agent.run("go").await.unwrap();
     // The background job went to the installed registry, and the agent's
     // Bash is the one on it.
@@ -217,7 +229,11 @@ async fn jobs_of_both_kinds_are_followed_by_their_owner_and_not_by_another_agent
     let url_a = serve_with(move |request| {
         let ids = job_ids_in(request);
         let reply = match step {
-            0 => tool_call("a1", "Bash", json!({ "command": "sleep 30", "background": true })),
+            0 => tool_call(
+                "a1",
+                "Bash",
+                json!({ "command": "sleep 30", "background": true }),
+            ),
             1 => tool_call(
                 "a2",
                 "Bash",
@@ -258,10 +274,26 @@ async fn jobs_of_both_kinds_are_followed_by_their_owner_and_not_by_another_agent
     let mut step_b = 0;
     let url_b = serve_with(move |_request| {
         let reply = match step_b {
-            0 => tool_call("b1", "Job", json!({ "action": "status", "job_id": parent_ids[0] })),
-            1 => tool_call("b2", "Job", json!({ "action": "output", "job_id": parent_ids[1] })),
-            2 => tool_call("b3", "Job", json!({ "action": "wait", "job_id": parent_ids[0], "timeout_ms": 50 })),
-            3 => tool_call("b4", "Job", json!({ "action": "stop", "job_id": "job_000000000000" })),
+            0 => tool_call(
+                "b1",
+                "Job",
+                json!({ "action": "status", "job_id": parent_ids[0] }),
+            ),
+            1 => tool_call(
+                "b2",
+                "Job",
+                json!({ "action": "output", "job_id": parent_ids[1] }),
+            ),
+            2 => tool_call(
+                "b3",
+                "Job",
+                json!({ "action": "wait", "job_id": parent_ids[0], "timeout_ms": 50 }),
+            ),
+            3 => tool_call(
+                "b4",
+                "Job",
+                json!({ "action": "stop", "job_id": "job_000000000000" }),
+            ),
             4 => tool_call("b5", "Job", json!({})),
             _ => text("ok"),
         };
@@ -300,7 +332,10 @@ async fn the_removed_task_tools_are_unknown_to_an_agent() {
     agent.run("go").await.unwrap();
     let r = tool_results(&agent);
     assert_eq!(r.len(), 3, "{r:?}");
-    for (name, result) in ["BashTaskOutput", "BashTaskStatus", "BashTaskStop"].iter().zip(&r) {
+    for (name, result) in ["BashTaskOutput", "BashTaskStatus", "BashTaskStop"]
+        .iter()
+        .zip(&r)
+    {
         assert!(
             result.starts_with(&format!("✗ [{name}]")),
             "{name}: {result}"

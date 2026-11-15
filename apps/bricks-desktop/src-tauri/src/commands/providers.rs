@@ -3,8 +3,8 @@
 //! the whole file with the provider crate, writes atomically, then reloads the
 //! catalog. Each command returns the file as it now is, reloaded.
 use crate::contract::*;
-use crate::engine::catalog::DesktopCatalog;
 use crate::engine::AppState;
+use crate::engine::catalog::DesktopCatalog;
 use crate::services::join_error;
 use crate::services::providers::{self, view};
 use crate::services::providers_toml::Edit;
@@ -39,8 +39,8 @@ async fn run_edit(state: &AppState, revision: String, edit: Edit) -> IpcResult<P
     let lock = Arc::clone(&state.providers_lock);
     let catalog = Arc::clone(&state.catalog);
     tokio::task::spawn_blocking(move || apply_edit(&path, &lock, &catalog, &revision, &edit))
-    .await
-    .map_err(join_error)?
+        .await
+        .map_err(join_error)?
 }
 
 #[tauri::command]

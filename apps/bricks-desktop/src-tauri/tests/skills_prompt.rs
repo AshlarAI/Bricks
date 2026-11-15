@@ -30,7 +30,8 @@ fn text_attachments_and_skills_read_back_as_the_engine_submit() {
             "skills": ["revue", "Synthèse fr"]
         }
     });
-    let command: Command = serde_json::from_value(wire).expect("the frontend's submit is a Command");
+    let command: Command =
+        serde_json::from_value(wire).expect("the frontend's submit is a Command");
     let prompt = submit_of(command);
 
     assert_eq!(
@@ -51,7 +52,10 @@ fn text_attachments_and_skills_read_back_as_the_engine_submit() {
         ],
         "text and attachments keep their order and their paths as typed"
     );
-    assert_eq!(prompt.skills, vec!["revue".to_string(), "Synthèse fr".to_string()]);
+    assert_eq!(
+        prompt.skills,
+        vec!["revue".to_string(), "Synthèse fr".to_string()]
+    );
 }
 
 #[test]
@@ -60,7 +64,12 @@ fn a_message_without_skills_sends_no_skill_field() {
     let wire = json!({ "type": "submit", "prompt": { "blocks": [{ "kind": "text", "text": "bonjour" }] } });
     let prompt = submit_of(serde_json::from_value(wire).unwrap());
     assert!(prompt.skills.is_empty());
-    assert_eq!(prompt.blocks, vec![PromptBlock::Text { text: "bonjour".into() }]);
+    assert_eq!(
+        prompt.blocks,
+        vec![PromptBlock::Text {
+            text: "bonjour".into()
+        }]
+    );
 
     // And the engine's own serialisation leaves the field out, as the frontend expects.
     let back = serde_json::to_value(Command::Submit { prompt }).unwrap();

@@ -6,10 +6,10 @@
 //! `changes/<project_id>/<record_id>.json`. Records are deduplicated by
 //! (session, sub-agent, tool call), so a change reported twice is kept once.
 
-use crate::i18n::{msg, tr};
 use super::paths::{desktop_dir, write_atomic};
-use super::{error, io_error, invalid, not_found};
+use super::{error, invalid, io_error, not_found};
 use crate::contract::{ChangeJournalInfo, ChangeRecord, FileDiff, IpcErrorCode, IpcResult};
+use crate::i18n::{msg, tr};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -84,9 +84,8 @@ impl ChangeJournal {
             };
             let bytes = serde_json::to_vec(&file)
                 .map_err(|e| error(IpcErrorCode::Internal, e.to_string()))?;
-            write_atomic(&self.patch_path(&project, &change.record.id), &bytes).map_err(|e| {
-                io_error(&tr!(msg::CHANGE_LOG_PATCHES), e)
-            })?;
+            write_atomic(&self.patch_path(&project, &change.record.id), &bytes)
+                .map_err(|e| io_error(&tr!(msg::CHANGE_LOG_PATCHES), e))?;
         }
         let line = serde_json::to_string(&change.record)
             .map_err(|e| error(IpcErrorCode::Internal, e.to_string()))?;
@@ -122,8 +121,8 @@ impl ChangeJournal {
             }
             Err(e) => return Err(io_error(&tr!(msg::PATCH), e)),
         };
-        let file: PatchFile = serde_json::from_str(&text)
-            .map_err(|e| io_error(&tr!(msg::UNREADABLE_PATCH), e))?;
+        let file: PatchFile =
+            serde_json::from_str(&text).map_err(|e| io_error(&tr!(msg::UNREADABLE_PATCH), e))?;
         let found = file
             .files
             .into_iter()
@@ -139,11 +138,7 @@ impl ChangeJournal {
 
     pub fn info(&self, project_id: &str) -> IpcResult<ChangeJournalInfo> {
         check_id(project_id)?;
-        let since = self
-            .read_records(project_id)?
-            .iter()
-            .map(|r| r.at)
-            .min();
+        let since = self.read_records(project_id)?.iter().map(|r| r.at).min();
         Ok(ChangeJournalInfo {
             since,
             coverage_note: tr!(msg::COVERAGE_NOTE),
@@ -179,14 +174,20 @@ impl ChangeJournal {
             })
             .collect();
         if skipped > 0 {
-            eprintln!("bricks-desktop: {skipped} damaged line(s) skipped in the change journal of {project_id}");
+            eprintln!(
+                "bricks-desktop: {skipped} damaged line(s) skipped in the change journal of {project_id}"
+            );
         }
         Ok(records)
     }
 }
 
 fn key_of(r: &ChangeRecord) -> Key {
-    (r.session_id.clone(), r.agent_id.clone(), r.tool_call_id.clone())
+    (
+        r.session_id.clone(),
+        r.agent_id.clone(),
+        r.tool_call_id.clone(),
+    )
 }
 
 /// A new record identifier: the project id, an underscore, a random part.
@@ -208,7 +209,9 @@ fn project_of(record_id: &str) -> IpcResult<&str> {
 fn check_id(id: &str) -> IpcResult<()> {
     let ok = !id.is_empty()
         && id.len() <= 160
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if ok {
         Ok(())
     } else {
@@ -259,7 +262,13 @@ mod tests {
     use super::*;
     use crate::contract::{ChangeFile, ChangeRecord};
 
-    fn record(project: &str, session: &str, agent: Option<&str>, call: &str, at: i64) -> ChangeRecord {
+    fn record(
+        project: &str,
+        session: &str,
+        agent: Option<&str>,
+        call: &str,
+        at: i64,
+    ) -> ChangeRecord {
         ChangeRecord {
             id: new_record_id(project),
             project_id: project.into(),
@@ -296,12 +305,36 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let journal = ChangeJournal::at(dir.path().join("changes"));
         let first = record("pAAA", "s1", None, "call_1", 10);
-        let again = ChangeRecord { id: new_record_id("pAAA"), ..first.clone() };
-        assert!(journal.append(NewChange { record: first, patches: vec![] }).unwrap());
-        assert!(!journal.append(NewChange { record: again.clone(), patches: vec![] }).unwrap());
+        let again = ChangeRecord {
+            id: new_record_id("pAAA"),
+            ..first.clone()
+        };
+        assert!(
+            journal
+                .append(NewChange {
+                    record: first,
+                    patches: vec![]
+                })
+                .unwrap()
+        );
+        assert!(
+            !journal
+                .append(NewChange {
+                    record: again.clone(),
+                    patches: vec![]
+                })
+                .unwrap()
+        );
         // A new journal (a restarted application) reads the keys back.
         let reopened = ChangeJournal::at(dir.path().join("changes"));
-        assert!(!reopened.append(NewChange { record: again, patches: vec![] }).unwrap());
+        assert!(
+            !reopened
+                .append(NewChange {
+                    record: again,
+                    patches: vec![]
+                })
+                .unwrap()
+        );
         assert_eq!(reopened.list("pAAA", None, 100).unwrap().len(), 1);
     }
 
@@ -309,8 +342,22 @@ mod tests {
     fn a_sub_agent_tool_call_is_its_own_change() {
         let dir = tempfile::tempdir().unwrap();
         let journal = ChangeJournal::at(dir.path().to_path_buf());
-        assert!(journal.append(NewChange { record: record("pAAA", "s1", None, "c", 1), patches: vec![] }).unwrap());
-        assert!(journal.append(NewChange { record: record("pAAA", "s1", Some("agent_2"), "c", 2), patches: vec![] }).unwrap());
+        assert!(
+            journal
+                .append(NewChange {
+                    record: record("pAAA", "s1", None, "c", 1),
+                    patches: vec![]
+                })
+                .unwrap()
+        );
+        assert!(
+            journal
+                .append(NewChange {
+                    record: record("pAAA", "s1", Some("agent_2"), "c", 2),
+                    patches: vec![]
+                })
+                .unwrap()
+        );
     }
 
     #[test]
@@ -319,10 +366,20 @@ mod tests {
         let journal = ChangeJournal::at(dir.path().to_path_buf());
         for (i, session) in ["s1", "s2", "s1"].iter().enumerate() {
             let r = record("pAAA", session, None, &format!("call_{i}"), i as i64);
-            journal.append(NewChange { record: r, patches: vec![] }).unwrap();
+            journal
+                .append(NewChange {
+                    record: r,
+                    patches: vec![],
+                })
+                .unwrap();
         }
         let all = journal.list("pAAA", None, 100).unwrap();
-        assert_eq!(all.iter().map(|r| r.tool_call_id.as_str()).collect::<Vec<_>>(), ["call_2", "call_1", "call_0"]);
+        assert_eq!(
+            all.iter()
+                .map(|r| r.tool_call_id.as_str())
+                .collect::<Vec<_>>(),
+            ["call_2", "call_1", "call_0"]
+        );
         let s1 = journal.list("pAAA", Some("s1"), 100).unwrap();
         assert_eq!(s1.len(), 2);
         assert_eq!(journal.list("pAAA", None, 1).unwrap().len(), 1);
@@ -335,12 +392,26 @@ mod tests {
         let journal = ChangeJournal::at(dir.path().to_path_buf());
         let r = record("pAAA", "s1", None, "call_1", 5);
         let id = r.id.clone();
-        journal.append(NewChange { record: r, patches: vec![patch("src/main.rs")] }).unwrap();
+        journal
+            .append(NewChange {
+                record: r,
+                patches: vec![patch("src/main.rs")],
+            })
+            .unwrap();
         let d = journal.diff(&id, "src/main.rs").unwrap();
         assert!(d.patch.contains("+b"));
-        assert_eq!(journal.diff(&id, "other.rs").unwrap_err().code, IpcErrorCode::NotFound);
-        assert_eq!(journal.diff("pAAA_nope", "x").unwrap_err().code, IpcErrorCode::NotFound);
-        assert_eq!(journal.diff("../etc_x", "x").unwrap_err().code, IpcErrorCode::Invalid);
+        assert_eq!(
+            journal.diff(&id, "other.rs").unwrap_err().code,
+            IpcErrorCode::NotFound
+        );
+        assert_eq!(
+            journal.diff("pAAA_nope", "x").unwrap_err().code,
+            IpcErrorCode::NotFound
+        );
+        assert_eq!(
+            journal.diff("../etc_x", "x").unwrap_err().code,
+            IpcErrorCode::Invalid
+        );
     }
 
     #[test]
@@ -348,8 +419,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let journal = ChangeJournal::at(dir.path().to_path_buf());
         assert_eq!(journal.info("pAAA").unwrap().since, None);
-        journal.append(NewChange { record: record("pAAA", "s1", None, "a", 300), patches: vec![] }).unwrap();
-        journal.append(NewChange { record: record("pAAA", "s1", None, "b", 100), patches: vec![] }).unwrap();
+        journal
+            .append(NewChange {
+                record: record("pAAA", "s1", None, "a", 300),
+                patches: vec![],
+            })
+            .unwrap();
+        journal
+            .append(NewChange {
+                record: record("pAAA", "s1", None, "b", 100),
+                patches: vec![],
+            })
+            .unwrap();
         let info = journal.info("pAAA").unwrap();
         assert_eq!(info.since, Some(100));
         assert!(info.coverage_note.contains("shell"));
@@ -359,14 +440,29 @@ mod tests {
     fn a_damaged_line_does_not_hide_the_others() {
         let dir = tempfile::tempdir().unwrap();
         let journal = ChangeJournal::at(dir.path().to_path_buf());
-        journal.append(NewChange { record: record("pAAA", "s1", None, "a", 1), patches: vec![] }).unwrap();
+        journal
+            .append(NewChange {
+                record: record("pAAA", "s1", None, "a", 1),
+                patches: vec![],
+            })
+            .unwrap();
         // A write cut short: no trailing newline, then a later record.
         let path = dir.path().join("pAAA.jsonl");
         let mut text = std::fs::read_to_string(&path).unwrap();
         text.push_str("{\"id\":\"tr");
         std::fs::write(&path, text).unwrap();
-        journal.append(NewChange { record: record("pAAA", "s1", None, "b", 2), patches: vec![] }).unwrap();
-        let calls: Vec<String> = journal.list("pAAA", None, 10).unwrap().into_iter().map(|r| r.tool_call_id).collect();
+        journal
+            .append(NewChange {
+                record: record("pAAA", "s1", None, "b", 2),
+                patches: vec![],
+            })
+            .unwrap();
+        let calls: Vec<String> = journal
+            .list("pAAA", None, 10)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.tool_call_id)
+            .collect();
         assert_eq!(calls, vec!["b".to_string(), "a".to_string()]);
     }
 

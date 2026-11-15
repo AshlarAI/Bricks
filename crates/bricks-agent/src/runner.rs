@@ -227,7 +227,8 @@ pub(crate) async fn run_prepared_controlled(
         }
         repair_interrupted(agent, why);
         inject_pending(agent, controls.as_deref());
-        if !capture.recorded && has_valid_run_progress(agent, capture.start_idx, &capture.tool_calls)
+        if !capture.recorded
+            && has_valid_run_progress(agent, capture.start_idx, &capture.tool_calls)
         {
             let partial_assistant = agent
                 .messages
@@ -470,7 +471,12 @@ pub(crate) async fn refresh_memory_after_compaction(
     let mut notes = Vec::new();
     recall_memory_for_run(agent, &query, event_tx, &mut notes).await;
     for note in notes {
-        send(agent, event_tx, AgentEvent::Status(format!("Configuration: {note}"))).await;
+        send(
+            agent,
+            event_tx,
+            AgentEvent::Status(format!("Configuration: {note}")),
+        )
+        .await;
     }
 }
 

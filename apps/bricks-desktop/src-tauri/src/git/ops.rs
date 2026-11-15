@@ -150,7 +150,10 @@ pub async fn diff(dir: &Path, path: &str, area: GitArea) -> IpcResult<FileDiff> 
     };
 
     let (text, truncated) = if out.truncated {
-        (String::from_utf8_lossy(cut_at_line(&out.stdout)).into_owned(), true)
+        (
+            String::from_utf8_lossy(cut_at_line(&out.stdout)).into_owned(),
+            true,
+        )
     } else {
         (String::from_utf8_lossy(&out.stdout).into_owned(), false)
     };
@@ -305,7 +308,7 @@ fn check_listing(out: &Captured, what: &str) -> IpcResult<()> {
     if out.truncated {
         return Err(IpcError {
             code: IpcErrorCode::Rejected,
-            message: tr!(msg::TOO_MANY_CHANGES_TO_SHOW).into(),
+            message: tr!(msg::TOO_MANY_CHANGES_TO_SHOW),
         });
     }
     check_exit(out, what)
@@ -402,7 +405,11 @@ async fn untracked_counts(dir: &Path, path: &str, budget: &mut u32) -> Counts {
         return Counts::default();
     };
     if parse::is_binary_content(&bytes) {
-        return Counts { added: None, removed: None, binary: true };
+        return Counts {
+            added: None,
+            removed: None,
+            binary: true,
+        };
     }
     Counts {
         added: Some(parse::count_lines(&bytes)),
@@ -439,7 +446,7 @@ fn cut_section(text: &str, forced: bool) -> (&str, bool) {
 pub(crate) fn validate_relative_path(path: &str) -> IpcResult<()> {
     let invalid = || IpcError {
         code: IpcErrorCode::Invalid,
-        message: tr!(msg::INVALID_PATH_IT_MUST_BE_RELATIVE).into(),
+        message: tr!(msg::INVALID_PATH_IT_MUST_BE_RELATIVE),
     };
     if path.is_empty() || path.len() > 4096 || path.contains('\0') {
         return Err(invalid());
@@ -461,7 +468,7 @@ fn validate_rev(rev: &str) -> IpcResult<()> {
     } else {
         Err(IpcError {
             code: IpcErrorCode::Invalid,
-            message: tr!(msg::INVALID_REVISION).into(),
+            message: tr!(msg::INVALID_REVISION),
         })
     }
 }
@@ -472,7 +479,7 @@ fn ensure_folder(dir: &Path) -> IpcResult<()> {
     } else {
         Err(IpcError {
             code: IpcErrorCode::FolderMissing,
-            message: tr!(msg::THE_PROJECT_FOLDER_NO_LONGER_EXISTS).into(),
+            message: tr!(msg::THE_PROJECT_FOLDER_NO_LONGER_EXISTS),
         })
     }
 }

@@ -447,8 +447,7 @@ impl StructuredMemory {
                     return Ok(false);
                 }
                 let is_note = ep.role == ROLE_NOTE;
-                if (kind == EntryKind::Note && !is_note)
-                    || (kind == EntryKind::Exchange && is_note)
+                if (kind == EntryKind::Note && !is_note) || (kind == EntryKind::Exchange && is_note)
                 {
                     return Ok(false);
                 }
@@ -651,12 +650,31 @@ pub(crate) mod tests {
             .unwrap();
 
         // Write a note and verify single-entry deletion removes it from entries & search.
-        let note_written = m.write_note(note("prefers short answers"), false).await.unwrap();
+        let note_written = m
+            .write_note(note("prefers short answers"), false)
+            .await
+            .unwrap();
         assert_eq!(m.counts().unwrap().notes, 1);
-        assert!(m.delete_entry(EntryKind::Fact, &note_written.id).await.unwrap() == false);
-        assert!(m.delete_entry(EntryKind::Exchange, &note_written.id).await.unwrap() == false);
-        assert!(m.delete_entry(EntryKind::Note, &note_written.id).await.unwrap());
-        assert!(!m.delete_entry(EntryKind::Note, &note_written.id).await.unwrap());
+        assert!(
+            !m.delete_entry(EntryKind::Fact, &note_written.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !m.delete_entry(EntryKind::Exchange, &note_written.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            m.delete_entry(EntryKind::Note, &note_written.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !m.delete_entry(EntryKind::Note, &note_written.id)
+                .await
+                .unwrap()
+        );
         assert_eq!(m.counts().unwrap().notes, 0);
 
         let mut q = crate::structured::RecallQuery::new("short answers");
@@ -700,6 +718,11 @@ pub(crate) mod tests {
         assert_eq!(history.entries[0].status, Some(FactStatus::Unsupported));
 
         assert!(m.delete_entry(EntryKind::Fact, &fact_id).await.unwrap());
-        assert_eq!(m.entries(EntryFilter::FactHistory, "", 0, 10).unwrap().total, 0);
+        assert_eq!(
+            m.entries(EntryFilter::FactHistory, "", 0, 10)
+                .unwrap()
+                .total,
+            0
+        );
     }
 }

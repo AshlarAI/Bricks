@@ -21,6 +21,7 @@ use bricks_semantic::CancellationToken;
 use bricks_semantic::lexical::{WalkFilters, walk_builder};
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
+use kodestats::{Config, LanguageType};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -30,7 +31,6 @@ use std::fs::{File, Metadata};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use kodestats::{Config, LanguageType};
 
 /// The ignore file read for this tool only, as KodeStats does.
 const TOKEIGNORE: &str = ".tokeignore";
@@ -340,7 +340,9 @@ fn validate(input: Input, working_dir: &Path) -> std::result::Result<Params, Str
     if let (Some(min), Some(max)) = (min_lines, max_lines)
         && min > max
     {
-        return Err(format!("`min_lines` ({min}) is more than `max_lines` ({max})"));
+        return Err(format!(
+            "`min_lines` ({min}) is more than `max_lines` ({max})"
+        ));
     }
     let markdown = match input.format.as_deref().map(str::trim) {
         None | Some("") | Some("json") => false,
@@ -777,9 +779,7 @@ fn analyse(
                 comments,
                 blanks,
                 changed,
-            } => {
-                (lang, code, comments, blanks, changed)
-            }
+            } => (lang, code, comments, blanks, changed),
         };
         let lines = code.saturating_add(comments).saturating_add(blanks);
         if params.min_lines.is_some_and(|min| lines < min)
@@ -882,7 +882,10 @@ fn analyse(
             m.insert("outside_line_bounds".into(), out_of_bounds.into());
         }
         if !attributes.patterns.is_empty() {
-            m.insert("gitattributes_excluded".into(), attributes.patterns.clone().into());
+            m.insert(
+                "gitattributes_excluded".into(),
+                attributes.patterns.clone().into(),
+            );
         }
     }
     Outcome::Done(out)
@@ -925,7 +928,9 @@ impl GitAttributes {
                     continue;
                 }
                 let mut parts = line.split_whitespace();
-                let Some(pattern) = parts.next() else { continue };
+                let Some(pattern) = parts.next() else {
+                    continue;
+                };
                 let mut decided: Option<bool> = None;
                 for attr in parts {
                     let (name, value) = match attr.split_once('=') {
@@ -936,12 +941,19 @@ impl GitAttributes {
                         Some(rest) => (true, rest),
                         None => (false, name),
                     };
-                    if matches!(key, "linguist-generated" | "linguist-vendored" | "linguist-documentation") {
+                    if matches!(
+                        key,
+                        "linguist-generated" | "linguist-vendored" | "linguist-documentation"
+                    ) {
                         decided = Some(!unset && !matches!(value, Some("false" | "0")));
                     }
                 }
                 let Some(excluded) = decided else { continue };
-                let rule = if excluded { pattern.to_string() } else { format!("!{pattern}") };
+                let rule = if excluded {
+                    pattern.to_string()
+                } else {
+                    format!("!{pattern}")
+                };
                 if builder.add_line(None, &rule).is_err() {
                     warnings.add("gitattributes_pattern", Some(pattern));
                     continue;
@@ -1019,10 +1031,16 @@ fn markdown(out: &Value) -> String {
     }
     if let Some(patterns) = out["gitattributes_excluded"].as_array() {
         let list: Vec<&str> = patterns.iter().filter_map(Value::as_str).collect();
-        text.push_str(&format!("\nLeft out by .gitattributes: {}.\n", list.join(", ")));
+        text.push_str(&format!(
+            "\nLeft out by .gitattributes: {}.\n",
+            list.join(", ")
+        ));
     }
     if out.get("outside_line_bounds").is_some() {
-        text.push_str(&format!("\n{} files outside the line bounds left out.\n", n(out, "outside_line_bounds")));
+        text.push_str(&format!(
+            "\n{} files outside the line bounds left out.\n",
+            n(out, "outside_line_bounds")
+        ));
     }
     if out["partial"] == true {
         let causes: Vec<String> = out["warnings"]

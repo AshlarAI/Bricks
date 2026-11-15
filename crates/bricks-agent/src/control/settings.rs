@@ -117,7 +117,9 @@ mod tests {
         assert!(from_bricks_toml(text).is_ok(), "[agent] still loads");
         let all = crate::BricksConfig::from_texts(Some(text), &[]);
         assert!(
-            all.diagnostics.iter().any(|d| d.contains("[permissions] is no longer read")),
+            all.diagnostics
+                .iter()
+                .any(|d| d.contains("[permissions] is no longer read")),
             "{:?}",
             all.diagnostics
         );

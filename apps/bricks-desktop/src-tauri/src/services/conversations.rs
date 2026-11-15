@@ -74,7 +74,9 @@ pub fn tool_image(history: &[Message], tool_call_id: &str) -> Option<String> {
         // Only the engine's turns of tool results carry a call's image: a
         // person's message that looks like a label is not one.
         let engine_turn = message.role == Role::User
-            && blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }));
+            && blocks
+                .iter()
+                .any(|b| matches!(b, ContentBlock::ToolResult { .. }));
         if !engine_turn {
             continue;
         }
@@ -156,7 +158,9 @@ pub fn snippet(text: &str, needle: &str) -> Option<String> {
     }
     let chars: Vec<char> = text.chars().collect();
     let folded: Vec<char> = chars.iter().map(|c| fold(*c)).collect();
-    let at = folded.windows(need.len()).position(|w| w == need.as_slice())?;
+    let at = folded
+        .windows(need.len())
+        .position(|w| w == need.as_slice())?;
     let start = at.saturating_sub(SNIPPET_CONTEXT);
     let end = (at + need.len() + SNIPPET_CONTEXT).min(chars.len());
     let body: String = chars[start..end].iter().collect();
@@ -223,7 +227,9 @@ mod tests {
         let msg = Message {
             role: Role::User,
             content: MessageContent::Blocks(vec![
-                ContentBlock::Text { text: "voici".into() },
+                ContentBlock::Text {
+                    text: "voici".into(),
+                },
                 ContentBlock::ToolResult {
                     tool_use_id: "t1".into(),
                     content: ToolResultContent::Text("ok".into()),
@@ -245,7 +251,9 @@ mod tests {
         let h = history_message(&msg);
         assert!(matches!(h.role, HistoryRole::User));
         assert_eq!(h.blocks.len(), 3);
-        assert!(matches!(&h.blocks[1], HistoryBlock::ToolResult { content, is_error: false, .. } if content == "ok"));
+        assert!(
+            matches!(&h.blocks[1], HistoryBlock::ToolResult { content, is_error: false, .. } if content == "ok")
+        );
         assert_eq!(message_text(&msg), "voici");
     }
 
@@ -259,7 +267,10 @@ mod tests {
 
     fn label(id: &str) -> ContentBlock {
         ContentBlock::Text {
-            text: format!("{}{id}] a.png, image/png, 3 bytes", bricks_tools::TOOL_IMAGE_MARK),
+            text: format!(
+                "{}{id}] a.png, image/png, 3 bytes",
+                bricks_tools::TOOL_IMAGE_MARK
+            ),
         }
     }
 
@@ -279,7 +290,9 @@ mod tests {
         let history = vec![turn(vec![call_result(
             "v1",
             ToolResultContent::Blocks(vec![
-                ContentBlock::Text { text: "Image a.png".into() },
+                ContentBlock::Text {
+                    text: "Image a.png".into(),
+                },
                 ContentBlock::image_base64("image/png", "QUJD"),
             ]),
         )])];
@@ -348,7 +361,9 @@ mod tests {
     fn an_image_that_is_not_right_after_its_label_is_not_taken() {
         let history = vec![turn(vec![
             label("v1"),
-            ContentBlock::Text { text: "autre chose".into() },
+            ContentBlock::Text {
+                text: "autre chose".into(),
+            },
             ContentBlock::image_base64("image/png", "AAAA"),
         ])];
         assert_eq!(tool_image(&history, "v1"), None);
@@ -358,15 +373,31 @@ mod tests {
     fn none_when_the_call_showed_no_image_or_the_image_has_no_data() {
         let url_only = ContentBlock::image_url("https://example.com/x.png");
         let history = vec![
-            turn(vec![call_result("v1", ToolResultContent::Text("Image".into()))]),
-            turn(vec![
-                call_result("v2", ToolResultContent::Blocks(vec![url_only.clone()])),
-            ]),
+            turn(vec![call_result(
+                "v1",
+                ToolResultContent::Text("Image".into()),
+            )]),
+            turn(vec![call_result(
+                "v2",
+                ToolResultContent::Blocks(vec![url_only.clone()]),
+            )]),
             turn(vec![label("v3"), url_only]),
         ];
-        assert_eq!(tool_image(&history, "v1"), None, "a text result shows nothing");
-        assert_eq!(tool_image(&history, "v2"), None, "an image without data is not read");
-        assert_eq!(tool_image(&history, "v3"), None, "a label next to a URL is not read");
+        assert_eq!(
+            tool_image(&history, "v1"),
+            None,
+            "a text result shows nothing"
+        );
+        assert_eq!(
+            tool_image(&history, "v2"),
+            None,
+            "an image without data is not read"
+        );
+        assert_eq!(
+            tool_image(&history, "v3"),
+            None,
+            "a label next to a URL is not read"
+        );
         assert_eq!(tool_image(&history, "unknown"), None);
         assert_eq!(tool_image(&[], "v1"), None);
     }

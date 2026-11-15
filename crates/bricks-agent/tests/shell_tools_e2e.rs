@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use bricks_agent::Agent;
 use bricks_agent::events::AgentEvent;
 use bricks_compression::CompressionLevel;
-use bricks_tools::permissions::{PermissionDecision, PermissionPolicy, PermissionRequest};
 use bricks_tools::jobs::JobRegistry;
+use bricks_tools::permissions::{PermissionDecision, PermissionPolicy, PermissionRequest};
 use bricks_tools::shell::{ShellConfig, procs};
 use bricks_types::*;
 use serde_json::{Value, json};
@@ -125,7 +125,10 @@ fn shell_extensions(progress_every: Duration) -> bricks_tools::Extensions {
 fn agent(url: &str, work: &std::path::Path) -> bricks_agent::AgentBuilder {
     Agent::builder()
         .provider(common::provider(url, "chat_completions", 100_000))
-        .tools(bricks_tools::shell_with_jobs(JobRegistry::new(Default::default(), None)))
+        .tools(bricks_tools::shell_with_jobs(JobRegistry::new(
+            Default::default(),
+            None,
+        )))
         .working_dir(work)
         .raw_output_dir(work.join(".raw"))
 }
@@ -424,7 +427,10 @@ async fn a_reduced_bash_output_is_readable_after_restore() {
     {
         let a = Agent::builder()
             .provider(common::provider(&url, "chat_completions", 100_000))
-            .tools(bricks_tools::shell_with_jobs(JobRegistry::new(Default::default(), None)))
+            .tools(bricks_tools::shell_with_jobs(JobRegistry::new(
+                Default::default(),
+                None,
+            )))
             .working_dir(work.path())
             .memory(JsonlMemory::new(mem.path()))
             .session_id("rs")

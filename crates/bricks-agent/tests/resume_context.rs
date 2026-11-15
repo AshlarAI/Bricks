@@ -33,7 +33,10 @@ fn config(wd: &Path, sessions: &Path, script: Arc<Script>) -> EngineConfig {
     cfg
 }
 
-async fn open(cfg: EngineConfig, session: SessionChoice) -> Result<(Controller, EventStream), String> {
+async fn open(
+    cfg: EngineConfig,
+    session: SessionChoice,
+) -> Result<(Controller, EventStream), String> {
     Controller::open(
         cfg,
         OpenOptions {
@@ -107,7 +110,13 @@ async fn stored_session(sessions: &Path, wd: &Path, runs: usize) -> (String, Vec
     for i in 0..runs {
         let fin = submit_and_finish(&ctl, &mut events, &text(&format!("question {i}"))).await;
         assert!(
-            matches!(fin, Event::RunFinished { outcome: RunOutcome::Succeeded, .. }),
+            matches!(
+                fin,
+                Event::RunFinished {
+                    outcome: RunOutcome::Succeeded,
+                    ..
+                }
+            ),
             "run {i}: {fin:?}"
         );
     }
@@ -173,7 +182,11 @@ async fn a_resumed_session_counts_its_whole_history_from_the_first_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let sessions = dir.path().join(".sessions");
     let (id, stored) = stored_session(&sessions, dir.path(), 5).await;
-    let stored_chars: usize = stored.iter().filter_map(|m| m.get_text()).map(str::len).sum();
+    let stored_chars: usize = stored
+        .iter()
+        .filter_map(|m| m.get_text())
+        .map(str::len)
+        .sum();
 
     let (fresh, _events) = open(
         config(dir.path(), &sessions, Script::new(vec![])),
@@ -203,7 +216,13 @@ async fn a_resumed_session_counts_its_whole_history_from_the_first_snapshot() {
     // Once the server answers, the occupation is measured again.
     opened(&mut events).await;
     let fin = submit_and_finish(&resumed, &mut events, "encore").await;
-    assert!(matches!(fin, Event::RunFinished { outcome: RunOutcome::Succeeded, .. }));
+    assert!(matches!(
+        fin,
+        Event::RunFinished {
+            outcome: RunOutcome::Succeeded,
+            ..
+        }
+    ));
     assert_ne!(
         resumed.snapshot().context.context_used.provenance,
         Provenance::Estimated,
@@ -229,7 +248,13 @@ async fn the_first_run_sends_the_stored_history_once() {
     opened(&mut events).await;
 
     let fin = submit_and_finish(&ctl, &mut events, "continue").await;
-    assert!(matches!(fin, Event::RunFinished { outcome: RunOutcome::Succeeded, .. }));
+    assert!(matches!(
+        fin,
+        Event::RunFinished {
+            outcome: RunOutcome::Succeeded,
+            ..
+        }
+    ));
     let first = script.requests();
     assert_eq!(first.len(), 1, "one request for the first run");
     assert_eq!(
@@ -239,7 +264,13 @@ async fn the_first_run_sends_the_stored_history_once() {
     );
 
     let fin = submit_and_finish(&ctl, &mut events, "again").await;
-    assert!(matches!(fin, Event::RunFinished { outcome: RunOutcome::Succeeded, .. }));
+    assert!(matches!(
+        fin,
+        Event::RunFinished {
+            outcome: RunOutcome::Succeeded,
+            ..
+        }
+    ));
     let requests = script.requests();
     let mut second = stored.clone();
     second.push(Message::user("continue"));
@@ -279,12 +310,23 @@ async fn a_restored_agent_announces_its_history_once() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let b = agent(script.clone(), mem.path(), "s", raw.path(), log.clone());
     assert_eq!(b.restore_history().await.unwrap(), Some(6));
-    assert!(loaded_counts(&log).is_empty(), "announced by the run, not at restore");
+    assert!(
+        loaded_counts(&log).is_empty(),
+        "announced by the run, not at restore"
+    );
 
     b.run("continue").await.unwrap();
-    assert_eq!(loaded_counts(&log), vec![6], "announced once, with the stored count");
+    assert_eq!(
+        loaded_counts(&log),
+        vec![6],
+        "announced once, with the stored count"
+    );
     b.run("again").await.unwrap();
-    assert_eq!(loaded_counts(&log), vec![6], "the second run announces nothing");
+    assert_eq!(
+        loaded_counts(&log),
+        vec![6],
+        "the second run announces nothing"
+    );
 
     let requests = script.requests();
     assert_eq!(
@@ -352,7 +394,10 @@ async fn a_new_session_is_unaffected() {
     let a = agent(script.clone(), mem.path(), "fresh", raw.path(), log.clone());
     assert_eq!(a.restore_history().await.unwrap(), None);
     a.run("hello").await.unwrap();
-    assert!(loaded_counts(&log).is_empty(), "no SessionLoaded for a new session");
+    assert!(
+        loaded_counts(&log).is_empty(),
+        "no SessionLoaded for a new session"
+    );
     assert_eq!(
         texts(&script.requests()[0].1.messages),
         expected_request(&[], "hello"),
@@ -412,5 +457,8 @@ async fn an_unreadable_history_opens_with_a_warning_and_the_run_fails() {
         }
         other => panic!("not a run_finished: {other:?}"),
     }
-    assert!(script.requests().is_empty(), "no request is sent over a broken history");
+    assert!(
+        script.requests().is_empty(),
+        "no request is sent over a broken history"
+    );
 }

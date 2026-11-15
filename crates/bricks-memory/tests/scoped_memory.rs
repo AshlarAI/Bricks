@@ -151,7 +151,10 @@ async fn a_run_with_a_project_captures_to_the_project_only() {
     );
     m.record_turns(
         Some("s1"),
-        &[turn("user", "alpha uses postgres"), turn("assistant", "noted")],
+        &[
+            turn("user", "alpha uses postgres"),
+            turn("assistant", "noted"),
+        ],
     )
     .await
     .unwrap();
@@ -167,7 +170,11 @@ async fn no_project_means_no_capture_no_project_search_and_no_fallback() {
     m.record_turns(Some("s1"), &[turn("user", "hello there")])
         .await
         .unwrap();
-    assert_eq!(g.memory.counts().unwrap().exchanges, 0, "no capture without a project");
+    assert_eq!(
+        g.memory.counts().unwrap().exchanges,
+        0,
+        "no capture without a project"
+    );
 
     let e = err_text(m.search(MemoryScope::Project, "hello", 5).await);
     assert!(e.contains("no project"), "{e}");
@@ -194,7 +201,11 @@ async fn no_project_means_no_capture_no_project_search_and_no_fallback() {
 async fn projects_are_isolated_and_a_global_note_names_the_project_that_wrote_it() {
     let s = Stores::new();
     let (pa, pb, g) = (s.project("pa"), s.project("pb"), s.global());
-    let (ma, _la) = run_memory(Some(("pa", Some(pa))), Some(g.clone()), Processing::default());
+    let (ma, _la) = run_memory(
+        Some(("pa", Some(pa))),
+        Some(g.clone()),
+        Processing::default(),
+    );
     let (mb, _lb) = run_memory(Some(("pb", Some(pb))), Some(g), Processing::default());
 
     ma.write_note(MemoryScope::Project, Some("s1"), "alpha uses postgres")
@@ -221,7 +232,11 @@ async fn projects_are_isolated_and_a_global_note_names_the_project_that_wrote_it
         "provenance named: {}",
         ctx.text
     );
-    assert!(!ctx.text.contains("postgres"), "no project note leaks: {}", ctx.text);
+    assert!(
+        !ctx.text.contains("postgres"),
+        "no project note leaks: {}",
+        ctx.text
+    );
 }
 
 #[tokio::test]
@@ -239,7 +254,11 @@ async fn a_note_is_found_in_the_same_run_without_an_extractor() {
         .await
         .unwrap()
         .expect("found at once, in the same run");
-    assert!(found.text.contains("Deploys on Fridays only"), "{}", found.text);
+    assert!(
+        found.text.contains("Deploys on Fridays only"),
+        "{}",
+        found.text
+    );
     assert_eq!(pa.memory.counts().unwrap().notes, 1);
 }
 
@@ -272,7 +291,11 @@ async fn a_failed_indexing_keeps_the_note_and_the_retry_does_not_duplicate_it() 
         .unwrap();
     assert_eq!(pa.memory.counts().unwrap().notes, 1, "no duplicate");
     assert_eq!(
-        pa.memory.entries(EntryFilter::Notes, "", 0, 10).unwrap().entries[0].id,
+        pa.memory
+            .entries(EntryFilter::Notes, "", 0, 10)
+            .unwrap()
+            .entries[0]
+            .id,
         first_id,
         "the same note"
     );
@@ -336,14 +359,21 @@ async fn fused_recall_is_deterministic_deduplicated_bounded_and_within_budget() 
         "its other source is kept: {}",
         ctx.text
     );
-    assert!(ctx.items <= RECALL_MAX, "at most {RECALL_MAX}: {}", ctx.items);
+    assert!(
+        ctx.items <= RECALL_MAX,
+        "at most {RECALL_MAX}: {}",
+        ctx.items
+    );
 
     let again = m
         .recall_context("tabs over spaces", 4000)
         .await
         .unwrap()
         .expect("recalled");
-    assert_eq!(ctx.text, again.text, "the same query gives the same context");
+    assert_eq!(
+        ctx.text, again.text,
+        "the same query gives the same context"
+    );
 
     // Many candidates: never more than RECALL_MAX entries.
     let many = m
@@ -408,7 +438,11 @@ async fn one_unavailable_scope_is_reported_and_the_other_still_answers() {
     );
     let e = err_text(m.record_turns(Some("s1"), &[turn("user", "hi")]).await);
     assert!(e.contains("unavailable"), "{e}");
-    assert_eq!(g.memory.counts().unwrap().exchanges, 0, "no capture into global");
+    assert_eq!(
+        g.memory.counts().unwrap().exchanges,
+        0,
+        "no capture into global"
+    );
 }
 
 // ─── One handle per file ─────────────────────────────────────────────────────
@@ -441,7 +475,10 @@ fn concurrent_opens_of_one_file_share_one_handle_and_conflicts_name_the_file() {
         .collect();
     let handles: Vec<SharedStore> = threads.into_iter().map(|t| t.join().unwrap()).collect();
     for h in &handles[1..] {
-        assert!(Arc::ptr_eq(&handles[0].memory, &h.memory), "one handle per file");
+        assert!(
+            Arc::ptr_eq(&handles[0].memory, &h.memory),
+            "one handle per file"
+        );
     }
 
     let e = err_text(open.open(
@@ -453,7 +490,10 @@ fn concurrent_opens_of_one_file_share_one_handle_and_conflicts_name_the_file() {
     ));
     assert!(e.contains("shared.grafeo"), "{e}");
     assert!(e.contains("the space"), "{e}");
-    assert!(e.contains("project:p") && e.contains("project:other"), "{e}");
+    assert!(
+        e.contains("project:p") && e.contains("project:other"),
+        "{e}"
+    );
 
     let e = err_text(open.open(
         &path,
@@ -542,19 +582,30 @@ async fn pages_counts_and_sources_never_duplicate_and_a_note_is_not_an_exchange(
     let pa = s.project("pa");
     let (m, _l) = run_memory(Some(("pa", Some(pa.clone()))), None, Processing::default());
     for i in 0..7 {
-        m.write_note(MemoryScope::Project, Some("s1"), &format!("note number {i}"))
-            .await
-            .unwrap();
+        m.write_note(
+            MemoryScope::Project,
+            Some("s1"),
+            &format!("note number {i}"),
+        )
+        .await
+        .unwrap();
     }
     m.record_turns(
         Some("s1"),
-        &[turn("user", "question about tabs"), turn("assistant", "answer about tabs")],
+        &[
+            turn("user", "question about tabs"),
+            turn("assistant", "answer about tabs"),
+        ],
     )
     .await
     .unwrap();
 
     let c = pa.memory.counts().unwrap();
-    assert_eq!((c.notes, c.exchanges, c.facts), (7, 2, 0), "a note is not an exchange");
+    assert_eq!(
+        (c.notes, c.exchanges, c.facts),
+        (7, 2, 0),
+        "a note is not an exchange"
+    );
 
     let mut seen = std::collections::HashSet::new();
     let mut total = 0;
@@ -568,11 +619,41 @@ async fn pages_counts_and_sources_never_duplicate_and_a_note_is_not_an_exchange(
     }
     assert_eq!(total, 9, "every entry, once");
 
-    assert_eq!(pa.memory.entries(EntryFilter::Notes, "", 0, 50).unwrap().total, 7);
-    assert_eq!(pa.memory.entries(EntryFilter::Exchanges, "", 0, 50).unwrap().total, 2);
-    assert_eq!(pa.memory.entries(EntryFilter::Notes, "NUMBER 3", 0, 50).unwrap().total, 1);
-    assert_eq!(pa.memory.entries(EntryFilter::All, "tabs", 0, 50).unwrap().total, 2);
-    assert_eq!(pa.memory.entries(EntryFilter::Facts, "", 0, 50).unwrap().total, 0);
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::Notes, "", 0, 50)
+            .unwrap()
+            .total,
+        7
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::Exchanges, "", 0, 50)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::Notes, "NUMBER 3", 0, 50)
+            .unwrap()
+            .total,
+        1
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::All, "tabs", 0, 50)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::Facts, "", 0, 50)
+            .unwrap()
+            .total,
+        0
+    );
 
     let page = pa.memory.entries(EntryFilter::Notes, "", 0, 50).unwrap();
     let note = &page.entries[0];
@@ -623,15 +704,14 @@ async fn extracted_facts_are_listed_with_their_status_and_source_and_counted_apa
         extractor: Some(Arc::new(Axum)),
         ..Default::default()
     };
-    let (m, _l) = run_memory(
-        Some(("pa", Some(pa.clone()))),
-        None,
-        processing.clone(),
-    );
+    let (m, _l) = run_memory(Some(("pa", Some(pa.clone()))), None, processing.clone());
     m.record_turns(
         Some("s1"),
         &[
-            turn("user", "Le projet Bricks utilise Axum pour son serveur HTTP."),
+            turn(
+                "user",
+                "Le projet Bricks utilise Axum pour son serveur HTTP.",
+            ),
             turn("assistant", "Noté."),
         ],
     )
@@ -650,14 +730,31 @@ async fn extracted_facts_are_listed_with_their_status_and_source_and_counted_apa
     assert_eq!(fact.kind, EntryKind::Fact);
     assert_eq!(fact.status, Some(FactStatus::Active));
     assert!(
-        fact.evidence.iter().any(|ev| ev.quote.contains("utilise Axum")),
+        fact.evidence
+            .iter()
+            .any(|ev| ev.quote.contains("utilise Axum")),
         "the source quote is kept: {:?}",
         fact.evidence
     );
-    assert_eq!(pa.memory.entries(EntryFilter::Exchanges, "", 0, 50).unwrap().total, 2);
-    assert_eq!(pa.memory.entries(EntryFilter::All, "", 0, 50).unwrap().total, 3);
     assert_eq!(
-        pa.memory.entries(EntryFilter::FactHistory, "", 0, 50).unwrap().total,
+        pa.memory
+            .entries(EntryFilter::Exchanges, "", 0, 50)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::All, "", 0, 50)
+            .unwrap()
+            .total,
+        3
+    );
+    assert_eq!(
+        pa.memory
+            .entries(EntryFilter::FactHistory, "", 0, 50)
+            .unwrap()
+            .total,
         1
     );
 }
@@ -679,9 +776,13 @@ async fn project_weight_prefers_project_over_global_and_scoped_max_results_is_co
         } else {
             MemoryScope::Project
         };
-        m.write_note(scope, Some("s1"), &format!("release cadence note alpha {i}"))
-            .await
-            .unwrap();
+        m.write_note(
+            scope,
+            Some("s1"),
+            &format!("release cadence note alpha {i}"),
+        )
+        .await
+        .unwrap();
     }
 
     let ctx = m
@@ -804,14 +905,16 @@ async fn lexical_fallback_preserves_semantic_store_and_reopens_cleanly_when_idle
         .unwrap();
     let recall = s2
         .memory
-        .recall(&bricks_memory::structured::RecallQuery::new("blue green rollout"))
+        .recall(&bricks_memory::structured::RecallQuery::new(
+            "blue green rollout",
+        ))
         .await
         .unwrap();
     assert!(
-        recall
-            .items
-            .iter()
-            .any(|i| i.episode.as_ref().is_some_and(|e| e.content.contains("blue green"))),
+        recall.items.iter().any(|i| i
+            .episode
+            .as_ref()
+            .is_some_and(|e| e.content.contains("blue green"))),
         "lexical fallback should still recall existing episodes"
     );
     drop(s2);

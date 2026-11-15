@@ -1132,7 +1132,11 @@ mod tests {
     fn figures_guidance_is_for_a_person_reading_never_for_headless_runs_or_sub_agents() {
         let prompt = build_system_prompt(&default_opts());
         assert!(prompt.contains("## Figures"));
-        assert!(prompt.contains("```vega-lite") && prompt.contains("```svg") && prompt.contains("`mermaid`"));
+        assert!(
+            prompt.contains("```vega-lite")
+                && prompt.contains("```svg")
+                && prompt.contains("`mermaid`")
+        );
         let headless = build_system_prompt(&SystemPromptOptions {
             is_non_interactive: true,
             ..default_opts()

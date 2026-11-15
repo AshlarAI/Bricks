@@ -29,8 +29,8 @@ use bricks_provider::CompletionRequest;
 use bricks_tools::{PermissionLevel, Tool};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 // ─── The resolver of the desktop, in a test ──────────────────────────────────
@@ -131,16 +131,13 @@ impl MemoryResolver for Resolver {
                 )
                 .map_err(|e| e.to_string())
         };
-        let project = self.project.as_ref().map(|id| {
-            open(self.project_path(id), &project_space(id))
-        });
+        let project = self
+            .project
+            .as_ref()
+            .map(|id| open(self.project_path(id), &project_space(id)));
         let global = Some(open(self.home.join("global.grafeo"), global_space()));
-        let (memory, leases): (ScopedMemory, Vec<Lease>) = ScopedMemory::for_run(
-            self.project.clone(),
-            project,
-            global,
-            Processing::default(),
-        );
+        let (memory, leases): (ScopedMemory, Vec<Lease>) =
+            ScopedMemory::for_run(self.project.clone(), project, global, Processing::default());
         RunMemory {
             memory: Some(Arc::new(memory)),
             guard: Some(Box::new(leases)),
@@ -290,7 +287,10 @@ fn id_in(output: &str) -> String {
 }
 
 fn home() -> (tempfile::TempDir, Arc<OpenMemories>) {
-    (tempfile::tempdir().unwrap(), Arc::new(OpenMemories::default()))
+    (
+        tempfile::tempdir().unwrap(),
+        Arc::new(OpenMemories::default()),
+    )
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -315,14 +315,29 @@ async fn with_the_memory_off_nothing_is_recalled_captured_or_offered_and_its_too
     for req in requests(&env) {
         let tools = offered(&req);
         assert!(!tools.iter().any(|t| t.starts_with("memory_")), "{tools:?}");
-        assert!(!system(&req).contains("memory_search"), "no guidance either");
-        assert!(!system(&req).contains("<long_term_memory"), "nothing recalled");
+        assert!(
+            !system(&req).contains("memory_search"),
+            "no guidance either"
+        );
+        assert!(
+            !system(&req).contains("<long_term_memory"),
+            "nothing recalled"
+        );
     }
     let search = results(&evs, "memory_search");
-    assert!(search[0].0 && search[0].1.contains("memory_disabled"), "{search:?}");
+    assert!(
+        search[0].0 && search[0].1.contains("memory_disabled"),
+        "{search:?}"
+    );
     let write = results(&evs, "memory_write");
-    assert!(write[0].0 && write[0].1.contains("memory_disabled"), "{write:?}");
-    assert!(resolver.project_store().is_none(), "no store opened, nothing captured");
+    assert!(
+        write[0].0 && write[0].1.contains("memory_disabled"),
+        "{write:?}"
+    );
+    assert!(
+        resolver.project_store().is_none(),
+        "no store opened, nothing captured"
+    );
     assert!(resolver.global_store().is_none());
 }
 
@@ -356,13 +371,23 @@ async fn switching_the_memory_on_applies_at_the_next_run_and_not_to_the_running_
         }
     })
     .await;
-    assert_eq!(resolver.resolves.load(Ordering::SeqCst), 1, "resolved once, at its start");
+    assert_eq!(
+        resolver.resolves.load(Ordering::SeqCst),
+        1,
+        "resolved once, at its start"
+    );
     let first = requests(&env);
     assert_eq!(first.len(), 2);
     for req in &first {
-        assert!(!offered(req).iter().any(|t| t.starts_with("memory_")), "the running run keeps its tools");
+        assert!(
+            !offered(req).iter().any(|t| t.starts_with("memory_")),
+            "the running run keeps its tools"
+        );
     }
-    assert!(resolver.project_store().is_none(), "the running run captured nothing");
+    assert!(
+        resolver.project_store().is_none(),
+        "the running run captured nothing"
+    );
 
     // The next run has the memory.
     let evs = run_with(&mut env, "Quelle est la donnée ?", |_| {}).await;
@@ -370,7 +395,11 @@ async fn switching_the_memory_on_applies_at_the_next_run_and_not_to_the_running_
     let third = &requests(&env)[2];
     assert!(offered(third).contains(&"memory_search".to_string()));
     assert!(!results(&evs, "memory_search")[0].0, "a search runs");
-    assert_eq!(exchanges(&resolver.project_store()), 2, "the next run's exchange is kept");
+    assert_eq!(
+        exchanges(&resolver.project_store()),
+        2,
+        "the next run's exchange is kept"
+    );
 }
 
 #[tokio::test]
@@ -385,8 +414,16 @@ async fn a_run_with_a_project_captures_its_exchange_into_the_project_only() {
     )
     .await;
     run_with(&mut env, "Salut", |_| {}).await;
-    assert_eq!(exchanges(&resolver.project_store()), 2, "user turn and reply");
-    assert_eq!(exchanges(&resolver.global_store()), 0, "never the global memory");
+    assert_eq!(
+        exchanges(&resolver.project_store()),
+        2,
+        "user turn and reply"
+    );
+    assert_eq!(
+        exchanges(&resolver.global_store()),
+        0,
+        "never the global memory"
+    );
 }
 
 #[tokio::test]
@@ -396,8 +433,16 @@ async fn a_session_without_a_project_captures_nothing_refuses_project_scope_and_
     let mut env = start(
         tempfile::tempdir().unwrap(),
         vec![
-            Reply::tool("p1", "memory_search", json!({"query": "x", "scope": "project"})),
-            Reply::tool("p2", "memory_write", json!({"text": "une note", "scope": "project"})),
+            Reply::tool(
+                "p1",
+                "memory_search",
+                json!({"query": "x", "scope": "project"}),
+            ),
+            Reply::tool(
+                "p2",
+                "memory_write",
+                json!({"text": "une note", "scope": "project"}),
+            ),
             Reply::tool(
                 "g1",
                 "memory_write",
@@ -412,13 +457,24 @@ async fn a_session_without_a_project_captures_nothing_refuses_project_scope_and_
     let evs = run_with(&mut env, "Bonjour", |_| {}).await;
 
     let search = results(&evs, "memory_search");
-    assert!(search[0].0 && search[0].1.contains("no project"), "{search:?}");
+    assert!(
+        search[0].0 && search[0].1.contains("no project"),
+        "{search:?}"
+    );
     let write = results(&evs, "memory_write");
     assert!(write[0].0 && write[0].1.contains("no project"), "{write:?}");
-    assert!(write[1].0 == false, "a global note is still written: {write:?}");
+    assert!(!write[1].0, "a global note is still written: {write:?}");
     let global = resolver.global_store().unwrap();
-    assert_eq!(notes(&Some(global.clone())), 1, "the project note never fell back to global");
-    assert_eq!(exchanges(&Some(global)), 0, "nothing captured without a project");
+    assert_eq!(
+        notes(&Some(global.clone())),
+        1,
+        "the project note never fell back to global"
+    );
+    assert_eq!(
+        exchanges(&Some(global)),
+        0,
+        "nothing captured without a project"
+    );
 }
 
 #[tokio::test]
@@ -428,7 +484,11 @@ async fn a_note_written_in_a_run_is_found_by_the_next_search_of_the_same_run() {
     let mut env = start(
         tempfile::tempdir().unwrap(),
         vec![
-            Reply::tool("w1", "memory_write", json!({"text": "Deploy on Fridays only"})),
+            Reply::tool(
+                "w1",
+                "memory_write",
+                json!({"text": "Deploy on Fridays only"}),
+            ),
             Reply::tool("s1", "memory_search", json!({"query": "deploy fridays"})),
             Reply::text("ok"),
         ],
@@ -438,10 +498,17 @@ async fn a_note_written_in_a_run_is_found_by_the_next_search_of_the_same_run() {
     .await;
     let evs = run_with(&mut env, "Note la règle de déploiement", |_| {}).await;
     let write = results(&evs, "memory_write");
-    assert!(!write[0].0 && write[0].1.contains("Saved in the project memory as"), "{write:?}");
+    assert!(
+        !write[0].0 && write[0].1.contains("Saved in the project memory as"),
+        "{write:?}"
+    );
     let search = results(&evs, "memory_search");
     assert!(!search[0].0, "{search:?}");
-    assert!(search[0].1.contains("Deploy on Fridays only"), "{}", search[0].1);
+    assert!(
+        search[0].1.contains("Deploy on Fridays only"),
+        "{}",
+        search[0].1
+    );
 }
 
 #[tokio::test]
@@ -469,8 +536,16 @@ async fn isolation_between_projects_provenance_of_a_global_note_and_persistence_
     let mut b = start(
         tempfile::tempdir().unwrap(),
         vec![
-            Reply::tool("s1", "memory_search", json!({"query": "postgres", "scope": "project"})),
-            Reply::tool("s2", "memory_search", json!({"query": "short answers", "scope": "global"})),
+            Reply::tool(
+                "s1",
+                "memory_search",
+                json!({"query": "postgres", "scope": "project"}),
+            ),
+            Reply::tool(
+                "s2",
+                "memory_search",
+                json!({"query": "short answers", "scope": "global"}),
+            ),
             Reply::text("ok"),
         ],
         &beta,
@@ -479,9 +554,15 @@ async fn isolation_between_projects_provenance_of_a_global_note_and_persistence_
     .await;
     let evs = run_with(&mut b, "Quelle base ?", |_| {}).await;
     let project = results(&evs, "memory_search")[0].clone();
-    assert!(project.1.contains("Nothing in the project memory matches"), "{project:?}");
+    assert!(
+        project.1.contains("Nothing in the project memory matches"),
+        "{project:?}"
+    );
     let global = results(&evs, "memory_search")[1].clone();
-    assert!(global.1.contains("from project pa"), "provenance: {global:?}");
+    assert!(
+        global.1.contains("from project pa"),
+        "provenance: {global:?}"
+    );
 
     // The project moved folder: same id, a new session, the memory follows.
     let moved = Resolver::new(&stores, home_dir.path(), Some("pa"), true);
@@ -496,7 +577,11 @@ async fn isolation_between_projects_provenance_of_a_global_note_and_persistence_
     )
     .await;
     let evs = run_with(&mut c, "Rappelle", |_| {}).await;
-    assert!(results(&evs, "memory_search")[0].1.contains("Alpha uses postgres"));
+    assert!(
+        results(&evs, "memory_search")[0]
+            .1
+            .contains("Alpha uses postgres")
+    );
 }
 
 #[tokio::test]
@@ -530,11 +615,19 @@ async fn an_indexing_failure_is_said_the_note_is_kept_and_the_retry_does_not_dup
         .project_store()
         .unwrap()
         .memory
-        .entries(bricks_memory::structured::browse::EntryFilter::Notes, "", 0, 50)
+        .entries(
+            bricks_memory::structured::browse::EntryFilter::Notes,
+            "",
+            0,
+            50,
+        )
         .unwrap();
     assert_eq!(stored.total, 1, "no duplicate: {:?}", stored.entries);
     let s = resolver.project_store().unwrap().memory.stats();
-    assert_eq!(s.indexed, s.episodes, "every episode, the note included, is indexed");
+    assert_eq!(
+        s.indexed, s.episodes,
+        "every episode, the note included, is indexed"
+    );
 }
 
 #[tokio::test]
@@ -555,9 +648,15 @@ async fn a_read_only_session_does_not_offer_memory_write_nor_its_guidance() {
     let evs = run_with(&mut env, "Note ça", |_| {}).await;
     let req = &requests(&env)[0];
     let tools = offered(req);
-    assert!(tools.contains(&"memory_search".to_string()), "reads stay: {tools:?}");
+    assert!(
+        tools.contains(&"memory_search".to_string()),
+        "reads stay: {tools:?}"
+    );
     assert!(!tools.contains(&"memory_write".to_string()), "{tools:?}");
-    assert!(!system(req).contains("memory_write"), "no guidance for writing");
+    assert!(
+        !system(req).contains("memory_write"),
+        "no guidance for writing"
+    );
     let write = results(&evs, "memory_write");
     assert!(write[0].0, "a call anyway is refused: {write:?}");
     assert_eq!(notes(&resolver.project_store()), 0);
@@ -621,13 +720,29 @@ async fn clearing_the_memory_leaves_the_session_history_untouched() {
     let before = env.ctl.history().await.len();
     assert!(before >= 2);
 
-    resolver.project_store().unwrap().forget_all().await.unwrap();
-    assert_eq!(exchanges(&resolver.project_store()), 0, "the memory is empty");
-    assert_eq!(env.ctl.history().await.len(), before, "the conversation is kept");
+    resolver
+        .project_store()
+        .unwrap()
+        .forget_all()
+        .await
+        .unwrap();
+    assert_eq!(
+        exchanges(&resolver.project_store()),
+        0,
+        "the memory is empty"
+    );
+    assert_eq!(
+        env.ctl.history().await.len(),
+        before,
+        "the conversation is kept"
+    );
 
     run_with(&mut env, "Second message", |_| {}).await;
     let second = serde_json::to_string(&requests(&env)[1].messages).unwrap();
-    assert!(second.contains("Premier message"), "the first exchange is still sent");
+    assert!(
+        second.contains("Premier message"),
+        "the first exchange is still sent"
+    );
 }
 
 #[tokio::test]
@@ -637,7 +752,11 @@ async fn the_memory_recalled_at_the_start_of_a_run_is_within_budget_and_says_its
     let mut env = start(
         tempfile::tempdir().unwrap(),
         vec![
-            Reply::tool("w1", "memory_write", json!({"text": "Deploy on Fridays only"})),
+            Reply::tool(
+                "w1",
+                "memory_write",
+                json!({"text": "Deploy on Fridays only"}),
+            ),
             Reply::text("noté"),
             Reply::text("vendredi"),
         ],
@@ -648,10 +767,15 @@ async fn the_memory_recalled_at_the_start_of_a_run_is_within_budget_and_says_its
     run_with(&mut env, "Note la règle", |_| {}).await;
     run_with(&mut env, "When do we deploy?", |_| {}).await;
     let sys = system(&requests(&env)[2]);
-    let start_at = sys.find("<long_term_memory").expect("recalled into the prompt");
+    let start_at = sys
+        .find("<long_term_memory")
+        .expect("recalled into the prompt");
     let block = &sys[start_at..];
     assert!(block.contains("Deploy on Fridays only"), "{block}");
-    assert!(block.contains("project memory"), "the scope is said: {block}");
+    assert!(
+        block.contains("project memory"),
+        "the scope is said: {block}"
+    );
     let tokens = bricks_types::tokens::estimate_text(block).tokens;
     assert!(tokens <= 1200, "{tokens} tokens");
 }
@@ -668,10 +792,11 @@ async fn the_memory_tools_refuse_without_a_run_memory() {
         mcp_manager: None,
         extensions: bricks_tools::Extensions::default(),
     };
-    let out = MemorySearchTool
-        .execute(json!({"query": "x"}), &ctx)
-        .await;
-    assert!(out.is_error && out.content.contains("memory_disabled"), "{out:?}");
+    let out = MemorySearchTool.execute(json!({"query": "x"}), &ctx).await;
+    assert!(
+        out.is_error && out.content.contains("memory_disabled"),
+        "{out:?}"
+    );
     let _ = (PermissionLevel::ReadOnly, Value::Null);
 }
 
@@ -907,7 +1032,10 @@ async fn subagent_resume_keeps_memory_tools_and_refuses_when_memory_turns_off() 
         fn model_info(&self) -> Option<ModelInfo> {
             self.parent.model_info()
         }
-        async fn complete(&self, request: CompletionRequest) -> bricks_types::Result<CompletionStream> {
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> bricks_types::Result<CompletionStream> {
             if request
                 .system
                 .as_deref()
@@ -1073,7 +1201,11 @@ async fn subagent_resume_keeps_memory_tools_and_refuses_when_memory_turns_off() 
             _ => None,
         })
         .expect("res_off result");
-    assert!(res_off.0, "expected refusal when memory is off: {}", res_off.1);
+    assert!(
+        res_off.0,
+        "expected refusal when memory is off: {}",
+        res_off.1
+    );
     assert!(
         res_off.1.contains("memory_search") && res_off.1.contains("no longer available"),
         "{}",

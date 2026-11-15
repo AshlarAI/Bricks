@@ -7,9 +7,9 @@ mod common;
 
 use bricks_agent::BricksConfig;
 use bricks_agent::agents::{InstanceState, ProfileSources};
-use bricks_agent::permission::{PermissionEffect, SessionPolicy};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionEffect, SessionPolicy};
 use bricks_provider::{CompletionRequest, Provider};
 use common::follow::{FollowHandles, Waited};
 use serde_json::json;
@@ -347,7 +347,10 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
     // The parent received the compact result, not the transcript.
     let parent_last = &reqs[2].1;
     let fed = serde_json::to_string(&parent_last.messages).unwrap();
-    assert!(fed.contains(&format!("Sub-agent {} (inspecteur, model test/a", spawned.agent_id)));
+    assert!(fed.contains(&format!(
+        "Sub-agent {} (inspecteur, model test/a",
+        spawned.agent_id
+    )));
     assert!(fed.contains("Edit Map: src/lib.rs, fn parse."));
     assert!(fed.contains("completed in") && fed.contains(" ms,"));
 }
@@ -543,12 +546,19 @@ async fn a_sub_agent_runs_its_commands_while_the_session_still_asks() {
         }
     }
     assert_eq!(run_outcome(&all).0, RunOutcome::Succeeded);
-    assert_eq!(approvals.len(), 1, "only the session's own command: {approvals:?}");
+    assert_eq!(
+        approvals.len(),
+        1,
+        "only the session's own command: {approvals:?}"
+    );
     assert_eq!(approvals[0].tool, "Bash");
     assert!(approvals[0].agent_id.is_none());
     // The child's own command ran: its request carries the output.
     let child_saw_output = env.script.requests().iter().any(|(_, r)| {
-        is_child(r) && serde_json::to_string(&r.messages).unwrap().contains("child")
+        is_child(r)
+            && serde_json::to_string(&r.messages)
+                .unwrap()
+                .contains("child")
     });
     assert!(child_saw_output, "the child's command ran");
 }
@@ -813,7 +823,8 @@ async fn compaction_keeps_the_tool_the_profile_catalogue_and_the_policy() {
             break;
         }
     }
-    env.script.push(Reply::tool("profiles", "AgentProfiles", json!({})));
+    env.script
+        .push(Reply::tool("profiles", "AgentProfiles", json!({})));
     env.script.push(Reply::text("second"));
     env.ctl
         .send(Command::Submit {
@@ -831,7 +842,8 @@ async fn compaction_keeps_the_tool_the_profile_catalogue_and_the_policy() {
             && names.contains(&"AgentProfiles")
             && names.contains(&"CodeScout")
     );
-    for name in ["Agent"] {
+    {
+        let name = "Agent";
         let tool = last.tools.iter().find(|t| t.name == name).unwrap();
         let schema = serde_json::to_string(&tool.input_schema).unwrap();
         assert!(schema.contains("AgentProfiles"));
@@ -875,10 +887,7 @@ async fn profiles_listed_and_reloaded_through_the_controller() {
 
 #[tokio::test]
 async fn disabled_delegation_registers_no_tool() {
-    let mut env = open_with(vec![Reply::text("hi")], None, |b| {
-        b.agents.enabled = false
-    })
-    .await;
+    let mut env = open_with(vec![Reply::text("hi")], None, |b| b.agents.enabled = false).await;
     env.ctl
         .send(Command::Submit {
             prompt: Prompt::text("hello"),

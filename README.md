@@ -4,7 +4,7 @@
 
 **A desktop coding agent built in Rust.**
 
-![Version](https://img.shields.io/badge/version-1.0.0--alpha.1-blue)
+![Version](https://img.shields.io/badge/version-26.11.15-blue)
 ![Rust](https://img.shields.io/badge/built_with-Rust-orange)
 
 [Features](#features) · [Getting started](#getting-started) · [Settings](#settings) · [CLI](#cli) · [Rust SDK](#rust-sdk) · [Development](#development) · [Documentation](#documentation) · [License](#license)
@@ -13,49 +13,27 @@
 
 </div>
 
-Bricks is a desktop coding agent built in Rust. Explore your codebase, edit
-files, run commands and delegate work to sub-agents from one workspace.
-Configure your models and tools directly in the application’s settings.
+Bricks is a lightweight desktop coding agent built natively in Rust. Explore your codebase, edit files, run commands, search the web and delegate work to sub-agents from one workspace. Configure your models and tools directly in the application's settings.
 
-The desktop application, command-line interface and Rust SDK share the same
-agent engine: model connections, tool execution, permissions, context
-management and sessions.
+The desktop application, command-line interface and Rust SDK share the same engine: model connections, tool execution, permissions, context management and sessions. Because it runs natively without Electron, Bricks starts fast and stays light on memory and disk, with public performance benchmarks coming soon.
 
-**Status:** Bricks 1.0 Alpha, in active development. The current workspace version is **1.0.0-alpha.1**.
-Development and the recorded validation runs use macOS on Apple Silicon;
-Linux and Windows have not yet been validated in those runs.
+**Status:** Bricks **26.11.15** (CalVer). Official installers and portable `.zip` archives are built for **macOS Apple Silicon** and **Windows x64** via GitHub Releases, with an in-app auto-updater. Linux is not yet covered by automated release builds.
 
 ## Features
 
 ### Desktop application
 
-- **Projects and conversations.** A project is a folder. Search across
-  conversation titles and messages, rename, delete and resume sessions.
-  Bricks asks for the folder again when a project has moved.
-- **Composer.** Attach files, folders and images, mention files with `@`,
-  run `/` commands, recall earlier requests, and choose the model and
-  reasoning effort for each conversation.
-- **Readable runs.** Tool activity folds into each run. A run ends with a card
-  showing its duration, changed files and commands. The plan stays visible,
-  the model can ask you questions with an optional timer, and you can edit a
-  message and run it again.
-- **Rich answers.** Markdown, syntax-highlighted code, diffs, KaTeX formulas,
-  footnotes and GitHub-style alerts.
-- **Figures.** Mermaid diagrams, SVG drawings and Vega-Lite charts render
-  sanitized and sandboxed, with nothing loaded from the network. Zoom, pan,
-  open full screen, view the source, export SVG or PNG, or copy the image.
-- **Reader.** Open project files in tabs, with a source view, a Markdown and
-  SVG preview, and the recorded changes of each file.
-- **Changes and Git.** See what a conversation changed, the project's change
-  history, and Git status, commits and diffs.
+- **Projects and conversations.** A project is a folder. Search across conversation titles and messages, rename, delete and resume sessions. Bricks asks for the folder again when a project has moved.
+- **Composer.** Attach files, folders and images, mention files with `@`, run `/` commands, recall earlier requests, and choose the model and thinking level for each conversation.
+- **Readable runs.** Tool activity folds into each run. A run ends with a card showing its duration, changed files and commands. The plan stays visible, the model can ask you questions with an optional timer, and you can edit a message and run it again.
+- **Rich answers.** Markdown, syntax-highlighted code blocks, diffs, math formulas, footnotes and GitHub-style alerts.
+- **Figures.** Mermaid diagrams, SVG drawings and Vega-Lite charts render sanitized and offline, with nothing loaded from the network. Zoom, pan, open full screen, view the source, export SVG or PNG, or copy the image.
+- **Reader.** Open project files in tabs, with a source view, live Markdown and SVG previews, and the recorded changes of each file.
+- **Changes and Git.** See what a conversation changed, the project's change history, and Git status, commits and diffs.
 - **Terminal.** Several terminals per project, in the project folder.
-- **Context panel.** Context usage by source, pending approvals, project
-  environment, and views for tools, skills, MCP, memory, jobs and cost.
-- **Bilingual interface.** English by default, French in Settings. This
-  language is independent of the conversations.
-- **Personal touches.** Light, dark or system theme, custom colours with
-  contrast checks, a choice of app icon, and an option to keep the computer
-  awake.
+- **Context panel.** Context usage by source, pending approvals, project environment, and views for tools, skills, MCP, memory, jobs and cost.
+- **Bilingual interface.** English by default, French in Settings. This language is independent of the conversations.
+- **Personal touches and updates.** Light, dark or system theme, custom colours with contrast checks, a choice of app icon, an option to keep the computer awake, and built-in updates from official GitHub Releases.
 
 ### Agent engine
 
@@ -97,7 +75,7 @@ Linux and Windows have not yet been validated in those runs.
   only once you have trusted them.
 - **Web tools.** Search with DuckDuckGo, Brave, Tavily or Exa, read pages as
   Markdown and retrieve citable passages.
-- **Computer Use.** An optional built-in extension on macOS, through Cua Driver.
+- **Computer Use.** Optional desktop and screen control on macOS (through Cua Driver), enabled and configured in Settings.
 
 ### For developers
 
@@ -111,9 +89,7 @@ Linux and Windows have not yet been validated in those runs.
 
 ## Getting started
 
-To run Bricks Desktop from source, install a recent stable Rust toolchain,
-Node.js, npm and the native build dependencies for Tauri. The vector index
-also requires a C++17 toolchain.
+Download an installer or portable `.zip` archive from GitHub Releases (macOS Apple Silicon and Windows x64), or run Bricks Desktop from source by installing a recent stable Rust toolchain, Node.js, npm and the native build dependencies for Tauri. The vector index also requires a C++17 toolchain.
 
 From the repository root:
 

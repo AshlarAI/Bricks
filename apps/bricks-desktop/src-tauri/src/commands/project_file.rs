@@ -305,7 +305,7 @@ pub async fn save_svg_file(
         });
     let picked = rx.await.map_err(|_| IpcError {
         code: IpcErrorCode::Internal,
-        message: tr!(msg::THE_SAVE_DIALOG_CLOSED_WITHOUT_AN).into(),
+        message: tr!(msg::THE_SAVE_DIALOG_CLOSED_WITHOUT_AN),
     })?;
     let Some(picked) = picked else {
         return Ok(None);
@@ -368,7 +368,7 @@ pub async fn save_png_file(
         });
     let picked = rx.await.map_err(|_| IpcError {
         code: IpcErrorCode::Internal,
-        message: tr!(msg::THE_SAVE_DIALOG_CLOSED_WITHOUT_AN).into(),
+        message: tr!(msg::THE_SAVE_DIALOG_CLOSED_WITHOUT_AN),
     })?;
     let Some(picked) = picked else {
         return Ok(None);

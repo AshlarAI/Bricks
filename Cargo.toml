@@ -23,14 +23,13 @@ members = [
     "crates/bricks-tbench",
     "crates/bricks-web",
     "crates/bricks-testkit",
-    "bench/long-mem",
     "crates/bricks-cli",
     "crates/bricks-config",
     "apps/bricks-desktop/src-tauri",
 ]
 
 [workspace.package]
-version = "26.11.14"
+version = "26.11.15"
 edition = "2024"
 authors = ["Adib Mohsin"]
 license = "MPL-2.0"
@@ -105,27 +104,27 @@ quote = "1"
 proc-macro2 = "1"
 
 # Workspace crates
-bricks = { path = "crates/bricks", version = "26.11.14" }
-bricks-types = { path = "crates/bricks-types", version = "26.11.14" }
-bricks-provider = { path = "crates/bricks-provider", version = "26.11.14" }
-bricks-tools = { path = "crates/bricks-tools", version = "26.11.14" }
-bricks-tools-derive = { path = "crates/bricks-tools-derive", version = "26.11.14" }
-bricks-agent = { path = "crates/bricks-agent", version = "26.11.14" }
-bricks-memory = { path = "crates/bricks-memory", version = "26.11.14" }
-bricks-hooks = { path = "crates/bricks-hooks", version = "26.11.14" }
-bricks-mcp = { path = "crates/bricks-mcp", version = "26.11.14" }
-bricks-lsp = { path = "crates/bricks-lsp", version = "26.11.14" }
-bricks-semantic = { path = "crates/bricks-semantic", version = "26.11.14" }
-bricks-embeddings = { path = "crates/bricks-embeddings", version = "26.11.14" }
-bricks-compression = { path = "crates/bricks-compression", version = "26.11.14" }
-bricks-skills = { path = "crates/bricks-skills", version = "26.11.14" }
-bricks-vms = { path = "crates/bricks-vms", version = "26.11.14" }
-bricks-agentlang = { path = "crates/bricks-agentlang", version = "26.11.14" }
-bricks-agentrl = { path = "crates/bricks-agentrl", version = "26.11.14" }
-bricks-workflows = { path = "crates/bricks-workflows", version = "26.11.14" }
-bricks-web = { path = "crates/bricks-web", version = "26.11.14" }
+bricks = { path = "crates/bricks", version = "26.11.15" }
+bricks-types = { path = "crates/bricks-types", version = "26.11.15" }
+bricks-provider = { path = "crates/bricks-provider", version = "26.11.15" }
+bricks-tools = { path = "crates/bricks-tools", version = "26.11.15" }
+bricks-tools-derive = { path = "crates/bricks-tools-derive", version = "26.11.15" }
+bricks-agent = { path = "crates/bricks-agent", version = "26.11.15" }
+bricks-memory = { path = "crates/bricks-memory", version = "26.11.15" }
+bricks-hooks = { path = "crates/bricks-hooks", version = "26.11.15" }
+bricks-mcp = { path = "crates/bricks-mcp", version = "26.11.15" }
+bricks-lsp = { path = "crates/bricks-lsp", version = "26.11.15" }
+bricks-semantic = { path = "crates/bricks-semantic", version = "26.11.15" }
+bricks-embeddings = { path = "crates/bricks-embeddings", version = "26.11.15" }
+bricks-compression = { path = "crates/bricks-compression", version = "26.11.15" }
+bricks-skills = { path = "crates/bricks-skills", version = "26.11.15" }
+bricks-vms = { path = "crates/bricks-vms", version = "26.11.15" }
+bricks-agentlang = { path = "crates/bricks-agentlang", version = "26.11.15" }
+bricks-agentrl = { path = "crates/bricks-agentrl", version = "26.11.15" }
+bricks-workflows = { path = "crates/bricks-workflows", version = "26.11.15" }
+bricks-web = { path = "crates/bricks-web", version = "26.11.15" }
 bricks-testkit = { path = "crates/bricks-testkit" }
-bricks-config = { path = "crates/bricks-config", version = "26.11.14" }
+bricks-config = { path = "crates/bricks-config", version = "26.11.15" }
 clap = { version = "4.5", features = ["derive"] }
 nucleo-matcher = "0.3"
 

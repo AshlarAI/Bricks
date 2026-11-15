@@ -74,12 +74,21 @@ fn canonical(value: &serde_json::Value) -> String {
             keys.sort();
             let fields: Vec<String> = keys
                 .into_iter()
-                .map(|k| format!("{}:{}", serde_json::Value::String(k.clone()), canonical(&map[k])))
+                .map(|k| {
+                    format!(
+                        "{}:{}",
+                        serde_json::Value::String(k.clone()),
+                        canonical(&map[k])
+                    )
+                })
                 .collect();
             format!("{{{}}}", fields.join(","))
         }
         serde_json::Value::Array(items) => {
-            format!("[{}]", items.iter().map(canonical).collect::<Vec<_>>().join(","))
+            format!(
+                "[{}]",
+                items.iter().map(canonical).collect::<Vec<_>>().join(",")
+            )
         }
         other => other.to_string(),
     }
@@ -150,7 +159,9 @@ impl Selection {
     pub fn pending(&self) -> Vec<&ServerView> {
         self.servers
             .iter()
-            .filter(|s| s.source == Source::Project && s.decision == Some(Decision::Pending) && !s.shadowed)
+            .filter(|s| {
+                s.source == Source::Project && s.decision == Some(Decision::Pending) && !s.shadowed
+            })
             .collect()
     }
 }
@@ -189,13 +200,18 @@ fn compact(entry: &ServerEntry) -> Result<toml::Value, String> {
             key == "name"
                 || match defaults.get(key) {
                     Some(d) => d != v,
-                    None => !matches!(v, toml::Value::Array(a) if a.is_empty())
-                        && !matches!(v, toml::Value::Table(t) if t.is_empty()),
+                    None => {
+                        !matches!(v, toml::Value::Array(a) if a.is_empty())
+                            && !matches!(v, toml::Value::Table(t) if t.is_empty())
+                    }
                 }
         });
         // An HTTP server needs its type; a stdio one is the default.
         if entry.config.server_type != "stdio" {
-            table.insert("type".into(), toml::Value::String(entry.config.server_type.clone()));
+            table.insert(
+                "type".into(),
+                toml::Value::String(entry.config.server_type.clone()),
+            );
         }
     }
     Ok(value)
@@ -207,7 +223,8 @@ fn write_user(home: &Path, servers: &[ServerEntry]) -> Result<(), String> {
     let mut file = toml::map::Map::new();
     file.insert("servers".into(), toml::Value::Array(list));
     let body = toml::to_string_pretty(&toml::Value::Table(file)).map_err(|e| e.to_string())?;
-    let text = format!("# MCP servers of Bricks (`bricks mcp`, or Settings › Extensions).\n\n{body}");
+    let text =
+        format!("# MCP servers of Bricks (`bricks mcp`, or Settings › Extensions).\n\n{body}");
     std::fs::create_dir_all(home).map_err(|e| format!("{}: {e}", home.display()))?;
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -220,7 +237,10 @@ pub fn add_user(home: &Path, entry: ServerEntry) -> Result<(), String> {
     entry.config.validate()?;
     let mut servers = read_user(home)?;
     if servers.iter().any(|s| s.config.name == entry.config.name) {
-        return Err(format!("an MCP server named '{}' already exists", entry.config.name));
+        return Err(format!(
+            "an MCP server named '{}' already exists",
+            entry.config.name
+        ));
     }
     servers.push(entry);
     write_user(home, &servers)
@@ -350,22 +370,23 @@ pub fn decide(home: &Path, project: &Path, name: &str, approved: bool) -> Result
 pub fn select(home: &Path, project: Option<&Path>) -> Selection {
     let mut out = Selection::default();
     match read_user(home) {
-        Ok(servers) => out.servers.extend(servers.into_iter().map(|entry| ServerView {
-            entry,
-            source: Source::User,
-            decision: None,
-            shadowed: false,
-        })),
+        Ok(servers) => out
+            .servers
+            .extend(servers.into_iter().map(|entry| ServerView {
+                entry,
+                source: Source::User,
+                decision: None,
+                shadowed: false,
+            })),
         Err(e) => out.errors.push(e),
     }
     if let Some(project) = project {
         match read_project(project) {
             Ok(servers) => {
                 for entry in servers {
-                    let shadowed = out
-                        .servers
-                        .iter()
-                        .any(|s| s.source == Source::User && s.entry.config.name == entry.config.name);
+                    let shadowed = out.servers.iter().any(|s| {
+                        s.source == Source::User && s.entry.config.name == entry.config.name
+                    });
                     let decision = Some(decision(home, project, &entry));
                     out.servers.push(ServerView {
                         entry,
@@ -400,20 +421,38 @@ mod tests {
     fn the_persons_servers_are_added_listed_turned_off_and_removed() {
         let home = tempfile::tempdir().unwrap();
         add_user(home.path(), stdio("a")).unwrap();
-        add_user(home.path(), ServerEntry::new(McpServerConfig::http("b", "https://x.test/mcp"))).unwrap();
-        assert!(add_user(home.path(), stdio("a")).is_err(), "names are unique");
+        add_user(
+            home.path(),
+            ServerEntry::new(McpServerConfig::http("b", "https://x.test/mcp")),
+        )
+        .unwrap();
         assert!(
-            add_user(home.path(), ServerEntry::new(McpServerConfig::stdio("c", "", &[]))).is_err(),
+            add_user(home.path(), stdio("a")).is_err(),
+            "names are unique"
+        );
+        assert!(
+            add_user(
+                home.path(),
+                ServerEntry::new(McpServerConfig::stdio("c", "", &[]))
+            )
+            .is_err(),
             "invalid servers are refused"
         );
         set_enabled(home.path(), "b", false).unwrap();
         let sel = select(home.path(), None);
         assert_eq!(sel.servers.len(), 2);
-        assert_eq!(sel.active().len(), 1, "a turned-off server is not connected");
+        assert_eq!(
+            sel.active().len(),
+            1,
+            "a turned-off server is not connected"
+        );
         assert!(remove_user(home.path(), "a").unwrap());
         assert!(!remove_user(home.path(), "a").unwrap());
         let text = std::fs::read_to_string(user_file(home.path())).unwrap();
-        assert!(text.contains("name = \"b\"") && text.contains("enabled = false"), "{text}");
+        assert!(
+            text.contains("name = \"b\"") && text.contains("enabled = false"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -430,7 +469,11 @@ mod tests {
         assert_eq!(select(home.path(), Some(project.path())).active().len(), 1);
 
         // The declaration changes: asked again.
-        std::fs::write(project.path().join("bricks.toml"), toml.replace("server.js", "other.js")).unwrap();
+        std::fs::write(
+            project.path().join("bricks.toml"),
+            toml.replace("server.js", "other.js"),
+        )
+        .unwrap();
         let sel = select(home.path(), Some(project.path()));
         assert_eq!(sel.pending().len(), 1);
         assert!(sel.active().is_empty());
@@ -464,6 +507,9 @@ mod tests {
         std::fs::write(user_file(home.path()), "[[servers]\nname=").unwrap();
         let sel = select(home.path(), None);
         assert_eq!(sel.errors.len(), 1, "{:?}", sel.errors);
-        assert!(add_user(home.path(), stdio("x")).is_err(), "an invalid file is never overwritten");
+        assert!(
+            add_user(home.path(), stdio("x")).is_err(),
+            "an invalid file is never overwritten"
+        );
     }
 }

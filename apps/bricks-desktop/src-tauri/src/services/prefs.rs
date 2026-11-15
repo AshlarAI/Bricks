@@ -1,9 +1,9 @@
 //! Window and display preferences, in `<bricks_home>/desktop/preferences.json`.
 
-use crate::i18n::{msg, tr};
 use super::paths::{desktop_dir, write_atomic};
 use super::{error, io_error};
 use crate::contract::{ColorSet, IpcErrorCode, IpcResult, Preferences, ThemeColors};
+use crate::i18n::{msg, tr};
 use std::path::PathBuf;
 
 const WIDTH: std::ops::RangeInclusive<u32> = 160..=640;
@@ -147,7 +147,11 @@ fn sanitize_colors(c: ColorSet) -> ColorSet {
 /// `#rrggbb`, lower-case hexadecimal digits only.
 fn is_colour(value: &str) -> bool {
     let b = value.as_bytes();
-    b.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c))
+    b.len() == 7
+        && b[0] == b'#'
+        && b[1..]
+            .iter()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c))
 }
 
 #[cfg(test)]
@@ -162,10 +166,17 @@ mod tests {
         std::fs::write(&file, r#"{"theme":"dark"}"#).unwrap();
         let store = PrefsStore::at(file.clone());
         let mut p = store.get();
-        assert_eq!(p.app_icon, crate::contract::AppIcon::Aligned, "an older file");
+        assert_eq!(
+            p.app_icon,
+            crate::contract::AppIcon::Aligned,
+            "an older file"
+        );
         p.app_icon = crate::contract::AppIcon::Dark;
         store.set(p).unwrap();
-        assert_eq!(PrefsStore::at(file).get().app_icon, crate::contract::AppIcon::Dark);
+        assert_eq!(
+            PrefsStore::at(file).get().app_icon,
+            crate::contract::AppIcon::Dark
+        );
     }
 
     #[test]
@@ -272,7 +283,11 @@ mod tests {
         std::fs::write(&file, r#"{"terminal_ratio":0.01}"#).unwrap();
         assert_eq!(PrefsStore::at(file.clone()).get().terminal_ratio, Some(0.1));
         std::fs::write(&file, r#"{"terminal_ratio":"half"}"#).unwrap();
-        assert_eq!(PrefsStore::at(file.clone()).get().terminal_ratio, None, "wrong type");
+        assert_eq!(
+            PrefsStore::at(file.clone()).get().terminal_ratio,
+            None,
+            "wrong type"
+        );
 
         // A legacy file: the pixel height is kept, the ratio is left to the interface.
         std::fs::write(&file, r#"{"terminal_height":300,"terminal_open":true}"#).unwrap();
@@ -501,7 +516,11 @@ mod tests {
         )
         .unwrap();
         let p = PrefsStore::at(file).get();
-        assert_eq!(p.ask_timer, AskTimerPrefs::default(), "an unknown mode is ignored");
+        assert_eq!(
+            p.ask_timer,
+            AskTimerPrefs::default(),
+            "an unknown mode is ignored"
+        );
         assert_eq!(p.left_width, 310, "the other preferences are kept");
     }
 
@@ -514,8 +533,10 @@ mod tests {
         p.pinned_sessions = vec!["s_2".into(), "".into(), "s_1".into(), "s_2".into()];
         store.set(p).unwrap();
         assert_eq!(store.get().pinned_sessions, vec!["s_2", "s_1"]);
-        let mut many = Preferences::default();
-        many.pinned_sessions = (0..80).map(|i| format!("s_{i}")).collect();
+        let many = Preferences {
+            pinned_sessions: (0..80).map(|i| format!("s_{i}")).collect(),
+            ..Default::default()
+        };
         store.set(many).unwrap();
         assert_eq!(store.get().pinned_sessions.len(), PINNED_MAX);
     }
@@ -526,15 +547,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("preferences.json");
         std::fs::write(&file, r#"{"theme":"dark"}"#).unwrap();
-        assert_eq!(PrefsStore::at(file.clone()).get().language, Language::En, "no language: English");
+        assert_eq!(
+            PrefsStore::at(file.clone()).get().language,
+            Language::En,
+            "no language: English"
+        );
         std::fs::write(&file, r#"{"language":"fr"}"#).unwrap();
-        assert_eq!(PrefsStore::at(file.clone()).get().language, Language::Fr, "French is kept");
+        assert_eq!(
+            PrefsStore::at(file.clone()).get().language,
+            Language::Fr,
+            "French is kept"
+        );
         std::fs::write(&file, r#"{"language":"klingon"}"#).unwrap();
-        assert_eq!(PrefsStore::at(file.clone()).get().language, Language::En, "an unknown value gives English");
+        assert_eq!(
+            PrefsStore::at(file.clone()).get().language,
+            Language::En,
+            "an unknown value gives English"
+        );
         let store = PrefsStore::at(file);
         store
-            .set(Preferences { language: Language::Fr, ..Preferences::default() })
+            .set(Preferences {
+                language: Language::Fr,
+                ..Preferences::default()
+            })
             .unwrap();
-        assert_eq!(store.get().language, Language::Fr, "a saved choice comes back");
+        assert_eq!(
+            store.get().language,
+            Language::Fr,
+            "a saved choice comes back"
+        );
     }
 }

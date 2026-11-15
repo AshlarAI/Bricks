@@ -48,7 +48,10 @@ fn pick_windows_shell(comspec: Option<&str>) -> ShellSpec {
         .filter(|s| !s.is_empty())
         .unwrap_or("powershell.exe")
         .to_string();
-    ShellSpec { program, args: Vec::new() }
+    ShellSpec {
+        program,
+        args: Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -74,7 +77,10 @@ mod tests {
 
     #[test]
     fn windows_uses_comspec_then_powershell() {
-        assert_eq!(pick_windows_shell(Some("C:\\Windows\\system32\\cmd.exe")).program, "C:\\Windows\\system32\\cmd.exe");
+        assert_eq!(
+            pick_windows_shell(Some("C:\\Windows\\system32\\cmd.exe")).program,
+            "C:\\Windows\\system32\\cmd.exe"
+        );
         assert_eq!(pick_windows_shell(None).program, "powershell.exe");
         assert_eq!(pick_windows_shell(Some("")).program, "powershell.exe");
     }

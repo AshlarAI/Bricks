@@ -151,7 +151,10 @@ pub(super) fn tool_result_with_images(
         }
         ImageTransport::None => {
             let note = "[the image was not shown: the current model does not accept images]";
-            (tool_result_block(id, format!("{text}\n{note}"), is_error), Vec::new())
+            (
+                tool_result_block(id, format!("{text}\n{note}"), is_error),
+                Vec::new(),
+            )
         }
     }
 }

@@ -6,16 +6,16 @@
 //! what the TUI inspectors show. No provider key, token, authentication
 //! header or environment value leaves this module: the provider registry is
 //! read for the path of its file only.
-use crate::i18n::{msg, tr};
 use crate::contract::*;
 use crate::engine::live::{OpenSession, session_item};
 use crate::engine::{self, AppState};
+use crate::i18n::{msg, tr};
 use crate::pty;
 use crate::services::conversations::{item_from_summary, path_text};
 use crate::services::{error, io_error, join_error, not_found};
-use bricks_agent::{Agent, BricksConfig};
 use bricks_agent::control::{Controller, Snapshot, list_sessions};
 use bricks_agent::permission::PermissionEffect;
+use bricks_agent::{Agent, BricksConfig};
 use bricks_tools::PermissionLevel;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,10 +26,7 @@ use tauri::State;
 const DESCRIPTION_MAX_CHARS: usize = 400;
 
 /// The open session under `session_id`, or `NotFound`.
-pub(crate) fn open_or_not_found(
-    state: &AppState,
-    session_id: &str,
-) -> IpcResult<Arc<OpenSession>> {
+pub(crate) fn open_or_not_found(state: &AppState, session_id: &str) -> IpcResult<Arc<OpenSession>> {
     state
         .open_entry(session_id)
         .ok_or_else(|| not_found(tr!(msg::THIS_CONVERSATION_ISNT_OPEN)))
@@ -82,7 +79,11 @@ pub(crate) async fn config_of(
     let working_dir = project.working_dir.clone();
     let rules_dir = user_rules_dir();
     let sources = tokio::task::spawn_blocking(move || {
-        config_sources(providers_file.as_deref(), &working_dir, rules_dir.as_deref())
+        config_sources(
+            providers_file.as_deref(),
+            &working_dir,
+            rules_dir.as_deref(),
+        )
     })
     .await
     .map_err(join_error)?;
@@ -127,21 +128,30 @@ pub(crate) async fn locate_of(state: &AppState, session_id: &str) -> IpcResult<S
 
 /// Tools available to an open session, with their level and decision.
 #[tauri::command]
-pub async fn session_tools(state: State<'_, AppState>, session_id: String) -> IpcResult<Vec<SessionToolInfo>> {
+pub async fn session_tools(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<Vec<SessionToolInfo>> {
     let entry = open_or_not_found(&state, &session_id)?;
     tools_of(&entry.controller)
 }
 
 /// MCP servers of an open session and their state (empty when none).
 #[tauri::command]
-pub async fn session_mcp(state: State<'_, AppState>, session_id: String) -> IpcResult<Vec<McpServerInfo>> {
+pub async fn session_mcp(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<Vec<McpServerInfo>> {
     let entry = open_or_not_found(&state, &session_id)?;
     Ok(mcp_of(&entry.controller).await)
 }
 
 /// Effective configuration of an open session, without secrets.
 #[tauri::command]
-pub async fn session_config(state: State<'_, AppState>, session_id: String) -> IpcResult<SessionConfigInfo> {
+pub async fn session_config(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<SessionConfigInfo> {
     let entry = open_or_not_found(&state, &session_id)?;
     let providers = state.registry().ok().map(|r| r.origin().to_string());
     config_of(&entry.controller, providers.as_deref()).await
@@ -149,7 +159,10 @@ pub async fn session_config(state: State<'_, AppState>, session_id: String) -> I
 
 /// A stored session, open or not, with the registered project of its folder.
 #[tauri::command]
-pub async fn session_locate(state: State<'_, AppState>, session_id: String) -> IpcResult<SessionItem> {
+pub async fn session_locate(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<SessionItem> {
     locate_of(&state, &session_id).await
 }
 
@@ -295,8 +308,14 @@ fn settings_of(snap: &Snapshot, bricks: &BricksConfig, agent: &Agent) -> Vec<Con
         })
         .unwrap_or_else(|| tr!(msg::UNKNOWN).to_string());
     vec![
-        entry(&tr!(msg::INPUT_CONTEXT), tokens_text(snap.context.input_limit)),
-        entry(&tr!(msg::OUTPUT_CONTEXT), tokens_text(snap.context.reserved_output)),
+        entry(
+            &tr!(msg::INPUT_CONTEXT),
+            tokens_text(snap.context.input_limit),
+        ),
+        entry(
+            &tr!(msg::OUTPUT_CONTEXT),
+            tokens_text(snap.context.reserved_output),
+        ),
         entry(&tr!(msg::SAFETY_MARGIN), tokens_text(snap.context.margin)),
         entry("Compression", compression),
         entry(
@@ -306,11 +325,26 @@ fn settings_of(snap: &Snapshot, bricks: &BricksConfig, agent: &Agent) -> Vec<Con
                 .map(|dir| path_text(&dir))
                 .unwrap_or_else(|| tr!(msg::NONE).to_string()),
         ),
-        entry(&tr!(msg::CONCURRENT_SUB_AGENTS), bricks.agents.max_concurrent.to_string()),
-        entry(&tr!(msg::MAXIMUM_SUB_AGENT_DEPTH), bricks.agents.max_depth.to_string()),
-        entry(&tr!(msg::CONCURRENT_BACKGROUND_JOBS), bricks.background.max_jobs.to_string()),
-        entry(&tr!(msg::FILES_ANALYSED_BY_SEMANTIC_SEARCH), grouped(bricks.semantic.max_files as u64)),
-        entry(&tr!(msg::CONFIGURATION_WARNINGS), bricks.diagnostics.len().to_string()),
+        entry(
+            &tr!(msg::CONCURRENT_SUB_AGENTS),
+            bricks.agents.max_concurrent.to_string(),
+        ),
+        entry(
+            &tr!(msg::MAXIMUM_SUB_AGENT_DEPTH),
+            bricks.agents.max_depth.to_string(),
+        ),
+        entry(
+            &tr!(msg::CONCURRENT_BACKGROUND_JOBS),
+            bricks.background.max_jobs.to_string(),
+        ),
+        entry(
+            &tr!(msg::FILES_ANALYSED_BY_SEMANTIC_SEARCH),
+            grouped(bricks.semantic.max_files as u64),
+        ),
+        entry(
+            &tr!(msg::CONFIGURATION_WARNINGS),
+            bricks.diagnostics.len().to_string(),
+        ),
     ]
 }
 
@@ -327,7 +361,7 @@ fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push_str(crate::i18n::pick(",", "\u{202f}"));
         }
         out.push(c);
@@ -362,7 +396,12 @@ mod tests {
         std::fs::create_dir_all(&wd_raw).unwrap();
         std::fs::create_dir_all(&sessions).unwrap();
         let wd = std::fs::canonicalize(&wd_raw).unwrap();
-        Fixture { _root: root, home, wd, sessions }
+        Fixture {
+            _root: root,
+            home,
+            wd,
+            sessions,
+        }
     }
 
     fn state_of(fx: &Fixture) -> AppState {
@@ -371,7 +410,12 @@ mod tests {
 
     /// A scripted controller of the project folder, with `bricks_toml` as
     /// its project settings. Its event stream is drained in the background.
-    async fn scripted(fx: &Fixture, bricks_toml: &str, script: Arc<Script>, interactive: bool) -> Controller {
+    async fn scripted(
+        fx: &Fixture,
+        bricks_toml: &str,
+        script: Arc<Script>,
+        interactive: bool,
+    ) -> Controller {
         let mut cfg = EngineConfig::new(
             &fx.wd,
             ScriptedCatalog::new(&["a"], script),
@@ -433,15 +477,33 @@ mod tests {
         .await;
         let tools = tools_of(&ctl).unwrap();
         assert!(tools.len() > 5, "the session's tools are listed");
-        assert!(tools.windows(2).all(|w| w[0].name <= w[1].name), "sorted by name");
+        assert!(
+            tools.windows(2).all(|w| w[0].name <= w[1].name),
+            "sorted by name"
+        );
         let read = tool(&tools, "Read");
-        assert_eq!((read.level.as_str(), read.decision.as_str()), ("read_only", "allow"));
+        assert_eq!(
+            (read.level.as_str(), read.decision.as_str()),
+            ("read_only", "allow")
+        );
         let edit = tool(&tools, "Edit");
-        assert_eq!((edit.level.as_str(), edit.decision.as_str()), ("write", "ask"));
+        assert_eq!(
+            (edit.level.as_str(), edit.decision.as_str()),
+            ("write", "ask")
+        );
         let bash = tool(&tools, "Bash");
-        assert_eq!((bash.level.as_str(), bash.decision.as_str()), ("execute", "ask"));
-        assert!(tools.iter().all(|t| !t.reason.is_empty()), "every verdict says why");
-        assert!(tools.iter().all(|t| !t.description.contains('\n')), "one line each");
+        assert_eq!(
+            (bash.level.as_str(), bash.decision.as_str()),
+            ("execute", "ask")
+        );
+        assert!(
+            tools.iter().all(|t| !t.reason.is_empty()),
+            "every verdict says why"
+        );
+        assert!(
+            tools.iter().all(|t| !t.description.contains('\n')),
+            "one line each"
+        );
         let info = config_of(&ctl, None).await.unwrap();
         assert!(!info.permission_policy.chosen);
 
@@ -451,7 +513,10 @@ mod tests {
             write: PermissionEffect::Allow,
             ..CustomRules::default()
         };
-        custom.custom.tools.insert("Bash".into(), PermissionEffect::Deny);
+        custom
+            .custom
+            .tools
+            .insert("Bash".into(), PermissionEffect::Deny);
         ctl.set_permission_policy(custom).unwrap();
         let tools = tools_of(&ctl).unwrap();
         assert_eq!(tool(&tools, "Edit").decision, "allow");
@@ -471,9 +536,16 @@ mod tests {
             policy: SessionPolicy::chosen(PermissionProfile::Execute),
         })
         .unwrap();
-        eventually("the policy to change", || ctl.snapshot().permission_revision == 1).await;
+        eventually("the policy to change", || {
+            ctl.snapshot().permission_revision == 1
+        })
+        .await;
         let tools = tools_of(&ctl).unwrap();
-        assert!(tools.iter().all(|t| t.decision == "allow" || t.level == "forbidden"));
+        assert!(
+            tools
+                .iter()
+                .all(|t| t.decision == "allow" || t.level == "forbidden")
+        );
         let info = config_of(&ctl, None).await.unwrap();
         assert_eq!(info.permission_policy.profile, PermissionProfile::Execute);
         ctl.close().await;
@@ -540,10 +612,20 @@ max_output_tokens = 8000
         assert_eq!(info.provider, "p");
         assert_eq!(info.model, "m");
         assert_eq!(info.working_dir, fx.wd.display().to_string());
-        assert!(info.sources.iter().any(|s| s == &origin), "providers file listed: {:?}", info.sources);
+        assert!(
+            info.sources.iter().any(|s| s == &origin),
+            "providers file listed: {:?}",
+            info.sources
+        );
         let text = serde_json::to_string(&info).unwrap();
-        assert!(!text.contains(SECRET), "a provider key reached the configuration view");
-        assert!(!text.to_lowercase().contains("api_key"), "no key field in the view");
+        assert!(
+            !text.contains(SECRET),
+            "a provider key reached the configuration view"
+        );
+        assert!(
+            !text.to_lowercase().contains("api_key"),
+            "no key field in the view"
+        );
         assert!(!text.contains("Authorization"), "no authentication header");
         state.close_session(&opened.session.id, true).await.unwrap();
     }
@@ -563,9 +645,17 @@ max_output_tokens = 8000
         let ctl = scripted(&fx, &bricks, Script::new(vec![]), false).await;
         let info = config_of(&ctl, None).await.unwrap();
         assert!(info.agents_enabled);
-        assert!(info.sources.iter().any(|s| s.ends_with("bricks.toml")), "{:?}", info.sources);
+        assert!(
+            info.sources.iter().any(|s| s.ends_with("bricks.toml")),
+            "{:?}",
+            info.sources
+        );
         assert_eq!(setting(&info, "Concurrent sub-agents"), "3");
-        assert_eq!(setting(&info, "Concurrent background jobs"), "16", "[background] is rejected: its default");
+        assert_eq!(
+            setting(&info, "Concurrent background jobs"),
+            "16",
+            "[background] is rejected: its default"
+        );
         assert_eq!(setting(&info, "Configuration warnings"), "1");
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains(SECRET), "a value of bricks.toml was quoted");
@@ -579,7 +669,9 @@ max_output_tokens = 8000
     async fn an_unopened_session_is_not_found() {
         let fx = fixture();
         let state = state_of(&fx);
-        let err = open_or_not_found(&state, "absente").err().expect("not open");
+        let err = open_or_not_found(&state, "absente")
+            .err()
+            .expect("not open");
         assert_eq!(err.code, IpcErrorCode::NotFound);
         let err = locate_of(&state, "absente").await.unwrap_err();
         assert_eq!(err.code, IpcErrorCode::NotFound);
@@ -593,7 +685,10 @@ max_output_tokens = 8000
 
         // A finished run stores the session in the sessions folder.
         let ctl = scripted(&fx, "", Script::new(vec![Reply::text("ok")]), false).await;
-        ctl.send(Command::Submit { prompt: Prompt::text("bonjour") }).unwrap();
+        ctl.send(Command::Submit {
+            prompt: Prompt::text("bonjour"),
+        })
+        .unwrap();
         ctl.wait_idle().await;
         let id = ctl.session_id();
         ctl.close().await;
@@ -601,8 +696,15 @@ max_output_tokens = 8000
         let located = locate_of(&state, &id).await.unwrap();
         assert_eq!(located.id, id);
         assert!(!located.open, "closed");
-        assert_eq!(located.project_id.as_deref(), Some(project.as_str()), "its registered folder");
-        assert_eq!(located.working_dir.as_deref(), Some(fx.wd.display().to_string().as_str()));
+        assert_eq!(
+            located.project_id.as_deref(),
+            Some(project.as_str()),
+            "its registered folder"
+        );
+        assert_eq!(
+            located.working_dir.as_deref(),
+            Some(fx.wd.display().to_string().as_str())
+        );
 
         // Once its folder is no longer a registered project, it has none.
         state.forget_project(&project).await.unwrap();
@@ -709,7 +811,11 @@ max_output_tokens = 8000
         assert!(got[0].ends_with("providers.toml"));
         assert!(got[1].ends_with("bricks.toml"));
 
-        assert_eq!(config_sources(None, &wd, None).len(), 1, "the project file only");
+        assert_eq!(
+            config_sources(None, &wd, None).len(),
+            1,
+            "the project file only"
+        );
     }
 
     #[test]
@@ -756,7 +862,10 @@ max_output_tokens = 8000
             "Effort appliqué",
         ];
         for old in removed {
-            assert!(!labels.contains(&old), "the removed label {old} is still shown");
+            assert!(
+                !labels.contains(&old),
+                "the removed label {old} is still shown"
+            );
         }
         // The input budget is read as the engine reports it, in the same grouping.
         let input = ctl.snapshot().context.input_limit;

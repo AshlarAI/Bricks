@@ -14,8 +14,8 @@ pub mod relocate;
 pub mod session_tool;
 pub mod sessions;
 
-use crate::i18n::{msg, tr};
 use crate::contract::{AppInfo, IpcErrorCode, IpcResult, ProviderInfo};
+use crate::i18n::{msg, tr};
 use crate::services::attachments as store;
 use crate::services::changes::ChangeJournal;
 use crate::services::computer_use::ComputerUse;
@@ -206,7 +206,11 @@ impl AppState {
         check_folder(&path).map_err(|e| {
             error(
                 IpcErrorCode::FolderMissing,
-                tr!(msg::FOLDER_IS_NO_LONGER_ACCESSIBLE, e = e, path = project.path),
+                tr!(
+                    msg::FOLDER_IS_NO_LONGER_ACCESSIBLE,
+                    e = e,
+                    path = project.path
+                ),
             )
         })?;
         Ok(path)
@@ -275,7 +279,11 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // earlier versions keeps its seven-day purge, and only there.
     tauri::async_runtime::spawn_blocking(move || {
         store::recover_promotions(&drafts, &sessions);
-        store::sweep_drafts(&drafts, std::time::SystemTime::now(), store::DRAFT_RETENTION);
+        store::sweep_drafts(
+            &drafts,
+            std::time::SystemTime::now(),
+            store::DRAFT_RETENTION,
+        );
         store::remove_older_than(&legacy, store::RETENTION);
     });
     // Computer Use starts in the background when it was left on.

@@ -205,7 +205,7 @@ fn client_config(cfg: &McpServerConfig) -> ClientConfig {
 // ─── Client ──────────────────────────────────────────────────────────────────
 
 enum Owner {
-    Process(tokio::sync::Mutex<StdioProcess>),
+    Process(Box<tokio::sync::Mutex<StdioProcess>>),
     None,
 }
 
@@ -241,7 +241,7 @@ impl McpClient {
                         })?;
                     let stderr = process.stderr.clone();
                     let reason = process.close_reason.clone();
-                    let owner = Owner::Process(tokio::sync::Mutex::new(process));
+                    let owner = Owner::Process(Box::new(tokio::sync::Mutex::new(process)));
                     Self::start(cfg.clone(), pipes, "stdio", owner)
                         .await
                         .map(|mut c| {

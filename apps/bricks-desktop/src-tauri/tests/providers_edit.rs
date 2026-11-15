@@ -15,7 +15,6 @@ use bricks_desktop_lib::contract::{
 use bricks_desktop_lib::engine::catalog::DesktopCatalog;
 use bricks_desktop_lib::services::providers::{commit, revision_of, view};
 use bricks_desktop_lib::services::providers_toml::Edit;
-use bricks_provider::config::ProviderConfig;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

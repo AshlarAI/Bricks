@@ -28,15 +28,21 @@ const LIGHT_PROFILES: [&str; 5] = ["none", "off", "disabled", "minimal", "low"];
 /// The lightest of a model's reasoning profiles, when it has a known light one.
 pub fn light_profile<'a>(profiles: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let ids: Vec<&str> = profiles.into_iter().collect();
-    LIGHT_PROFILES
-        .iter()
-        .find_map(|light| ids.iter().find(|id| id.eq_ignore_ascii_case(light)).copied())
+    LIGHT_PROFILES.iter().find_map(|light| {
+        ids.iter()
+            .find(|id| id.eq_ignore_ascii_case(light))
+            .copied()
+    })
 }
 
 /// The model's title for a conversation starting with `prompt`, or `None`
 /// (failure, timeout, empty answer). `profile` is the reasoning profile of the
 /// call (`None`: the provider's own).
-pub async fn generate(provider: &dyn Provider, prompt: &str, profile: Option<&str>) -> Option<String> {
+pub async fn generate(
+    provider: &dyn Provider,
+    prompt: &str,
+    profile: Option<&str>,
+) -> Option<String> {
     let excerpt: String = prompt.trim().chars().take(PROMPT_MAX_CHARS).collect();
     if excerpt.is_empty() {
         return None;
@@ -89,8 +95,10 @@ pub fn clean(raw: &str) -> Option<String> {
             matches!(c, '"' | '\'' | '«' | '»' | '“' | '”' | '*' | '`') || c.is_whitespace()
         })
         .trim_end_matches(|c: char| {
-            matches!(c, '.' | '!' | '?' | ':' | ';' | '…' | '"' | '\'' | '»' | '”' | '*' | '`')
-                || c.is_whitespace()
+            matches!(
+                c,
+                '.' | '!' | '?' | ':' | ';' | '…' | '"' | '\'' | '»' | '”' | '*' | '`'
+            ) || c.is_whitespace()
         });
     if line.is_empty() {
         return None;
@@ -122,7 +130,10 @@ mod tests {
             clean("\n  Title: \"Fix the login bug\"\nBecause…").as_deref(),
             Some("Fix the login bug")
         );
-        assert_eq!(clean("**Recette du macérat**").as_deref(), Some("Recette du macérat"));
+        assert_eq!(
+            clean("**Recette du macérat**").as_deref(),
+            Some("Recette du macérat")
+        );
         assert_eq!(clean("  \n \"\" ").as_deref(), None);
         assert_eq!(clean(&"é".repeat(100)).unwrap().chars().count(), 81);
     }

@@ -26,7 +26,11 @@ mod common;
 
 /// The scripted models; each waits for the sub-agents it was given (as a
 /// model would).
-struct Follow(Arc<ScriptedCatalog>, Arc<common::follow::Waited>, Arc<AtomicBool>);
+struct Follow(
+    Arc<ScriptedCatalog>,
+    Arc<common::follow::Waited>,
+    Arc<AtomicBool>,
+);
 
 impl ModelCatalog for Follow {
     fn models(&self) -> Vec<ModelChoice> {
@@ -296,11 +300,7 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
 async fn without_delegation_tools_the_bullet_is_absent_from_the_request() {
     let reqs = run(false, vec![Reply::text("hi")]).await;
     let r = &reqs[0];
-    assert!(
-        !r.tools
-            .iter()
-            .any(|t| t.name == "Agent")
-    );
+    assert!(!r.tools.iter().any(|t| t.name == "Agent"));
     let s = system(r);
     assert!(s.starts_with(&reference(true, false)), "{s}");
     assert!(!s.contains("Délègue"));
@@ -320,9 +320,11 @@ fn a_child_prompt_without_delegation_tools_has_no_delegation_bullet() {
         wd,
     );
     let tools = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    assert!(without.starts_with(&bricks_agent::system_prompt::bricks_foundation(&tools(&[
-        "Read", "Bash"
-    ]))));
+    assert!(
+        without.starts_with(&bricks_agent::system_prompt::bricks_foundation(&tools(&[
+            "Read", "Bash"
+        ])))
+    );
     assert!(!without.contains("## Délégation"));
     assert_eq!(without.matches("## Your role").count(), 1);
     assert_eq!(without.matches(general.instructions.trim()).count(), 1);
@@ -331,9 +333,11 @@ fn a_child_prompt_without_delegation_tools_has_no_delegation_bullet() {
         &["Read".to_string(), "Agent".to_string()],
         wd,
     );
-    assert!(with.starts_with(&bricks_agent::system_prompt::bricks_foundation(&tools(&[
-        "Read", "Agent"
-    ]))));
+    assert!(
+        with.starts_with(&bricks_agent::system_prompt::bricks_foundation(&tools(&[
+            "Read", "Agent"
+        ])))
+    );
     assert_eq!(with.matches("## Délégation").count(), 1);
     assert_eq!(with.matches("## Your role").count(), 1);
 }

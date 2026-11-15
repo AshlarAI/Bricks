@@ -10,10 +10,10 @@
 //! refused for good by this process, so a run still draining its events
 //! cannot recreate the file.
 
-use crate::i18n::{msg, tr};
 use super::conversations::message_text;
 use super::{error, invalid, io_error};
 use crate::contract::{IpcErrorCode, IpcResult, RunLabel};
+use crate::i18n::{msg, tr};
 use bricks_types::{Message, Role};
 use parking_lot::Mutex;
 use std::collections::HashSet;
@@ -206,7 +206,11 @@ pub(crate) fn check_session_id(id: &str) -> IpcResult<()> {
 /// the file is rewritten atomically. Moved lines are written aside first, so
 /// an interruption keeps them in both files, never in neither. Returns how
 /// many lines moved; a missing file moves none.
-pub(crate) fn move_lines(path: &Path, aside: &Path, moves: impl Fn(&str) -> bool) -> std::io::Result<usize> {
+pub(crate) fn move_lines(
+    path: &Path,
+    aside: &Path,
+    moves: impl Fn(&str) -> bool,
+) -> std::io::Result<usize> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
@@ -281,7 +285,11 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("run-labels")).unwrap();
         // A line as an older desktop wrote it: no `user_index` key.
         let old = r#"{"run_id":"run_a","label":"/skill debug","prompt":"corrige","at":1}"#;
-        std::fs::write(dir.path().join("run-labels").join("s1.jsonl"), format!("{old}\n")).unwrap();
+        std::fs::write(
+            dir.path().join("run-labels").join("s1.jsonl"),
+            format!("{old}\n"),
+        )
+        .unwrap();
         let listed = store.list("s1").unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].user_index, None);
@@ -301,9 +309,21 @@ mod tests {
     fn the_prompt_is_found_from_the_run_base_not_an_identical_earlier_message() {
         // Two identical plain messages, then the run's prompt, identical again.
         let history = vec![user("même"), Message::user("réponse"), user("même")];
-        assert_eq!(user_index_of(&history, 0, "même"), Some(0), "from the start");
-        assert_eq!(user_index_of(&history, 1, "même"), Some(2), "from the run's base");
-        assert_eq!(user_index_of(&history, 3, "même"), None, "nothing added: no match");
+        assert_eq!(
+            user_index_of(&history, 0, "même"),
+            Some(0),
+            "from the start"
+        );
+        assert_eq!(
+            user_index_of(&history, 1, "même"),
+            Some(2),
+            "from the run's base"
+        );
+        assert_eq!(
+            user_index_of(&history, 3, "même"),
+            None,
+            "nothing added: no match"
+        );
         assert_eq!(user_count(&history), 3);
     }
 
@@ -316,7 +336,11 @@ mod tests {
             user("Corrige ce problème"),
         ];
         assert_eq!(user_index_of(&history, 1, "Corrige ce problème"), Some(2));
-        assert_eq!(user_index_of(&history, 1, "premier"), None, "earlier than the base");
+        assert_eq!(
+            user_index_of(&history, 1, "premier"),
+            None,
+            "earlier than the base"
+        );
     }
 
     #[test]
@@ -330,22 +354,43 @@ mod tests {
     fn labels_are_listed_oldest_first_and_one_per_run() {
         let dir = tempfile::tempdir().unwrap();
         let store = RunLabelStore::at(dir.path().join("run-labels"));
-        assert!(store.list("s1").unwrap().is_empty(), "a missing file is no label");
-        assert!(store.append("s1", &label("run_a", "/skill debug", 1)).unwrap());
-        assert!(store.append("s1", &label("run_b", "/skill review", 2)).unwrap());
-        assert!(!store.append("s1", &label("run_a", "/skill debug", 3)).unwrap(), "deduplicated");
+        assert!(
+            store.list("s1").unwrap().is_empty(),
+            "a missing file is no label"
+        );
+        assert!(
+            store
+                .append("s1", &label("run_a", "/skill debug", 1))
+                .unwrap()
+        );
+        assert!(
+            store
+                .append("s1", &label("run_b", "/skill review", 2))
+                .unwrap()
+        );
+        assert!(
+            !store
+                .append("s1", &label("run_a", "/skill debug", 3))
+                .unwrap(),
+            "deduplicated"
+        );
         let listed = store.list("s1").unwrap();
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].run_id, "run_a");
         assert_eq!(listed[1].label, "/skill review");
-        assert!(store.list("s2").unwrap().is_empty(), "other sessions are apart");
+        assert!(
+            store.list("s2").unwrap().is_empty(),
+            "other sessions are apart"
+        );
     }
 
     #[test]
     fn a_damaged_line_is_skipped_and_the_next_label_starts_on_a_new_line() {
         let dir = tempfile::tempdir().unwrap();
         let store = RunLabelStore::at(dir.path().join("run-labels"));
-        store.append("s1", &label("run_a", "/skill debug", 1)).unwrap();
+        store
+            .append("s1", &label("run_a", "/skill debug", 1))
+            .unwrap();
         let file = dir.path().join("run-labels").join("s1.jsonl");
         // A write cut short: a broken line without its newline at the end.
         let mut text = std::fs::read_to_string(&file).unwrap();
@@ -356,21 +401,37 @@ mod tests {
         assert_eq!(listed.len(), 1, "the damaged line is skipped");
         assert_eq!(listed[0].run_id, "run_a");
 
-        assert!(store.append("s1", &label("run_b", "/skill review", 2)).unwrap());
+        assert!(
+            store
+                .append("s1", &label("run_b", "/skill review", 2))
+                .unwrap()
+        );
         let listed = store.list("s1").unwrap();
-        assert_eq!(listed.iter().map(|l| l.run_id.as_str()).collect::<Vec<_>>(), ["run_a", "run_b"]);
+        assert_eq!(
+            listed.iter().map(|l| l.run_id.as_str()).collect::<Vec<_>>(),
+            ["run_a", "run_b"]
+        );
     }
 
     #[test]
     fn a_deleted_session_loses_its_labels_and_gets_no_new_one() {
         let dir = tempfile::tempdir().unwrap();
         let store = RunLabelStore::at(dir.path().join("run-labels"));
-        store.append("s1", &label("run_a", "/skill debug", 1)).unwrap();
+        store
+            .append("s1", &label("run_a", "/skill debug", 1))
+            .unwrap();
         assert!(store.exists("s1"));
         store.delete("s1").unwrap();
         assert!(!store.exists("s1"));
-        assert!(!store.append("s1", &label("run_late", "/skill debug", 2)).unwrap());
-        assert!(!store.exists("s1"), "a late label does not recreate the file");
+        assert!(
+            !store
+                .append("s1", &label("run_late", "/skill debug", 2))
+                .unwrap()
+        );
+        assert!(
+            !store.exists("s1"),
+            "a late label does not recreate the file"
+        );
         store.delete("s1").unwrap();
     }
 
@@ -386,10 +447,16 @@ mod tests {
 
     #[test]
     fn labels_are_trimmed_capped_and_empty_ones_are_none() {
-        assert_eq!(normalize_label("  /skill debug  ").as_deref(), Some("/skill debug"));
+        assert_eq!(
+            normalize_label("  /skill debug  ").as_deref(),
+            Some("/skill debug")
+        );
         assert_eq!(normalize_label("   "), None);
         let long = "é".repeat(MAX_LABEL_CHARS + 10);
-        assert_eq!(normalize_label(&long).unwrap().chars().count(), MAX_LABEL_CHARS);
+        assert_eq!(
+            normalize_label(&long).unwrap().chars().count(),
+            MAX_LABEL_CHARS
+        );
     }
 }
 
@@ -428,7 +495,10 @@ mod revision_tests {
         assert_eq!(store.list("s1").unwrap(), vec![first, unindexed]);
         let aside = std::fs::read_to_string(aside_of(root.path())).unwrap();
         assert_eq!(aside.lines().count(), 2);
-        assert!(aside.contains("run_b") && aside.contains("run_c"), "{aside}");
+        assert!(
+            aside.contains("run_b") && aside.contains("run_c"),
+            "{aside}"
+        );
     }
 
     #[test]
@@ -441,7 +511,13 @@ mod revision_tests {
         assert_eq!(store.set_aside_from("s1", 1).unwrap(), 1);
         assert_eq!(store.set_aside_from("s1", 1).unwrap(), 0);
         assert_eq!(store.list("s1").unwrap().len(), 1);
-        assert_eq!(std::fs::read_to_string(aside_of(root.path())).unwrap().lines().count(), 1);
+        assert_eq!(
+            std::fs::read_to_string(aside_of(root.path()))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -476,7 +552,10 @@ mod revision_tests {
         assert!(aside_of(root.path()).exists());
         store.delete("s1").unwrap();
         assert_eq!(store.set_aside_from("s1", 0).unwrap(), 0);
-        assert!(!aside_of(root.path()).exists(), "deleting the session removes its set-aside labels");
+        assert!(
+            !aside_of(root.path()).exists(),
+            "deleting the session removes its set-aside labels"
+        );
         assert!(!root.path().join("run-labels").join("s1.jsonl").exists());
     }
 

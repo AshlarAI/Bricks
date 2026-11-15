@@ -16,7 +16,9 @@
 //! explicitly to local `HashingEmbeddings` when offline or unconfigured. Project
 //! `[memory]` overrides in `bricks.toml` are respected when present.
 
-use crate::memory::{embedder_with_registry, open_memories, resolve_auto_embedder, resolve_extractor};
+use crate::memory::{
+    embedder_with_registry, open_memories, resolve_auto_embedder, resolve_extractor,
+};
 use bricks_agent::control::RunMemory;
 use bricks_embeddings::{EmbeddingProvider, HashingEmbeddings};
 use bricks_memory::MemoryScope;
@@ -60,6 +62,15 @@ fn check_project_id(id: &str) -> Result<(), MemoryError> {
         Err(MemoryError::Config(format!("invalid project id `{id}`")))
     }
 }
+
+type ResolvedRuntime = (
+    MemoryConfig,
+    Option<MemoryToml>,
+    Arc<dyn EmbeddingProvider>,
+    Option<Arc<dyn Extractor>>,
+    bool,
+    Vec<String>,
+);
 
 impl MemoryService {
     /// The stores under `<home>/memory`.
@@ -123,17 +134,7 @@ impl MemoryService {
         }
     }
 
-    fn resolve_runtime(
-        &self,
-        project_dir: Option<&Path>,
-    ) -> (
-        MemoryConfig,
-        Option<MemoryToml>,
-        Arc<dyn EmbeddingProvider>,
-        Option<Arc<dyn Extractor>>,
-        bool,
-        Vec<String>,
-    ) {
+    fn resolve_runtime(&self, project_dir: Option<&Path>) -> ResolvedRuntime {
         let (parsed, mut warnings) = Self::read_project_toml(project_dir);
         let mut config = parsed
             .as_ref()
@@ -147,9 +148,7 @@ impl MemoryService {
             match embedder_with_registry(&config.embeddings, registry.as_deref()) {
                 Ok(e) => e,
                 Err(e) => {
-                    warnings.push(format!(
-                        "{e}; falling back to local hashing/lexical memory"
-                    ));
+                    warnings.push(format!("{e}; falling back to local hashing/lexical memory"));
                     Self::hashing_embedder()
                 }
             }
@@ -284,10 +283,7 @@ impl MemoryService {
 
     /// Like [`Self::for_run`], also reading `[memory]` overrides from the
     /// project's `bricks.toml` when `project_dir` is provided.
-    pub fn for_run_in_project(
-        &self,
-        project: Option<(&str, &str, Option<&Path>)>,
-    ) -> RunMemory {
+    pub fn for_run_in_project(&self, project: Option<(&str, &str, Option<&Path>)>) -> RunMemory {
         let project_dir = project.and_then(|(_, _, dir)| dir);
         let (config, parsed, embedder, extractor, explicit_embeddings, mut warnings) =
             self.resolve_runtime(project_dir);
@@ -652,7 +648,8 @@ limits = { max_input_tokens = 128000, max_output_tokens = 8192 }
             "[memory]\n[memory.recall]\nscoped_max_results = 9\n",
         )
         .unwrap();
-        let active_toml = svc.for_run_in_project(Some(("p1", "Project One", Some(proj_dir.path()))));
+        let active_toml =
+            svc.for_run_in_project(Some(("p1", "Project One", Some(proj_dir.path()))));
         assert!(active_toml.memory.is_some());
         drop(active_toml.guard);
         drop(active_toml.memory);

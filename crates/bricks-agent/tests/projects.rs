@@ -3,9 +3,9 @@
 //! before anything is switched; a failure leaves the open session intact.
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -144,7 +144,10 @@ async fn resuming_another_projects_session_loads_that_project() {
     ]);
     let id_b = session_of(&w, "B").await;
     // B's own policy: EXECUTE, chosen in B (A's stays unchosen).
-    let (ctl_b, mut ev_b) = w.open("B", SessionChoice::Resume(id_b.clone())).await.unwrap();
+    let (ctl_b, mut ev_b) = w
+        .open("B", SessionChoice::Resume(id_b.clone()))
+        .await
+        .unwrap();
     next(&mut ev_b).await;
     ctl_b
         .set_permission_policy(SessionPolicy::chosen(PermissionProfile::Execute))
@@ -386,10 +389,7 @@ async fn messagent_is_announced_and_agentcontrol_no_longer_sends() {
     ctl.set_permission_policy(SessionPolicy::chosen(PermissionProfile::Execute))
         .unwrap();
     assert_eq!(
-        ctl.tools()
-            .iter()
-            .filter(|t| t.name == "Messagent")
-            .count(),
+        ctl.tools().iter().filter(|t| t.name == "Messagent").count(),
         1
     );
     let events = submit(&ctl, &mut ev, "check messaging").await;

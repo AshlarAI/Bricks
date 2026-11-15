@@ -192,11 +192,18 @@ fn the_view_carries_the_key_and_never_a_header_value() {
     let json = serde_json::to_string(&file).unwrap();
     assert!(!json.contains("HEADER-SECRET-VALUE"), "header value");
     let inline = file.providers.iter().find(|p| p.id == "inline").unwrap();
-    assert_eq!(inline.api_key.as_deref(), Some("SECRET-KEY-VALUE"), "the form shows it masked");
+    assert_eq!(
+        inline.api_key.as_deref(),
+        Some("SECRET-KEY-VALUE"),
+        "the form shows it masked"
+    );
     assert!(inline.has_credentials);
     let cloud = file.providers.iter().find(|p| p.id == "cloud").unwrap();
     assert_eq!(cloud.api_key, None);
-    assert!(!cloud.has_credentials, "a former variable name is not a key");
+    assert!(
+        !cloud.has_credentials,
+        "a former variable name is not a key"
+    );
     assert_eq!(
         inline.header_names,
         vec!["X-Tenant".to_string()],
@@ -267,7 +274,9 @@ fn a_missing_file_with_a_stale_revision_is_a_conflict_and_stays_missing() {
         &Mutex::new(()),
         &catalog,
         "not-the-revision",
-        &Edit::ProviderDelete { provider_id: "x".into() },
+        &Edit::ProviderDelete {
+            provider_id: "x".into(),
+        },
     )
     .expect_err("conflict");
     assert!(matches!(err.code, IpcErrorCode::Conflict), "{err:?}");
@@ -409,7 +418,12 @@ id = "rapide"
         .into_iter()
         .find(|m| m.selection == "local/small")
         .unwrap();
-    assert!(choice.profiles.iter().any(|p| p.id == "approfondi" && p.label == "Approfondi"));
+    assert!(
+        choice
+            .profiles
+            .iter()
+            .any(|p| p.id == "approfondi" && p.label == "Approfondi")
+    );
 
     // A request that selects the profile carries its parameters, and the
     // profile's own id is never sent.
@@ -419,18 +433,28 @@ id = "rapide"
     let mut request = bricks_provider::CompletionRequest::new("small");
     request.messages.push(Message::user("bonjour"));
     request.temperature = Some(0.7);
-    request
-        .options
-        .set(REASONING_PROFILE_OPTION, "approfondi");
-    let _ = provider.complete(request).await.expect("the local server answers");
+    request.options.set(REASONING_PROFILE_OPTION, "approfondi");
+    let _ = provider
+        .complete(request)
+        .await
+        .expect("the local server answers");
 
     let body = server.await.unwrap();
     assert_eq!(body["model"], "small-1");
-    assert_eq!(body["reasoning"], serde_json::json!({"effort": "high", "budget": 2048}));
+    assert_eq!(
+        body["reasoning"],
+        serde_json::json!({"effort": "high", "budget": 2048})
+    );
     assert_eq!(body["stop"], serde_json::json!(["fin"]));
     assert_eq!(body["ratio"], serde_json::json!(0.5));
-    assert!(body.get("temperature").is_none(), "removed by the profile: {body}");
-    assert!(body.get("approfondi").is_none(), "the id itself is never sent");
+    assert!(
+        body.get("temperature").is_none(),
+        "removed by the profile: {body}"
+    );
+    assert!(
+        body.get("approfondi").is_none(),
+        "the id itself is never sent"
+    );
 }
 
 #[test]
@@ -443,15 +467,43 @@ fn a_key_is_written_replaced_and_removed_in_the_file() {
             ..Default::default()
         },
     };
-    let file = apply_edit(&path, &lock, &catalog, &revision(&path), &set("  sk-pasted-1  ")).expect("saved");
+    let file = apply_edit(
+        &path,
+        &lock,
+        &catalog,
+        &revision(&path),
+        &set("  sk-pasted-1  "),
+    )
+    .expect("saved");
     let cloud = file.providers.iter().find(|p| p.id == "cloud").unwrap();
     assert_eq!(cloud.api_key.as_deref(), Some("sk-pasted-1"));
     assert!(cloud.has_credentials);
-    assert!(catalog.build("cloud/m1", None).is_ok(), "the model now builds");
-    apply_edit(&path, &lock, &catalog, &revision(&path), &set("sk-pasted-2")).expect("replaced");
-    assert!(std::fs::read_to_string(&path).unwrap().contains("api_key = \"sk-pasted-2\""));
+    assert!(
+        catalog.build("cloud/m1", None).is_ok(),
+        "the model now builds"
+    );
+    apply_edit(
+        &path,
+        &lock,
+        &catalog,
+        &revision(&path),
+        &set("sk-pasted-2"),
+    )
+    .expect("replaced");
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("api_key = \"sk-pasted-2\"")
+    );
     let file = apply_edit(&path, &lock, &catalog, &revision(&path), &set("")).expect("removed");
-    assert_eq!(file.providers.iter().find(|p| p.id == "cloud").unwrap().api_key, None);
+    assert_eq!(
+        file.providers
+            .iter()
+            .find(|p| p.id == "cloud")
+            .unwrap()
+            .api_key,
+        None
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

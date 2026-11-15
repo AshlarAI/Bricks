@@ -876,10 +876,9 @@ mod tests {
         assert_eq!(v["seq"], 3);
         let back: Envelope = serde_json::from_value(v).unwrap();
         assert_eq!(back, env);
-        let c: Command = serde_json::from_str(
-            r#"{"type":"approve","approval_id":"ap_1","decision":"allow"}"#,
-        )
-        .unwrap();
+        let c: Command =
+            serde_json::from_str(r#"{"type":"approve","approval_id":"ap_1","decision":"allow"}"#)
+                .unwrap();
         assert_eq!(c.name(), "approve");
         // An answer covers one call: a grant for the session no longer exists.
         assert!(

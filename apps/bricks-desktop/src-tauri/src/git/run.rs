@@ -53,7 +53,10 @@ pub(super) fn failure(out: &Captured, what: &str) -> IpcError {
 }
 
 pub(super) fn io_error(message: &str) -> IpcError {
-    IpcError { code: IpcErrorCode::Io, message: message.to_string() }
+    IpcError {
+        code: IpcErrorCode::Io,
+        message: message.to_string(),
+    }
 }
 
 async fn run(dir: &Path, args: &[&str], cap: usize) -> IpcResult<Captured> {
@@ -77,9 +80,7 @@ async fn run(dir: &Path, args: &[&str], cap: usize) -> IpcResult<Captured> {
         .kill_on_drop(true);
 
     let mut child = command.spawn().map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => {
-            io_error(&tr!(msg::GIT_CANT_BE_FOUND_INSTALL_GIT))
-        }
+        std::io::ErrorKind::NotFound => io_error(&tr!(msg::GIT_CANT_BE_FOUND_INSTALL_GIT)),
         _ => io_error(&tr!(msg::COULD_NOT_LAUNCH_GIT, e = e)),
     })?;
 

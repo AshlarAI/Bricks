@@ -13,9 +13,7 @@ use bricks_agent::BricksConfig;
 use bricks_agent::agents::ProfileSources;
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
-use bricks_agent::system_prompt::{
-    SystemPromptOptions, bricks_foundation, bricks_foundation_with,
-};
+use bricks_agent::system_prompt::{SystemPromptOptions, bricks_foundation, bricks_foundation_with};
 use bricks_tools::permissions::AllowAll;
 use bricks_tools::{CostTracker, Extensions, Tool, ToolContext, ToolResult};
 use bricks_types::ToolDefinition;
@@ -112,7 +110,10 @@ fn off_offers_no_timeout_parameter() {
     assert_eq!(required_names(&def), ["options", "question"]);
     assert!(!def.input_schema.to_string().contains("timeout_seconds"));
     assert!(!def.description.contains("timeout_seconds"));
-    assert!(!def.description.contains("skipped"), "no timer, nothing skipped");
+    assert!(
+        !def.description.contains("skipped"),
+        "no timer, nothing skipped"
+    );
 }
 
 #[test]
@@ -141,7 +142,8 @@ fn custom_fixes_the_duration_and_the_parameter_is_gone() {
     assert_eq!(required_names(&def), ["options", "question"]);
     assert!(!def.input_schema.to_string().contains("timeout_seconds"));
     assert!(
-        def.description.contains("fixed duration of 45 s per question"),
+        def.description
+            .contains("fixed duration of 45 s per question"),
         "{}",
         def.description
     );
@@ -165,9 +167,20 @@ fn every_definition_bounds_the_choices_and_refuses_extra_fields() {
 fn the_definition_follows_the_timer_of_the_current_message() {
     let b = broker(AskTimer::Off, true);
     let tool = AskTool::new(Arc::clone(&b));
-    assert!(!tool.to_definition().input_schema.to_string().contains("timeout_seconds"));
+    assert!(
+        !tool
+            .to_definition()
+            .input_schema
+            .to_string()
+            .contains("timeout_seconds")
+    );
     b.set_timer(AskTimer::Smart);
-    assert!(tool.to_definition().input_schema.to_string().contains("timeout_seconds"));
+    assert!(
+        tool.to_definition()
+            .input_schema
+            .to_string()
+            .contains("timeout_seconds")
+    );
     assert_eq!(tool.input_schema(), tool.to_definition().input_schema);
 }
 
@@ -258,7 +271,10 @@ async fn the_input_is_validated_before_anything_is_asked() {
 #[tokio::test]
 async fn valid_input_for_each_timer_is_accepted() {
     let cases = [
-        (AskTimer::Off, json!({ "question": "Q", "options": two_options() })),
+        (
+            AskTimer::Off,
+            json!({ "question": "Q", "options": two_options() }),
+        ),
         (
             AskTimer::Smart,
             json!({ "question": "Q", "options": two_options(), "timeout_seconds": 30 }),
@@ -267,7 +283,10 @@ async fn valid_input_for_each_timer_is_accepted() {
             AskTimer::Smart,
             json!({ "question": "Q", "options": two_options(), "timeout_seconds": 3_600 }),
         ),
-        (AskTimer::Custom { seconds: 45 }, json!({ "question": "Q", "options": two_options() })),
+        (
+            AskTimer::Custom { seconds: 45 },
+            json!({ "question": "Q", "options": two_options() }),
+        ),
     ];
     for (timer, input) in cases {
         let result = run_tool(timer, input).await;
@@ -285,8 +304,14 @@ async fn valid_input_for_each_timer_is_accepted() {
 
 #[test]
 fn the_wire_shapes_are_the_ones_the_desktop_reads() {
-    assert_eq!(serde_json::to_value(AskTimer::Off).unwrap(), json!({ "mode": "off" }));
-    assert_eq!(serde_json::to_value(AskTimer::Smart).unwrap(), json!({ "mode": "smart" }));
+    assert_eq!(
+        serde_json::to_value(AskTimer::Off).unwrap(),
+        json!({ "mode": "off" })
+    );
+    assert_eq!(
+        serde_json::to_value(AskTimer::Smart).unwrap(),
+        json!({ "mode": "smart" })
+    );
     assert_eq!(
         serde_json::to_value(AskTimer::Custom { seconds: 45 }).unwrap(),
         json!({ "mode": "custom", "seconds": 45 })
@@ -311,12 +336,23 @@ fn the_wire_shapes_are_the_ones_the_desktop_reads() {
         );
     }
     let answers = [
-        (json!({ "kind": "choice", "choice": 0 }), QuestionAnswer::Choice { choice: 0 }),
-        (json!({ "kind": "other", "text": "autre" }), QuestionAnswer::Other { text: "autre".into() }),
+        (
+            json!({ "kind": "choice", "choice": 0 }),
+            QuestionAnswer::Choice { choice: 0 },
+        ),
+        (
+            json!({ "kind": "other", "text": "autre" }),
+            QuestionAnswer::Other {
+                text: "autre".into(),
+            },
+        ),
         (json!({ "kind": "skip" }), QuestionAnswer::Skip),
     ];
     for (wire, answer) in answers {
-        assert_eq!(serde_json::from_value::<QuestionAnswer>(wire.clone()).unwrap(), answer);
+        assert_eq!(
+            serde_json::from_value::<QuestionAnswer>(wire.clone()).unwrap(),
+            answer
+        );
         assert_eq!(serde_json::to_value(&answer).unwrap(), wire);
     }
 }
@@ -328,7 +364,10 @@ fn the_protocol_names_the_question_events_and_the_answer_command() {
             question_id: "q-1".into(),
             tool_call_id: "tc-1".into(),
             question: "Q".into(),
-            options: vec![QuestionOption { label: "A".into(), description: None }],
+            options: vec![QuestionOption {
+                label: "A".into(),
+                description: None,
+            }],
             recommended: None,
             timeout_seconds: Some(30),
             deadline_at: Some(1_000),
@@ -342,7 +381,9 @@ fn the_protocol_names_the_question_events_and_the_answer_command() {
     let resolved = Event::QuestionResolved {
         question_id: "q-1".into(),
         tool_call_id: "tc-1".into(),
-        outcome: QuestionOutcome::Skipped { reason: SkipReason::Timeout },
+        outcome: QuestionOutcome::Skipped {
+            reason: SkipReason::Timeout,
+        },
     };
     assert_eq!(resolved.kind(), "question_resolved");
     assert_eq!(
@@ -379,11 +420,17 @@ fn a_prompt_carries_its_timer_when_it_has_one() {
 fn the_ask_bullet_follows_the_timer_and_only_comes_with_the_tool() {
     let ask = ["Ask".to_string()];
     let off = bricks_foundation_with(&ask, AskTimer::Off);
-    assert!(off.contains("- Utilise Ask seulement pour une décision"), "{off}");
+    assert!(
+        off.contains("- Utilise Ask seulement pour une décision"),
+        "{off}"
+    );
     assert!(!off.contains("timeout_seconds"));
 
     let smart = bricks_foundation_with(&ask, AskTimer::Smart);
-    assert!(smart.contains("Choisis `timeout_seconds` selon l'enjeu"), "{smart}");
+    assert!(
+        smart.contains("Choisis `timeout_seconds` selon l'enjeu"),
+        "{smart}"
+    );
     assert!(!smart.contains("Le délai de"));
 
     let custom = bricks_foundation_with(&ask, AskTimer::Custom { seconds: 45 });
@@ -391,7 +438,10 @@ fn the_ask_bullet_follows_the_timer_and_only_comes_with_the_tool() {
     assert!(!custom.contains("Choisis `timeout_seconds`"));
 
     let without = bricks_foundation_with(&["Read".to_string()], AskTimer::Smart);
-    assert!(!without.contains("Utilise Ask"), "no Ask tool, no Ask bullet");
+    assert!(
+        !without.contains("Utilise Ask"),
+        "no Ask tool, no Ask bullet"
+    );
 
     assert_eq!(
         bricks_foundation(&ask),
@@ -446,12 +496,7 @@ async fn open_with(replies: Vec<Reply>, interactive: bool) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let script = Script::new(replies);
     let catalog = ScriptedCatalog::new(&["a", "b"], script.clone());
-    let mut cfg = EngineConfig::new(
-        dir.path(),
-        catalog,
-        bricks(),
-        dir.path().join(".sessions"),
-    );
+    let mut cfg = EngineConfig::new(dir.path(), catalog, bricks(), dir.path().join(".sessions"));
     cfg.agent_profile_sources = Some(ProfileSources {
         project_dir: Some(dir.path().join(".bricks/agents")),
         user_dir: None,
@@ -632,11 +677,18 @@ async fn an_answer_is_the_result_of_the_call_and_closes_the_question() {
         .unwrap();
     let after = until(&mut env.events, is_finished).await;
 
-    assert_eq!(resolved(&after), Some(QuestionOutcome::Chosen { choice: 1 }));
+    assert_eq!(
+        resolved(&after),
+        Some(QuestionOutcome::Chosen { choice: 1 })
+    );
     let results = tool_results(&after, "Ask");
     assert_eq!(results.len(), 1);
     assert!(!results[0].0, "{}", results[0].1);
-    assert!(results[0].1.contains("The person chose option 1: SQLite."), "{}", results[0].1);
+    assert!(
+        results[0].1.contains("The person chose option 1: SQLite."),
+        "{}",
+        results[0].1
+    );
     assert_eq!(run_outcome(&after), RunOutcome::Succeeded);
     assert!(env.ctl.snapshot().pending_questions.is_empty());
 }
@@ -667,7 +719,9 @@ async fn a_skip_and_a_free_answer_are_reported_as_the_person_gave_them() {
         })
     );
     assert!(
-        tool_results(&first, "Ask")[0].1.contains("The person skipped the question."),
+        tool_results(&first, "Ask")[0]
+            .1
+            .contains("The person skipped the question."),
     );
 
     submit(&env, Prompt::text("Seconde"));
@@ -710,7 +764,10 @@ async fn an_invalid_answer_is_refused_and_the_question_stays_open() {
         answer: QuestionAnswer::Choice { choice: 7 },
     };
     assert!(env.ctl.send(out_of_range).is_err());
-    let refused = until(&mut env.events, |e| matches!(e, Event::CommandRejected { .. })).await;
+    let refused = until(&mut env.events, |e| {
+        matches!(e, Event::CommandRejected { .. })
+    })
+    .await;
     let (command, reason) = rejection(&refused).unwrap();
     assert_eq!(command, "answer_question");
     assert!(reason.contains("has no choice 7"), "{reason}");
@@ -720,8 +777,16 @@ async fn an_invalid_answer_is_refused_and_the_question_stays_open() {
         answer: QuestionAnswer::Other { text: "   ".into() },
     };
     assert!(env.ctl.send(blank).is_err());
-    let refused = until(&mut env.events, |e| matches!(e, Event::CommandRejected { .. })).await;
-    assert!(rejection(&refused).unwrap().1.contains("the free answer is empty"));
+    let refused = until(&mut env.events, |e| {
+        matches!(e, Event::CommandRejected { .. })
+    })
+    .await;
+    assert!(
+        rejection(&refused)
+            .unwrap()
+            .1
+            .contains("the free answer is empty")
+    );
 
     let unknown = Command::AnswerQuestion {
         question_id: "q-unknown".into(),
@@ -762,7 +827,10 @@ async fn cancelling_the_run_closes_the_waiting_question_as_cancelled() {
             "round {round}: the question is closed with the run"
         );
         assert_eq!(run_outcome(&done), RunOutcome::Cancelled, "round {round}");
-        assert!(env.ctl.snapshot().pending_questions.is_empty(), "round {round}");
+        assert!(
+            env.ctl.snapshot().pending_questions.is_empty(),
+            "round {round}"
+        );
     }
 }
 
@@ -771,13 +839,19 @@ async fn an_interactive_session_offers_ask_and_a_non_interactive_one_does_not() 
     let mut env = open_with(vec![Reply::text("bonjour")], true).await;
     submit(&env, Prompt::text("Salut"));
     until(&mut env.events, is_finished).await;
-    let names: Vec<String> = offered(&env.script, 0).into_iter().map(|t| t.name).collect();
+    let names: Vec<String> = offered(&env.script, 0)
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
     assert!(names.contains(&"Ask".to_string()), "{names:?}");
 
     let mut quiet = open_with(vec![Reply::text("bonjour")], false).await;
     submit(&quiet, Prompt::text("Salut"));
     until(&mut quiet.events, is_finished).await;
-    let names: Vec<String> = offered(&quiet.script, 0).into_iter().map(|t| t.name).collect();
+    let names: Vec<String> = offered(&quiet.script, 0)
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
     assert!(!names.contains(&"Ask".to_string()), "{names:?}");
 }
 
@@ -803,7 +877,11 @@ async fn a_custom_timer_sets_every_question_and_the_model_cannot_change_it() {
     let refused = tool_results(&before, "Ask");
     assert_eq!(refused.len(), 1);
     assert!(refused[0].0, "the model's duration is refused");
-    assert!(refused[0].1.contains("the person imposed"), "{}", refused[0].1);
+    assert!(
+        refused[0].1.contains("the person imposed"),
+        "{}",
+        refused[0].1
+    );
 
     let q = asked(&before);
     assert_eq!(q.timeout_seconds, Some(45));
@@ -812,9 +890,19 @@ async fn a_custom_timer_sets_every_question_and_the_model_cannot_change_it() {
 
     let definition = ask_definition(&env.script, 0);
     assert!(definition.description.contains("45 s per question"));
-    assert!(!definition.input_schema.to_string().contains("timeout_seconds"));
     assert!(
-        env.script.requests()[0].1.system.as_deref().unwrap_or_default().contains("Le délai de 45 s est imposé"),
+        !definition
+            .input_schema
+            .to_string()
+            .contains("timeout_seconds")
+    );
+    assert!(
+        env.script.requests()[0]
+            .1
+            .system
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Le délai de 45 s est imposé"),
         "the system prompt says the duration is imposed"
     );
 
@@ -848,7 +936,9 @@ async fn a_smart_question_needs_its_own_timeout_and_gets_its_deadline() {
     let refused = tool_results(&before, "Ask");
     assert!(refused[0].0, "{}", refused[0].1);
     assert!(
-        refused[0].1.contains("`timeout_seconds` is required (30–3600)."),
+        refused[0]
+            .1
+            .contains("`timeout_seconds` is required (30–3600)."),
         "{}",
         refused[0].1
     );
@@ -880,7 +970,10 @@ async fn an_out_of_range_custom_timer_is_refused_before_anything_is_sent() {
             ..Prompt::text("Bonjour")
         };
         assert!(env.ctl.send(Command::Submit { prompt }).is_err());
-        let refused = until(&mut env.events, |e| matches!(e, Event::CommandRejected { .. })).await;
+        let refused = until(&mut env.events, |e| {
+            matches!(e, Event::CommandRejected { .. })
+        })
+        .await;
         let (command, reason) = rejection(&refused).unwrap();
         assert_eq!(command, "submit");
         assert!(
@@ -888,9 +981,15 @@ async fn an_out_of_range_custom_timer_is_refused_before_anything_is_sent() {
             "{reason}"
         );
     }
-    assert!(env.script.requests().is_empty(), "no model request was sent");
+    assert!(
+        env.script.requests().is_empty(),
+        "no model request was sent"
+    );
     let activity = serde_json::to_value(&env.ctl.snapshot().activity).unwrap();
-    assert_eq!(activity["state"], "idle", "the refused message leaves the session idle");
+    assert_eq!(
+        activity["state"], "idle",
+        "the refused message leaves the session idle"
+    );
 
     // The session still runs a message with a valid timer.
     env.script.push(Reply::text("Bonjour."));
@@ -932,8 +1031,16 @@ async fn the_timer_of_a_run_holds_until_the_next_message() {
         ..Prompt::text("Pendant")
     };
     assert!(env.ctl.send(Command::Submit { prompt: meanwhile }).is_err());
-    let refused = until(&mut env.events, |e| matches!(e, Event::CommandRejected { .. })).await;
-    assert!(rejection(&refused).unwrap().1.contains("a run is in progress"));
+    let refused = until(&mut env.events, |e| {
+        matches!(e, Event::CommandRejected { .. })
+    })
+    .await;
+    assert!(
+        rejection(&refused)
+            .unwrap()
+            .1
+            .contains("a run is in progress")
+    );
 
     env.ctl
         .send(Command::AnswerQuestion {
@@ -944,17 +1051,27 @@ async fn the_timer_of_a_run_holds_until_the_next_message() {
     let first = until(&mut env.events, is_finished).await;
     assert_eq!(run_outcome(&first), RunOutcome::Succeeded);
     assert!(
-        ask_definition(&env.script, 1).description.contains("45 s per question"),
+        ask_definition(&env.script, 1)
+            .description
+            .contains("45 s per question"),
         "the run's second request still has the imposed duration"
     );
 
     // Run 2: no timer, from its own message.
     submit(&env, Prompt::text("Seconde"));
     let q = asked(&until(&mut env.events, is_asked).await);
-    assert_eq!(q.timeout_seconds, None, "the next message sets the next timer");
+    assert_eq!(
+        q.timeout_seconds, None,
+        "the next message sets the next timer"
+    );
     assert_eq!(q.deadline_at, None);
     let definition = ask_definition(&env.script, 2);
-    assert!(!definition.input_schema.to_string().contains("timeout_seconds"));
+    assert!(
+        !definition
+            .input_schema
+            .to_string()
+            .contains("timeout_seconds")
+    );
     assert!(!definition.description.contains("45 s"));
 
     env.ctl
@@ -997,7 +1114,11 @@ async fn a_smart_question_left_unanswered_is_skipped_at_its_deadline() {
     );
     let results = tool_results(&rest, "Ask");
     assert!(!results[0].0, "a timeout is an answer, not an error");
-    assert!(results[0].1.contains("No answer within 30 s"), "{}", results[0].1);
+    assert!(
+        results[0].1.contains("No answer within 30 s"),
+        "{}",
+        results[0].1
+    );
     assert_eq!(run_outcome(&rest), RunOutcome::Succeeded);
     assert!(env.ctl.snapshot().pending_questions.is_empty());
 }

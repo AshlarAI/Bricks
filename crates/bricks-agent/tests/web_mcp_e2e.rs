@@ -370,7 +370,9 @@ async fn an_unreachable_mcp_server_is_reported_not_fatal() {
     agent.run("hello").await.unwrap();
     let s = statuses.lock().unwrap().join("\n");
     assert!(
-        s.contains("MCP server 'ghost' unavailable") && s.contains("cannot start"),
+        s.contains("MCP server 'ghost'")
+            && s.contains("could not be reached")
+            && s.contains("cannot start"),
         "{s}"
     );
 }

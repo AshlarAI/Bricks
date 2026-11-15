@@ -8,10 +8,10 @@
 //! [`CHATS_PROJECT_ID`], never written in the file: its folder
 //! (`<bricks_home>/desktop/conversations`) holds one folder per conversation.
 
-use crate::i18n::{msg, tr};
 use super::paths::{check_folder, desktop_dir, write_atomic};
-use super::{error, io_error, invalid, not_found, now_ms};
+use super::{error, invalid, io_error, not_found, now_ms};
 use crate::contract::{IpcError, IpcErrorCode, IpcResult, Project};
+use crate::i18n::{msg, tr};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -82,11 +82,15 @@ impl ProjectStore {
                 Err(e) => {
                     let aside = file.with_extension(format!("json.unreadable-{}", now_ms()));
                     let moved = std::fs::rename(&file, &aside).is_ok();
-                    let msg = tr!(msg::UNREADABLE_PROJECTS_FILE, e = e, detail = if moved {
+                    let msg = tr!(
+                        msg::UNREADABLE_PROJECTS_FILE,
+                        e = e,
+                        detail = if moved {
                             tr!(msg::KEPT_AS, aside = aside.display())
                         } else {
                             tr!(msg::COULD_NOT_BE_SET_ASIDE, file = file.display())
-                        });
+                        }
+                    );
                     if !moved {
                         blocked = Some(msg.clone());
                     }
@@ -96,7 +100,11 @@ impl ProjectStore {
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => {
-                let msg = tr!(msg::PROJECTS_FILE_IS_UNREADABLE, e = e, file = file.display());
+                let msg = tr!(
+                    msg::PROJECTS_FILE_IS_UNREADABLE,
+                    e = e,
+                    file = file.display()
+                );
                 blocked = Some(msg.clone());
                 notes.push(msg);
                 Vec::new()
@@ -202,7 +210,10 @@ impl ProjectStore {
         if let Some(other) = state.projects.iter().find(|p| p.path == key && p.id != id) {
             return Err(error(
                 IpcErrorCode::Conflict,
-                tr!(msg::THIS_FOLDER_ALREADY_BELONGS_TO_PROJECT, name = other.name),
+                tr!(
+                    msg::THIS_FOLDER_ALREADY_BELONGS_TO_PROJECT,
+                    name = other.name
+                ),
             ));
         }
         Ok(canonical)
@@ -250,7 +261,10 @@ impl ProjectStore {
             return Err(invalid(tr!(msg::THE_NAME_CANT_BE_EMPTY)));
         }
         if name.chars().count() > MAX_NAME_CHARS {
-            return Err(invalid(tr!(msg::THE_NAME_EXCEEDS_CHARACTERS, MAX_NAME_CHARS = MAX_NAME_CHARS)));
+            return Err(invalid(tr!(
+                msg::THE_NAME_EXCEEDS_CHARACTERS,
+                MAX_NAME_CHARS = MAX_NAME_CHARS
+            )));
         }
         let mut state = self.state.lock();
         let Some(index) = state.projects.iter().position(|p| p.id == id) else {
@@ -278,7 +292,8 @@ impl ProjectStore {
     pub fn chats(&self) -> IpcResult<Project> {
         std::fs::create_dir_all(&self.chats_dir)
             .map_err(|e| io_error(&format!("conversations ({})", self.chats_dir.display()), e))?;
-        let path = std::fs::canonicalize(&self.chats_dir).unwrap_or_else(|_| self.chats_dir.clone());
+        let path =
+            std::fs::canonicalize(&self.chats_dir).unwrap_or_else(|_| self.chats_dir.clone());
         Ok(Project {
             id: CHATS_PROJECT_ID.to_string(),
             name: CHATS_NAME.to_string(),
@@ -295,20 +310,29 @@ impl ProjectStore {
         let root = PathBuf::from(self.chats()?.path);
         let stamp = now_ms();
         for n in 0..100 {
-            let dir = root.join(if n == 0 { stamp.to_string() } else { format!("{stamp}-{n}") });
+            let dir = root.join(if n == 0 {
+                stamp.to_string()
+            } else {
+                format!("{stamp}-{n}")
+            });
             match std::fs::create_dir(&dir) {
                 Ok(()) => return Ok(dir),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(io_error(&tr!(msg::CONVERSATION_FOLDER), e)),
             }
         }
-        Err(error(IpcErrorCode::Io, tr!(msg::NO_FREE_FOLDER_FOR_THE_CONVERSATION)))
+        Err(error(
+            IpcErrorCode::Io,
+            tr!(msg::NO_FREE_FOLDER_FOR_THE_CONVERSATION),
+        ))
     }
 
     /// Whether `dir` is the own folder of a conversation without a project.
     pub fn is_chat_dir(&self, dir: &Path) -> bool {
-        let (Ok(dir), Ok(root)) = (std::fs::canonicalize(dir), std::fs::canonicalize(&self.chats_dir))
-        else {
+        let (Ok(dir), Ok(root)) = (
+            std::fs::canonicalize(dir),
+            std::fs::canonicalize(&self.chats_dir),
+        ) else {
             return false;
         };
         dir.parent() == Some(root.as_path())
@@ -415,7 +439,10 @@ mod tests {
         std::fs::create_dir(&folder).unwrap();
         let id = store(root.path()).add(folder.to_str().unwrap()).unwrap().id;
         let reopened = store(root.path());
-        assert_eq!(reopened.get(&id).unwrap().path, folder.canonicalize().unwrap().display().to_string());
+        assert_eq!(
+            reopened.get(&id).unwrap().path,
+            folder.canonicalize().unwrap().display().to_string()
+        );
         std::fs::remove_dir(&folder).unwrap();
         assert!(reopened.list()[0].missing, "computed on list");
     }
@@ -457,14 +484,20 @@ mod tests {
         let s = store(root.path());
         let chats = s.get(CHATS_PROJECT_ID).unwrap();
         assert!(chats.chats && !chats.missing);
-        assert!(s.list().is_empty(), "never listed with the registered projects");
+        assert!(
+            s.list().is_empty(),
+            "never listed with the registered projects"
+        );
         let a = s.new_chat_dir().unwrap();
         let b = s.new_chat_dir().unwrap();
         assert_ne!(a, b);
         assert!(s.is_chat_dir(&a) && s.is_chat_dir(&b));
         assert!(!s.is_chat_dir(Path::new(&chats.path)));
         assert!(!s.is_chat_dir(root.path()));
-        assert_eq!(s.remove(CHATS_PROJECT_ID).unwrap_err().code, IpcErrorCode::NotFound);
+        assert_eq!(
+            s.remove(CHATS_PROJECT_ID).unwrap_err().code,
+            IpcErrorCode::NotFound
+        );
     }
 
     #[test]
@@ -483,18 +516,25 @@ mod tests {
         assert!(s.get(&id).unwrap().missing);
 
         assert_eq!(
-            s.relocation_target(&id, other.to_str().unwrap()).unwrap_err().code,
+            s.relocation_target(&id, other.to_str().unwrap())
+                .unwrap_err()
+                .code,
             IpcErrorCode::Conflict
         );
         assert_eq!(
-            s.relocation_target(&id, old.to_str().unwrap()).unwrap_err().code,
+            s.relocation_target(&id, old.to_str().unwrap())
+                .unwrap_err()
+                .code,
             IpcErrorCode::FolderMissing
         );
         let target = s.relocation_target(&id, new.to_str().unwrap()).unwrap();
         let moved = s.relocate(&id, &target).unwrap();
         assert_eq!(moved.id, id);
         assert!(!moved.missing);
-        assert_eq!(moved.path, new.canonicalize().unwrap().display().to_string());
+        assert_eq!(
+            moved.path,
+            new.canonicalize().unwrap().display().to_string()
+        );
         // Re-adding the new folder finds the same project.
         assert_eq!(s.add(new.to_str().unwrap()).unwrap().id, id);
         assert_eq!(store(root.path()).get(&id).unwrap().path, moved.path);

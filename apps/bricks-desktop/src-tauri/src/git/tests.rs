@@ -84,7 +84,10 @@ async fn rename_is_staged_with_original_path_and_counts() {
     let staged = find(&status, "staged", "b.txt");
     assert_eq!(staged.code, "R");
     assert_eq!(staged.orig_path.as_deref(), Some("a.txt"));
-    assert_eq!((staged.added, staged.removed, staged.binary), (Some(0), Some(0), false));
+    assert_eq!(
+        (staged.added, staged.removed, staged.binary),
+        (Some(0), Some(0), false)
+    );
 
     // Edit the renamed file: the worktree change is listed on its own.
     write(d, "b.txt", "one\ntwo\nthree\nfour\n");
@@ -269,7 +272,11 @@ async fn show_lists_one_patch_per_file() {
     let files = ops::show(d, "HEAD").await.unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, "renamed.txt");
-    assert!(files[0].patch.contains("rename from a.txt"), "{}", files[0].patch);
+    assert!(
+        files[0].patch.contains("rename from a.txt"),
+        "{}",
+        files[0].patch
+    );
 }
 
 #[tokio::test]
@@ -305,7 +312,9 @@ async fn project_inside_a_repository_sees_only_its_folder() {
     let entry = find(&status, "unstaged", "src/main.txt");
     assert_eq!((entry.added, entry.removed), (Some(1), Some(1)));
 
-    let diff = ops::diff(&project, "src/main.txt", GitArea::Unstaged).await.unwrap();
+    let diff = ops::diff(&project, "src/main.txt", GitArea::Unstaged)
+        .await
+        .unwrap();
     assert!(diff.patch.contains("+2"), "{}", diff.patch);
 
     let log = ops::log(&project, 10, 0).await.unwrap();
@@ -326,7 +335,10 @@ async fn merge_conflict_is_reported_as_conflicted() {
     write(d, "a.txt", "main\n");
     commit_all(d, "main");
     let merge = git_raw(d, &["merge", "--no-edit", "side"]);
-    assert!(!merge.status.success(), "the merge was expected to conflict");
+    assert!(
+        !merge.status.success(),
+        "the merge was expected to conflict"
+    );
 
     let status = ops::status(d).await.unwrap();
     let entry = find(&status, "conflicted", "a.txt");

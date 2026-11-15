@@ -63,7 +63,9 @@ pub(super) fn parse_status_v2(input: &[u8]) -> StatusOutput {
             // Rename or copy: `2 XY sub mH mI mW hH hI score path`, then origPath.
             Some(b'2') => {
                 let fields: Vec<&str> = line.splitn(10, ' ').collect();
-                let orig = tokens.next().map(|t| String::from_utf8_lossy(t).into_owned());
+                let orig = tokens
+                    .next()
+                    .map(|t| String::from_utf8_lossy(t).into_owned());
                 if fields.len() == 10 {
                     push_xy(fields[1], fields[9], orig, &mut entries);
                 }
@@ -176,7 +178,11 @@ pub(super) fn parse_numstat_z(input: &[u8]) -> Vec<(String, Counts)> {
 
 fn counts(added: &str, removed: &str) -> Counts {
     if added == "-" || removed == "-" {
-        return Counts { added: None, removed: None, binary: true };
+        return Counts {
+            added: None,
+            removed: None,
+            binary: true,
+        };
     }
     Counts {
         added: added.parse().ok(),
@@ -341,7 +347,10 @@ mod tests {
         let out = parse_status_v2(input);
         assert_eq!(out.entries.len(), 2);
         assert_eq!(out.entries[0].path, "new dir/name with space.txt");
-        assert_eq!(out.entries[0].orig_path.as_deref(), Some("old dir/name.txt"));
+        assert_eq!(
+            out.entries[0].orig_path.as_deref(),
+            Some("old dir/name.txt")
+        );
         assert_eq!(out.entries[0].code, "R");
         assert!(matches!(out.entries[1].area, GitArea::Untracked));
         assert_eq!(out.entries[1].path, "after.txt");
@@ -364,9 +373,23 @@ mod tests {
         let parsed = parse_numstat_z(input);
         assert_eq!(parsed.len(), 3);
         assert_eq!(parsed[0].0, "src/a.rs");
-        assert_eq!(parsed[0].1, Counts { added: Some(3), removed: Some(1), binary: false });
+        assert_eq!(
+            parsed[0].1,
+            Counts {
+                added: Some(3),
+                removed: Some(1),
+                binary: false
+            }
+        );
         assert_eq!(parsed[1].0, "data.bin");
-        assert_eq!(parsed[1].1, Counts { added: None, removed: None, binary: true });
+        assert_eq!(
+            parsed[1].1,
+            Counts {
+                added: None,
+                removed: None,
+                binary: true
+            }
+        );
         assert_eq!(parsed[2].0, "new.txt");
         assert_eq!(parsed[2].1.added, Some(0));
     }
@@ -388,10 +411,21 @@ mod tests {
         let input = b"M\0a.txt\0R100\0old.txt\0new name.txt\0D\0gone.txt\0";
         let parsed = parse_name_status_z(input);
         assert_eq!(parsed.len(), 3);
-        assert_eq!(parsed[0], NameStatus { code: 'M', orig: None, path: "a.txt".into() });
+        assert_eq!(
+            parsed[0],
+            NameStatus {
+                code: 'M',
+                orig: None,
+                path: "a.txt".into()
+            }
+        );
         assert_eq!(
             parsed[1],
-            NameStatus { code: 'R', orig: Some("old.txt".into()), path: "new name.txt".into() }
+            NameStatus {
+                code: 'R',
+                orig: Some("old.txt".into()),
+                path: "new name.txt".into()
+            }
         );
         assert_eq!(parsed[2].path, "gone.txt");
     }
@@ -408,8 +442,12 @@ mod tests {
 
     #[test]
     fn binary_markers_are_detected() {
-        assert!(is_binary_patch("diff --git a/x b/x\nBinary files a/x and b/x differ\n"));
-        assert!(!is_binary_patch("diff --git a/x b/x\n+Binary files are fun\n"));
+        assert!(is_binary_patch(
+            "diff --git a/x b/x\nBinary files a/x and b/x differ\n"
+        ));
+        assert!(!is_binary_patch(
+            "diff --git a/x b/x\n+Binary files are fun\n"
+        ));
         assert!(is_binary_content(b"ab\0cd"));
         assert!(!is_binary_content("héllo\n".as_bytes()));
     }

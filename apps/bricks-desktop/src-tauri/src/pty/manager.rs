@@ -96,11 +96,16 @@ type Gate = Arc<Mutex<bool>>;
 
 impl PtyManager {
     /// Start `shell` in `params.cwd` on a new PTY and register it.
-    pub fn open(&self, params: OpenParams, shell: &ShellSpec, sink: EventSink) -> IpcResult<PtyInfo> {
+    pub fn open(
+        &self,
+        params: OpenParams,
+        shell: &ShellSpec,
+        sink: EventSink,
+    ) -> IpcResult<PtyInfo> {
         if !params.cwd.is_dir() {
             return Err(IpcError {
                 code: IpcErrorCode::FolderMissing,
-                message: tr!(msg::THE_PROJECT_FOLDER_NO_LONGER_EXISTS).into(),
+                message: tr!(msg::THE_PROJECT_FOLDER_NO_LONGER_EXISTS),
             });
         }
         let pair = native_pty_system()
@@ -120,10 +125,12 @@ impl PtyManager {
         command.cwd(&params.cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
-        let child = pair
-            .slave
-            .spawn_command(command)
-            .map_err(|e| io_error(&tr!(msg::COULD_NOT_LAUNCH_SHELL, program = shell.program), e))?;
+        let child = pair.slave.spawn_command(command).map_err(|e| {
+            io_error(
+                &tr!(msg::COULD_NOT_LAUNCH_SHELL, program = shell.program),
+                e,
+            )
+        })?;
         // Our copy of the slave must close, or the reader never sees the end.
         drop(pair.slave);
 
@@ -172,9 +179,14 @@ impl PtyManager {
             })?;
             spawn_named("pty-input", move || write_loop(writer, input_rx))?;
             spawn_named("pty-exit", move || {
-                wait_for_exit(child, exit_control, drained_rx, exit_gate, exit_sink, move || {
-                    inner.remove_exited(&id, seq)
-                })
+                wait_for_exit(
+                    child,
+                    exit_control,
+                    drained_rx,
+                    exit_gate,
+                    exit_sink,
+                    move || inner.remove_exited(&id, seq),
+                )
             })
         })();
 
@@ -191,7 +203,7 @@ impl PtyManager {
         if data.len() > MAX_INPUT {
             return Err(IpcError {
                 code: IpcErrorCode::Invalid,
-                message: tr!(msg::INPUT_TOO_LONG_FOR_THE_TERMINAL).into(),
+                message: tr!(msg::INPUT_TOO_LONG_FOR_THE_TERMINAL),
             });
         }
         let session = self.session(id)?;
@@ -199,7 +211,7 @@ impl PtyManager {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(IpcError {
                 code: IpcErrorCode::Rejected,
-                message: tr!(msg::THE_TERMINAL_CANT_KEEP_UP_WITH).into(),
+                message: tr!(msg::THE_TERMINAL_CANT_KEEP_UP_WITH),
             }),
             Err(TrySendError::Disconnected(_)) => Err(not_found()),
         }
@@ -225,7 +237,8 @@ impl PtyManager {
     }
 
     pub fn kill_all(&self) {
-        let sessions: Vec<Arc<Session>> = self.inner.sessions.lock().drain().map(|(_, s)| s).collect();
+        let sessions: Vec<Arc<Session>> =
+            self.inner.sessions.lock().drain().map(|(_, s)| s).collect();
         for session in sessions {
             session.control.kill();
         }
@@ -244,7 +257,12 @@ impl PtyManager {
     }
 
     fn session(&self, id: &str) -> IpcResult<Arc<Session>> {
-        self.inner.sessions.lock().get(id).cloned().ok_or_else(not_found)
+        self.inner
+            .sessions
+            .lock()
+            .get(id)
+            .cloned()
+            .ok_or_else(not_found)
     }
 }
 
@@ -335,7 +353,9 @@ fn pump_output(
         if *closed {
             break;
         }
-        let delivered = sink(PtyEvent::Data { data: STANDARD.encode(&batch) });
+        let delivered = sink(PtyEvent::Data {
+            data: STANDARD.encode(&batch),
+        });
         drop(closed);
         if !delivered {
             control.kill();
@@ -349,7 +369,11 @@ fn pump_output(
 /// PTY stops accepting data.
 fn write_loop(mut writer: Box<dyn Write + Send>, input: Receiver<Vec<u8>>) {
     while let Ok(bytes) = input.recv() {
-        if writer.write_all(&bytes).and_then(|()| writer.flush()).is_err() {
+        if writer
+            .write_all(&bytes)
+            .and_then(|()| writer.flush())
+            .is_err()
+        {
             break;
         }
     }

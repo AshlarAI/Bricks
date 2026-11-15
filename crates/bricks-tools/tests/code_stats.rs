@@ -5,10 +5,10 @@
 use bricks_tools::code_stats::{CodeStatsProbe, CodeStatsTool};
 use bricks_tools::permissions::AllowAll;
 use bricks_tools::{CostTracker, Extensions, Tool, ToolContext, ToolResult};
+use kodestats::{Config, LanguageType};
 use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::Arc;
-use kodestats::{Config, LanguageType};
 
 fn ctx(dir: &Path) -> ToolContext {
     ToolContext {

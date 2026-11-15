@@ -127,7 +127,10 @@ async fn ask_lets_reads_run_asks_writes_commands_and_network_and_refuses_delegat
         ToolCategory::Orchestration,
     )
     .await;
-    assert!(label.starts_with("deny: Access denied: insufficient permissions."), "{label}");
+    assert!(
+        label.starts_with("deny: Access denied: insufficient permissions."),
+        "{label}"
+    );
     assert!(!asked);
 }
 

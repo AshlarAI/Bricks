@@ -295,7 +295,10 @@ impl JobRegistry {
         };
         let dir = dir.join(id);
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            return (Vec::new(), Some(format!("cannot create {}: {e}", dir.display())));
+            return (
+                Vec::new(),
+                Some(format!("cannot create {}: {e}", dir.display())),
+            );
         }
         let (out, err) = task.raw_logs();
         let mut kept = Vec::new();
@@ -585,7 +588,9 @@ impl JobInput {
         if let Some(l) = self.limit
             && !(1..=MAX_LIMIT).contains(&l)
         {
-            return Err(format!("`limit` must be between 1 and {MAX_LIMIT} (got {l})."));
+            return Err(format!(
+                "`limit` must be between 1 and {MAX_LIMIT} (got {l})."
+            ));
         }
         if let Some(t) = self.timeout_ms
             && !(1..=MAX_JOB_WAIT_MS).contains(&t)
@@ -707,7 +712,10 @@ impl Tool for JobTool {
                 );
             }
             return ToolResult::success(
-                jobs.iter().map(JobView::line).collect::<Vec<_>>().join("\n"),
+                jobs.iter()
+                    .map(JobView::line)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             );
         }
         let id = i.job_id.as_deref().unwrap_or_default().trim();
@@ -934,7 +942,12 @@ mod tests {
     }
 
     fn session_registry(c: &ToolContext) -> Arc<JobRegistry> {
-        Arc::clone(&c.extensions.get::<JobsHandle>().expect("a session registry").0)
+        Arc::clone(
+            &c.extensions
+                .get::<JobsHandle>()
+                .expect("a session registry")
+                .0,
+        )
     }
 
     async fn start(c: &ToolContext, cmd: &str, extra: Value) -> ToolResult {
@@ -942,7 +955,9 @@ mod tests {
         if let (Some(a), Some(b)) = (input.as_object_mut(), extra.as_object()) {
             a.extend(b.clone());
         }
-        BashTool::with_jobs(session_registry(c)).execute(input, c).await
+        BashTool::with_jobs(session_registry(c))
+            .execute(input, c)
+            .await
     }
 
     async fn job(c: &ToolContext, input: Value) -> ToolResult {
@@ -1059,11 +1074,17 @@ mod tests {
         reg.set_sink(Arc::new(move |e| ev.lock().push(e)));
         let a = ctx(dir.path(), &reg, "agent_a");
         let id = job_id(&start(&a, "echo done", json!({})).await.content);
-        job(&a, json!({ "action": "wait", "job_id": id, "timeout_ms": 10_000 })).await;
+        job(
+            &a,
+            json!({ "action": "wait", "job_id": id, "timeout_ms": 10_000 }),
+        )
+        .await;
         let mut error = None;
         for _ in 0..50 {
             error = events.lock().iter().find_map(|e| match e {
-                JobEvent::Finished { logs, logs_error, .. } => {
+                JobEvent::Finished {
+                    logs, logs_error, ..
+                } => {
                     assert!(logs.is_empty());
                     logs_error.clone()
                 }
@@ -1078,7 +1099,9 @@ mod tests {
         assert!(error.contains("cannot create"), "{error}");
         let status = job(&a, json!({ "action": "status", "job_id": id })).await;
         assert!(
-            status.content.contains("keeping them failed: cannot create"),
+            status
+                .content
+                .contains("keeping them failed: cannot create"),
             "{}",
             status.content
         );
@@ -1102,7 +1125,10 @@ mod tests {
         assert!(render_page(&page, 1024).contains(PAGE_CUT));
         page.raw_log_capped = true;
         let capped = render_page(&page, 1024);
-        assert!(capped.contains(PAGE_CUT_NO_RAW) && !capped.contains(PAGE_CUT), "{capped}");
+        assert!(
+            capped.contains(PAGE_CUT_NO_RAW) && !capped.contains(PAGE_CUT),
+            "{capped}"
+        );
         page.raw_log_capped = false;
         page.raw_log_error = Some("disk full".into());
         assert!(render_page(&page, 1024).contains(PAGE_CUT_NO_RAW));

@@ -17,7 +17,6 @@ use bricks_desktop_lib::contract::{IpcErrorCode, IpcResult, ModelPatch, Provider
 use bricks_desktop_lib::engine::catalog::DesktopCatalog;
 use bricks_desktop_lib::services::providers::{commit, view};
 use bricks_desktop_lib::services::providers_toml::Edit;
-use bricks_provider::config::ProviderConfig;
 use serde_json::{Value as Json, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -137,7 +136,11 @@ fn a_model_edit_from_the_form_drops_the_former_window_and_keeps_the_profiles() {
             .contains("context_window_tokens"),
         "the former window leaves the file"
     );
-    assert_eq!(model.profiles.len(), 1, "a null list leaves the profiles alone");
+    assert_eq!(
+        model.profiles.len(),
+        1,
+        "a null list leaves the profiles alone"
+    );
     assert_eq!(model.profiles[0].id, "fast");
     assert_eq!(model.profiles[0].label.as_deref(), Some("Rapide"));
 }
@@ -218,8 +221,16 @@ fn a_duplicate_profile_id_is_refused_and_the_file_is_unchanged() {
     )
     .expect_err("two profiles with one id are refused");
     assert_eq!(err.code, IpcErrorCode::Invalid);
-    assert!(err.message.contains("duplicate profile identifier"), "{}", err.message);
-    assert_eq!(std::fs::read_to_string(&s.path).unwrap(), before, "nothing written");
+    assert!(
+        err.message.contains("duplicate profile identifier"),
+        "{}",
+        err.message
+    );
+    assert_eq!(
+        std::fs::read_to_string(&s.path).unwrap(),
+        before,
+        "nothing written"
+    );
     assert_eq!(revision(&s.path), rev, "the revision is unchanged");
 }
 
@@ -237,8 +248,17 @@ fn a_parameter_block_that_is_not_a_json_object_is_refused_and_nothing_is_written
             })),
         )
         .expect_err("a parameter block must be a JSON object");
-        assert_eq!(err.code, IpcErrorCode::Invalid, "{parameters}: {}", err.message);
-        assert_eq!(std::fs::read_to_string(&s.path).unwrap(), before, "nothing written for {parameters}");
+        assert_eq!(
+            err.code,
+            IpcErrorCode::Invalid,
+            "{parameters}: {}",
+            err.message
+        );
+        assert_eq!(
+            std::fs::read_to_string(&s.path).unwrap(),
+            before,
+            "nothing written for {parameters}"
+        );
     }
 }
 
@@ -258,7 +278,11 @@ fn a_protected_request_field_in_a_profile_is_refused_by_the_engine_rules() {
     .expect_err("a protected field is refused");
     assert_eq!(err.code, IpcErrorCode::Invalid);
     assert!(err.message.contains("messages"), "{}", err.message);
-    assert_eq!(std::fs::read_to_string(&s.path).unwrap(), before, "nothing written");
+    assert_eq!(
+        std::fs::read_to_string(&s.path).unwrap(),
+        before,
+        "nothing written"
+    );
 }
 
 #[test]
@@ -351,7 +375,11 @@ fn a_pointer_without_its_slash_is_refused_and_nothing_is_written() {
     )
     .expect_err("a JSON Pointer starts with /");
     assert_eq!(err.code, IpcErrorCode::Invalid);
-    assert_eq!(std::fs::read_to_string(&s.path).unwrap(), before, "nothing written");
+    assert_eq!(
+        std::fs::read_to_string(&s.path).unwrap(),
+        before,
+        "nothing written"
+    );
 }
 
 #[test]
@@ -359,7 +387,12 @@ fn a_stale_revision_refuses_the_profile_edit_and_the_file_keeps_the_other_writer
     let s = setup();
     let stale = revision(&s.path);
     // Another writer saves first.
-    save(&s.path, &stale, form_patch(json!({ "max_output_tokens": 2000 }))).unwrap();
+    save(
+        &s.path,
+        &stale,
+        form_patch(json!({ "max_output_tokens": 2000 })),
+    )
+    .unwrap();
     let after_other = std::fs::read_to_string(&s.path).unwrap();
 
     let err = save(
@@ -371,5 +404,9 @@ fn a_stale_revision_refuses_the_profile_edit_and_the_file_keeps_the_other_writer
     )
     .expect_err("a stale revision is a conflict");
     assert_eq!(err.code, IpcErrorCode::Conflict);
-    assert_eq!(std::fs::read_to_string(&s.path).unwrap(), after_other, "the other write is kept");
+    assert_eq!(
+        std::fs::read_to_string(&s.path).unwrap(),
+        after_other,
+        "the other write is kept"
+    );
 }

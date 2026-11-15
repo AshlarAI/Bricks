@@ -158,7 +158,10 @@ impl McpManager {
     /// last saw, whoever did the re-reading.
     pub async fn tools_generation(&self) -> u64 {
         let clients = self.clients.read().await;
-        let read: u64 = clients.values().map(|c| c.tools_generation()).fold(0, u64::wrapping_add);
+        let read: u64 = clients
+            .values()
+            .map(|c| c.tools_generation())
+            .fold(0, u64::wrapping_add);
         read.wrapping_add(
             self.reconnects
                 .load(std::sync::atomic::Ordering::SeqCst)

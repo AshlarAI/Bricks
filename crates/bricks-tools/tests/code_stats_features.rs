@@ -58,7 +58,9 @@ fn paths(v: &Value) -> Vec<String> {
 }
 
 fn percent(r: &Value) -> f64 {
-    r["percent"].as_f64().unwrap_or_else(|| panic!("no percent: {r}"))
+    r["percent"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("no percent: {r}"))
 }
 
 /// Rust (3 code, 1 comment, 1 blank) and Python (1 code): 4 code lines.
@@ -156,7 +158,11 @@ async fn line_bounds_leave_files_out_and_count_them() {
     assert_eq!(v["min_lines"], 3);
     assert_eq!(v["max_lines"], 6);
     assert_eq!(v["outside_line_bounds"], 2, "{v}");
-    let files = stats(&c, json!({"min_lines": 3, "max_lines": 6, "detail": "files"})).await;
+    let files = stats(
+        &c,
+        json!({"min_lines": 3, "max_lines": 6, "detail": "files"}),
+    )
+    .await;
     assert_eq!(paths(&files), vec!["b.rs".to_string()], "{files}");
     assert_eq!(row(&files, "path", "b.rs")["code"], 5);
 
@@ -350,7 +356,11 @@ async fn bug_a_later_unset_line_undoes_an_earlier_one() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path();
     std::fs::create_dir_all(p.join(".git")).unwrap();
-    write(p, ".gitattributes", "*.rs linguist-generated\nkeep.rs -linguist-generated\n");
+    write(
+        p,
+        ".gitattributes",
+        "*.rs linguist-generated\nkeep.rs -linguist-generated\n",
+    );
     write(p, "gen.rs", "fn g() {}\n");
     write(p, "keep.rs", "fn k() {}\n");
     let v = stats(&ctx(p), json!({"detail": "files"})).await;
@@ -364,12 +374,24 @@ async fn a_pattern_git_would_refuse_is_warned_and_not_listed() {
     std::fs::create_dir_all(p.join(".git")).unwrap();
     // An unclosed alternation is refused by the glob builder; `a[b` is a
     // literal name for git, so it is listed and excludes nothing here.
-    write(p, ".gitattributes", "a{b linguist-generated\na[b linguist-generated\n");
+    write(
+        p,
+        ".gitattributes",
+        "a{b linguist-generated\na[b linguist-generated\n",
+    );
     write(p, "a.rs", "fn a() {}\n");
     let v = stats(&ctx(p), json!({})).await;
-    let listed: Vec<&str> = v["gitattributes_excluded"].as_array().unwrap().iter().filter_map(|x| x.as_str()).collect();
+    let listed: Vec<&str> = v["gitattributes_excluded"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|x| x.as_str())
+        .collect();
     assert_eq!(listed, vec!["a[b"], "{v}");
-    assert!(causes(&v).contains(&"gitattributes_pattern".to_string()), "{v}");
+    assert!(
+        causes(&v).contains(&"gitattributes_pattern".to_string()),
+        "{v}"
+    );
     assert_eq!(v["totals"]["files"], 1, "{v}");
 }
 
@@ -400,10 +422,22 @@ async fn markdown_is_a_table_and_the_json_stays_as_metadata() {
         "{}",
         md.content
     );
-    assert!(md.content.contains("| Rust | 1 | 3 | 1 | 1 | 5 | 75.0 |"), "{}", md.content);
-    assert!(md.content.contains("| Python | 1 | 1 | 0 | 0 | 1 | 25.0 |"), "{}", md.content);
+    assert!(
+        md.content.contains("| Rust | 1 | 3 | 1 | 1 | 5 | 75.0 |"),
+        "{}",
+        md.content
+    );
+    assert!(
+        md.content.contains("| Python | 1 | 1 | 0 | 0 | 1 | 25.0 |"),
+        "{}",
+        md.content
+    );
     assert!(md.content.contains("2 files, 6 lines"), "{}", md.content);
-    assert!(!md.content.trim_start().starts_with('{'), "not JSON: {}", md.content);
+    assert!(
+        !md.content.trim_start().starts_with('{'),
+        "not JSON: {}",
+        md.content
+    );
 
     // The metadata is the same JSON the default format answers with.
     let json_answer = stats(&c, json!({})).await;
@@ -431,19 +465,30 @@ async fn markdown_by_file_and_its_notes() {
     .await;
     assert!(!r.is_error, "{}", r.content);
     assert!(
-        r.content.contains("| File | Language | Code | Comments | Blanks | Lines | % |"),
+        r.content
+            .contains("| File | Language | Code | Comments | Blanks | Lines | % |"),
         "{}",
         r.content
     );
-    assert!(r.content.contains("| main.rs | Rust | 3 | 1 | 1 | 5 | 75.0 |"), "{}", r.content);
-    assert!(r.content.contains("1 more rows not shown."), "{}", r.content);
+    assert!(
+        r.content
+            .contains("| main.rs | Rust | 3 | 1 | 1 | 5 | 75.0 |"),
+        "{}",
+        r.content
+    );
+    assert!(
+        r.content.contains("1 more rows not shown."),
+        "{}",
+        r.content
+    );
     assert!(
         r.content.contains("Left out by .gitattributes: gen/*.rs."),
         "{}",
         r.content
     );
     assert!(
-        r.content.contains("1 files outside the line bounds left out."),
+        r.content
+            .contains("1 files outside the line bounds left out."),
         "{}",
         r.content
     );
@@ -453,9 +498,17 @@ async fn markdown_by_file_and_its_notes() {
 async fn markdown_summary_has_totals_and_no_table() {
     let d = tempfile::tempdir().unwrap();
     write(d.path(), "main.rs", RUST);
-    let r = call(&ctx(d.path()), json!({"format": "markdown", "detail": "summary"})).await;
+    let r = call(
+        &ctx(d.path()),
+        json!({"format": "markdown", "detail": "summary"}),
+    )
+    .await;
     assert!(!r.is_error, "{}", r.content);
-    assert!(r.content.contains("1 files") || r.content.contains("1 file"), "{}", r.content);
+    assert!(
+        r.content.contains("1 files") || r.content.contains("1 file"),
+        "{}",
+        r.content
+    );
     assert!(!r.content.contains("| Language"), "{}", r.content);
 }
 
@@ -498,7 +551,14 @@ fn schema_and_description_name_the_new_inputs() {
     assert_eq!(props["format"]["enum"], json!(["json", "markdown"]));
     assert_eq!(props["format"]["default"], "json");
     let text = tool.description();
-    for word in ["percent", "min_lines", "max_lines", "gitattributes", "markdown", "top_n"] {
+    for word in [
+        "percent",
+        "min_lines",
+        "max_lines",
+        "gitattributes",
+        "markdown",
+        "top_n",
+    ] {
         assert!(text.contains(word), "description lacks {word}: {text}");
     }
 }

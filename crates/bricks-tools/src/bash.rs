@@ -487,10 +487,18 @@ fn handed_over_result(
     let st = task.status();
     let cwd = &task.cwd;
     let cursor_out = task
-        .read(shell::background::Stream::Stdout, shell::background::OutputPosition::Offset(0), 0)
+        .read(
+            shell::background::Stream::Stdout,
+            shell::background::OutputPosition::Offset(0),
+            0,
+        )
         .total_lines;
     let cursor_err = task
-        .read(shell::background::Stream::Stderr, shell::background::OutputPosition::Offset(0), 0)
+        .read(
+            shell::background::Stream::Stderr,
+            shell::background::OutputPosition::Offset(0),
+            0,
+        )
         .total_lines;
     let mut notes = task.launch_notes.clone();
     notes.extend([
@@ -951,7 +959,10 @@ mod tests {
         );
         let task = reg.view(&id, None).expect("the job").task;
         assert!(task.wait_finished(Duration::from_secs(5)).await);
-        assert!(raw_files(&dir.path().join("shell")).is_empty(), "not written again");
+        assert!(
+            raw_files(&dir.path().join("shell")).is_empty(),
+            "not written again"
+        );
         let out = JobTool::new(Arc::clone(&reg))
             .execute(serde_json::json!({ "action": "output", "job_id": id }), &c)
             .await;

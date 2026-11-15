@@ -235,7 +235,9 @@ async fn a_shell_that_cannot_start_is_an_error_of_the_call() {
     let rep = r.to_report();
     assert_eq!(rep.status, ToolStatus::Failure, "{}", r.content);
     assert!(
-        rep.termination.as_deref().is_some_and(|t| t.starts_with("cannot launch")),
+        rep.termination
+            .as_deref()
+            .is_some_and(|t| t.starts_with("cannot launch")),
         "{:?}",
         rep.termination
     );

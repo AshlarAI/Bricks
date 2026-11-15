@@ -42,9 +42,7 @@ fn main() {
         match command {
             args::Cmd::Run(run) => headless::run(&global, &launch, run).await,
             args::Cmd::Mcp { action } => mcp::run(&global, &launch, action).await,
-            args::Cmd::Sessions { json, all } => {
-                sessions::run(&global, &launch, json, all).await
-            }
+            args::Cmd::Sessions { json, all } => sessions::run(&global, &launch, json, all).await,
         }
     });
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));

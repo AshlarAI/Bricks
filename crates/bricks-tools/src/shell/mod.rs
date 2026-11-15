@@ -267,7 +267,10 @@ pub fn session_path(id: &str, config: &ShellConfig) -> Option<OsString> {
 /// The shell the Bash tool runs with `config` (`None` inside: none found), and
 /// whether its state carries over between calls (`false`: each command runs
 /// on its own, as in a sandbox). `None`: Bash cannot run here at all.
-pub fn tool_shell(config: &ShellConfig, ext: &crate::Extensions) -> Option<(Option<PathBuf>, bool)> {
+pub fn tool_shell(
+    config: &ShellConfig,
+    ext: &crate::Extensions,
+) -> Option<(Option<PathBuf>, bool)> {
     #[cfg(feature = "vms")]
     if ext
         .get::<std::sync::Arc<dyn bricks_vms::Sandbox>>()

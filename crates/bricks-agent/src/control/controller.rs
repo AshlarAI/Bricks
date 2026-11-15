@@ -17,8 +17,8 @@ use super::attach::{self, AttachLimits};
 use super::protocol::*;
 use super::queue::EventQueue;
 use super::session::{SessionMeta, SessionScope, SessionSummary};
-use crate::permission::{PermissionStore, PolicyCell, SessionPolicy};
 use crate::events::AgentEvent;
+use crate::permission::{PermissionStore, PolicyCell, SessionPolicy};
 use crate::{Agent, BricksConfig, CompactReason};
 use bricks_memory::{JsonlMemory, LongTermMemory, Memory};
 use bricks_provider::Provider;
@@ -1121,7 +1121,10 @@ impl Controller {
                     return;
                 }
             }
-            inner.queue.push(None, Event::TitleChanged { title }, None).await;
+            inner
+                .queue
+                .push(None, Event::TitleChanged { title }, None)
+                .await;
         });
     }
 
@@ -2879,12 +2882,8 @@ fn install_plan_sink(q: &Arc<EventQueue>, agent: &Agent) {
             plan: &bricks_tools::todo_write::PlanState,
             root_run_id: Option<&str>,
         ) {
-            self.0.push_now(
-                root_run_id,
-                Event::PlanUpdated {
-                    plan: plan.clone(),
-                },
-            );
+            self.0
+                .push_now(root_run_id, Event::PlanUpdated { plan: plan.clone() });
         }
     }
     plan.set_observer(Some(Arc::new(Forward(q.clone()))));

@@ -7,10 +7,10 @@
 //! grants no trust. The service re-reads the store when it changed, so a
 //! change made here shows at the next call; `reload` reads it again anyway.
 
-use crate::i18n::{msg, tr};
 use crate::contract::{
     IpcErrorCode, IpcResult, SkillChange, SkillProblem, SkillSourceView, SkillsCatalog,
 };
+use crate::i18n::{msg, tr};
 use crate::services::error;
 use bricks_agent::control::{SkillListing, SkillsListing};
 use bricks_skills::{
@@ -332,12 +332,19 @@ mod tests {
         assert_eq!(entry(&cat.listing, "create-skills")["source"], "builtin");
 
         let kinds: Vec<&str> = cat.sources.iter().map(|s| s.source.as_str()).collect();
-        assert_eq!(kinds, ["store", "builtin"], "no project or home source: {kinds:?}");
+        assert_eq!(
+            kinds,
+            ["store", "builtin"],
+            "no project or home source: {kinds:?}"
+        );
         let installed = &cat.sources[0];
         assert_eq!(installed.path, f.store.display().to_string());
         assert_eq!(installed.skills, 1);
         let builtin = cat.sources.iter().find(|s| s.source == "builtin").unwrap();
-        assert_eq!(builtin.skills as usize, bricks_skills::builtin::BUILTIN.len());
+        assert_eq!(
+            builtin.skills as usize,
+            bricks_skills::builtin::BUILTIN.len()
+        );
     }
 
     #[test]
@@ -398,7 +405,12 @@ mod tests {
         let generation = before.listing["generation"].as_u64().unwrap();
 
         SkillStore::new(&f.store)
-            .create("late", "Added later", "Do the late thing.", InstallOrigin::Created)
+            .create(
+                "late",
+                "Added later",
+                "Do the late thing.",
+                InstallOrigin::Created,
+            )
             .unwrap();
         let seen = store.catalog(None, "late", 0, false).unwrap();
         assert_eq!(seen.listing["total"], 1);
@@ -407,11 +419,17 @@ mod tests {
 
         let reloaded = store.catalog(None, "late", 0, true).unwrap();
         assert_eq!(reloaded.listing["total"], 1);
-        assert!(reloaded.listing["generation"].as_u64().unwrap() > seen.listing["generation"].as_u64().unwrap());
+        assert!(
+            reloaded.listing["generation"].as_u64().unwrap()
+                > seen.listing["generation"].as_u64().unwrap()
+        );
 
         SkillStore::new(&f.store).remove("late").unwrap();
         let gone = store.catalog(None, "late", 0, false).unwrap();
-        assert_eq!(gone.listing["total"], 0, "a removed skill leaves the catalogue");
+        assert_eq!(
+            gone.listing["total"], 0,
+            "a removed skill leaves the catalogue"
+        );
     }
 
     #[test]
@@ -435,20 +453,35 @@ mod tests {
         let problem = |c: SkillChange| c.problem.expect("refused");
 
         let reserved = problem(create_skill(&store, "create-skills", "Clash", "Text.").unwrap());
-        assert_eq!((reserved.field.as_str(), reserved.kind.as_str()), ("name", "reserved"));
+        assert_eq!(
+            (reserved.field.as_str(), reserved.kind.as_str()),
+            ("name", "reserved")
+        );
 
         let bad_name = problem(create_skill(&store, "Bad Name!", "Fine", "Text.").unwrap());
-        assert_eq!((bad_name.field.as_str(), bad_name.kind.as_str()), ("name", "invalid"));
+        assert_eq!(
+            (bad_name.field.as_str(), bad_name.kind.as_str()),
+            ("name", "invalid")
+        );
 
         let empty = problem(create_skill(&store, "delta", "   ", "Text.").unwrap());
-        assert_eq!((empty.field.as_str(), empty.kind.as_str()), ("description", "invalid"));
+        assert_eq!(
+            (empty.field.as_str(), empty.kind.as_str()),
+            ("description", "invalid")
+        );
 
         let no_text = problem(create_skill(&store, "delta", "Fine", "  ").unwrap());
-        assert_eq!((no_text.field.as_str(), no_text.kind.as_str()), ("instructions", "invalid"));
+        assert_eq!(
+            (no_text.field.as_str(), no_text.kind.as_str()),
+            ("instructions", "invalid")
+        );
 
         create_skill(&store, "epsilon", "First", "Text.").unwrap();
         let taken = problem(create_skill(&store, "epsilon", "Second", "Text.").unwrap());
-        assert_eq!((taken.field.as_str(), taken.kind.as_str()), ("name", "exists"));
+        assert_eq!(
+            (taken.field.as_str(), taken.kind.as_str()),
+            ("name", "exists")
+        );
         assert!(!taken.message.is_empty());
     }
 
@@ -458,7 +491,11 @@ mod tests {
         let store = SkillStore::new(&f.store);
         let src = f.outside.join("zeta");
         std::fs::create_dir_all(src.join("scripts")).unwrap();
-        std::fs::write(src.join("SKILL.md"), "---\nname: zeta\ndescription: Zeta skill\n---\nBody.\n").unwrap();
+        std::fs::write(
+            src.join("SKILL.md"),
+            "---\nname: zeta\ndescription: Zeta skill\n---\nBody.\n",
+        )
+        .unwrap();
         std::fs::write(src.join("scripts/run.sh"), "echo hi\n").unwrap();
 
         let change = import_skill(&store, &src).unwrap();
@@ -467,12 +504,21 @@ mod tests {
 
         let missing = import_skill(&store, &f.outside.join("nothing-here")).unwrap();
         let problem = missing.problem.expect("refused");
-        assert_eq!((problem.field.as_str(), problem.kind.as_str()), ("folder", "invalid"));
+        assert_eq!(
+            (problem.field.as_str(), problem.kind.as_str()),
+            ("folder", "invalid")
+        );
 
         let no_skill = f.outside.join("no-skill");
         std::fs::create_dir_all(&no_skill).unwrap();
-        let problem = import_skill(&store, &no_skill).unwrap().problem.expect("refused");
-        assert_eq!((problem.field.as_str(), problem.kind.as_str()), ("folder", "invalid"));
+        let problem = import_skill(&store, &no_skill)
+            .unwrap()
+            .problem
+            .expect("refused");
+        assert_eq!(
+            (problem.field.as_str(), problem.kind.as_str()),
+            ("folder", "invalid")
+        );
     }
 
     #[test]
@@ -482,10 +528,16 @@ mod tests {
         let problem = |c: SkillChange| c.problem.expect("refused");
 
         let builtin = problem(remove_skill(&store, "create-skills").unwrap());
-        assert_eq!((builtin.field.as_str(), builtin.kind.as_str()), ("name", "reserved"));
+        assert_eq!(
+            (builtin.field.as_str(), builtin.kind.as_str()),
+            ("name", "reserved")
+        );
 
         let unknown = problem(remove_skill(&store, "nobody").unwrap());
-        assert_eq!((unknown.field.as_str(), unknown.kind.as_str()), ("name", "not_installed"));
+        assert_eq!(
+            (unknown.field.as_str(), unknown.kind.as_str()),
+            ("name", "not_installed")
+        );
 
         create_skill(&store, "eta", "Eta skill", "Text.").unwrap();
         let removed = remove_skill(&store, "eta").unwrap();

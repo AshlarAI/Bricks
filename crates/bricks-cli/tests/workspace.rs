@@ -140,7 +140,10 @@ fn a_resumed_session_works_with_its_own_project() {
     let a = h.project("A", "[memory]\nenabled = \"oui\"\n");
     let b = h.project("B", "");
 
-    let o = h.run(&b, &["run", "--json", "--permissions", "execute", "premier"]);
+    let o = h.run(
+        &b,
+        &["run", "--json", "--permissions", "execute", "premier"],
+    );
     assert_eq!(o.status.code(), Some(0), "{}", err(&o));
     let id_b = opened(&o)["session_id"].as_str().unwrap().to_string();
 

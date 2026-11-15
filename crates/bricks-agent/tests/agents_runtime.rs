@@ -10,13 +10,13 @@
 mod common;
 
 use bricks_agent::BricksConfig;
+use bricks_agent::agents::messagent::{MAIN, MAX_TEXT_BYTES, Target};
 use bricks_agent::agents::{InstanceState, ProfileSources};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedProvider};
 use bricks_agent::control::*;
 use bricks_agent::permission::SessionPolicy;
 use bricks_provider::{CompletionRequest, CompletionStream, Provider};
 use bricks_types::{MessageContent, Role, Usage};
-use bricks_agent::agents::messagent::{MAIN, MAX_TEXT_BYTES, Target};
 use common::follow::{Waited, next_wait, started_ids};
 use serde_json::json;
 use std::collections::VecDeque;
@@ -567,10 +567,12 @@ async fn agents_run_children_at_the_same_time_and_answer_in_order() {
         .iter()
         .map(|id| {
             evs.iter()
-                .position(|e| matches!(&e.event,
+                .position(|e| {
+                    matches!(&e.event,
                     Event::ToolFinished { tool_call_id, output, .. }
                         if tool_call_id.starts_with(&format!("wait_{id}"))
-                            && output.contains(&format!("{id} has ended;"))))
+                            && output.contains(&format!("{id} has ended;")))
+                })
                 .unwrap_or_else(|| panic!("the end of {id} is reported"))
         })
         .collect();
@@ -578,7 +580,11 @@ async fn agents_run_children_at_the_same_time_and_answer_in_order() {
     let rs = results(&evs);
     for (i, id) in ends.iter().enumerate() {
         let r = rs.iter().find(|r| &r.agent_id == id).unwrap();
-        assert!(r.summary.contains(&format!("result of T{i}")), "{}", r.summary);
+        assert!(
+            r.summary.contains(&format!("result of T{i}")),
+            "{}",
+            r.summary
+        );
     }
     // Correlation: one parent call, positions, parallel → worktrees.
     assert!(sp.iter().all(|s| s.tool_call_id.as_deref() == Some("c1")));
@@ -766,7 +772,12 @@ async fn a_failed_mission_leaves_its_siblings_running() {
     // The held sibling goes on after the run's answer, and ends on its own.
     env.shared.release();
     while results(&evs).len() < 2 {
-        evs.extend(until(&mut env.events, |e| matches!(e, Event::AgentFinished { .. })).await);
+        evs.extend(
+            until(&mut env.events, |e| {
+                matches!(e, Event::AgentFinished { .. })
+            })
+            .await,
+        );
     }
     let rs = results(&evs);
     let by = |t: &str| {
@@ -886,7 +897,10 @@ async fn every_path_lets_a_child_go_on_until_its_answer() {
     // the second child: its `Agent` call, its wait for the grandchild, its
     // answer. A wait may return early for a delivery (the grandchild's
     // report, if it came first): then one more request answers it.
-    assert!(turns == vec![3, 41, 106] || turns == vec![4, 41, 106], "{turns:?}");
+    assert!(
+        turns == vec![3, 41, 106] || turns == vec![4, 41, 106],
+        "{turns:?}"
+    );
 }
 
 // ─── Background ──────────────────────────────────────────────────────────────
@@ -1487,7 +1501,11 @@ async fn headless_delegation_is_refused_and_a_sub_agent_runs_its_own_commands() 
     ));
     // The session's own command is asked; nobody can answer, so the run fails.
     let mut env = open(
-        vec![Reply::tool("b0", "Bash", json!({ "command": "echo parent" }))],
+        vec![Reply::tool(
+            "b0",
+            "Bash",
+            json!({ "command": "echo parent" }),
+        )],
         None,
         false,
         |_| {},
@@ -2030,14 +2048,32 @@ async fn a_message_to_an_unknown_agent_is_refused_and_the_team_reaches_its_sibli
     // Both children are running (their first request is held).
     until_requests(&env.shared, 2).await;
     let rt = env.ctl.agent_runtime().unwrap();
-    rt.post(&a, Target::Agents(vec![b.clone()]), "from a sibling".into(), None)
-        .expect("a sibling is in the team");
+    rt.post(
+        &a,
+        Target::Agents(vec![b.clone()]),
+        "from a sibling".into(),
+        None,
+    )
+    .expect("a sibling is in the team");
     let unknown = rt
-        .post(MAIN, Target::Agents(vec!["sub_9999".into()]), "x".into(), None)
+        .post(
+            MAIN,
+            Target::Agents(vec!["sub_9999".into()]),
+            "x".into(),
+            None,
+        )
         .unwrap_err();
-    assert!(unknown.contains("no agent `sub_9999` in this team"), "{unknown}");
-    rt.post(MAIN, Target::Agents(vec![b.clone()]), "from the session".into(), None)
-        .expect("the session's agent writes to its sub-agent");
+    assert!(
+        unknown.contains("no agent `sub_9999` in this team"),
+        "{unknown}"
+    );
+    rt.post(
+        MAIN,
+        Target::Agents(vec![b.clone()]),
+        "from the session".into(),
+        None,
+    )
+    .expect("the session's agent writes to its sub-agent");
     env.shared.release();
     let mut all = evs;
     while results(&all).len() < 2 {
@@ -2051,8 +2087,14 @@ async fn a_message_to_an_unknown_agent_is_refused_and_the_team_reaches_its_sibli
     assert!(results(&all).iter().all(|r| r.status == "completed"));
     let read = requests_of(&env.shared, "b [hold-first]");
     let got = user_texts(read.last().unwrap());
-    assert!(got.iter().any(|t| t.ends_with("\nfrom a sibling")), "{got:?}");
-    assert!(got.iter().any(|t| t.ends_with("\nfrom the session")), "{got:?}");
+    assert!(
+        got.iter().any(|t| t.ends_with("\nfrom a sibling")),
+        "{got:?}"
+    );
+    assert!(
+        got.iter().any(|t| t.ends_with("\nfrom the session")),
+        "{got:?}"
+    );
 }
 
 /// The queue of messages is bounded (32 waiting, the text of one message at
@@ -2550,7 +2592,11 @@ async fn a_batch_of_sixteen_then_four_more_is_accepted_and_the_four_queue() {
     let evs = submit(&mut env, "go").await;
     let (refused, out) = tool_out(&evs, "c0");
     assert!(refused && out.contains("17 missions at once"), "{out}");
-    assert_eq!(spawned(&evs).len(), 20, "both batches accepted, nothing of c0");
+    assert_eq!(
+        spawned(&evs).len(),
+        20,
+        "both batches accepted, nothing of c0"
+    );
     let rt = env.ctl.agent_runtime().unwrap();
     for _ in 0..1000 {
         if rt.scheduler.stats().queued == 4 {
@@ -2586,11 +2632,7 @@ async fn an_expired_admission_releases_its_reservation() {
                 "Agent",
                 json!({ "task": "h [hold]", "isolation": "shared" }),
             ),
-            Reply::tool(
-                "c0",
-                "Agent",
-                json!({ "task": "s", "isolation": "shared" }),
-            ),
+            Reply::tool("c0", "Agent", json!({ "task": "s", "isolation": "shared" })),
             Reply::text("ok"),
         ],
         allow(&["Agent"]),

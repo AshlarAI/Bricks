@@ -58,15 +58,28 @@ fn reading_a_memory_never_written_creates_nothing() {
         EntryCounts::default()
     );
     let page = svc
-        .entries(MemoryScope::Project, Some("pa"), EntryFilter::All, "", 0, 50)
+        .entries(
+            MemoryScope::Project,
+            Some("pa"),
+            EntryFilter::All,
+            "",
+            0,
+            50,
+        )
         .unwrap();
     assert_eq!(page.total, 0);
     assert!(!svc.global_path().exists());
     assert!(!svc.project_path("pa").exists());
     assert!(svc.retired(&[]).is_empty());
     // Same page validation as a store's: 1 to 200 entries.
-    assert!(svc.entries(MemoryScope::Global, None, EntryFilter::All, "", 0, 0).is_err());
-    assert!(svc.entries(MemoryScope::Global, None, EntryFilter::All, "", 0, 201).is_err());
+    assert!(
+        svc.entries(MemoryScope::Global, None, EntryFilter::All, "", 0, 0)
+            .is_err()
+    );
+    assert!(
+        svc.entries(MemoryScope::Global, None, EntryFilter::All, "", 0, 201)
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -247,7 +260,10 @@ async fn clearing_is_refused_while_a_run_uses_the_store_and_only_that_scope_is_c
 
     let report = svc.delete(MemoryScope::Project, Some("pa")).await.unwrap();
     assert_eq!(report.episodes, 1);
-    assert_eq!(svc.counts(MemoryScope::Project, Some("pa")).unwrap().notes, 0);
+    assert_eq!(
+        svc.counts(MemoryScope::Project, Some("pa")).unwrap().notes,
+        0
+    );
     assert_eq!(
         svc.counts(MemoryScope::Global, None).unwrap().notes,
         1,
@@ -285,7 +301,10 @@ async fn a_retired_project_store_is_listed_with_its_name_and_refused_while_in_us
     ));
     drop(held);
     svc.delete_retired("pa").await.unwrap();
-    assert_eq!(svc.counts(MemoryScope::Project, Some("pb")).unwrap().notes, 1);
+    assert_eq!(
+        svc.counts(MemoryScope::Project, Some("pb")).unwrap().notes,
+        1
+    );
 }
 
 #[tokio::test]

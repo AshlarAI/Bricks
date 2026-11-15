@@ -10,9 +10,9 @@
 mod common;
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::SessionPolicy;
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::SessionPolicy;
 use bricks_provider::CompletionRequest;
 use bricks_skills::store::{InstallOrigin, SkillStore};
 use bricks_types::{ContentBlock, ToolResultContent};
@@ -276,13 +276,7 @@ async fn store_only_catalog_lists_just_the_builtin_skill() {
         "project-claude-only",
         "Body three.",
     );
-    let mut env = open(
-        root.path(),
-        vec![Reply::text("ok")],
-        None,
-        |_| {},
-    )
-    .await;
+    let mut env = open(root.path(), vec![Reply::text("ok")], None, |_| {}).await;
     let evs = submit(&mut env, "hello").await;
     assert_eq!(outcome(&evs), RunOutcome::Succeeded);
 

@@ -154,8 +154,8 @@ impl OpenMemories {
         let mut stores = self.stores.lock();
         if let Some(open) = stores.get(&key) {
             let (model, dims) = open.memory.embedding_identity();
-            let wants_upgrade = !open.memory.is_vector_enabled()
-                && mismatch_mode != MismatchMode::LexicalFallback;
+            let wants_upgrade =
+                !open.memory.is_vector_enabled() && mismatch_mode != MismatchMode::LexicalFallback;
             let mismatch = open.space != space
                 || model != embedder.model_id()
                 || dims != embedder.dimensions()
@@ -189,11 +189,7 @@ impl OpenMemories {
                             &embedder.dimensions().to_string(),
                         ));
                     }
-                    return Err(conflict(
-                        "the embedding mode",
-                        "lexical-fallback",
-                        "vector",
-                    ));
+                    return Err(conflict("the embedding mode", "lexical-fallback", "vector"));
                 }
             } else {
                 return Ok(open.clone());

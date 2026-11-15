@@ -854,7 +854,11 @@ impl Agent {
         // Whoever re-read a list (a call, a sub-agent), this agent rebuilds
         // its tools once it sees the new generation.
         let generation = manager.tools_generation().await;
-        if state.seen.swap(generation, std::sync::atomic::Ordering::SeqCst) != generation {
+        if state
+            .seen
+            .swap(generation, std::sync::atomic::Ordering::SeqCst)
+            != generation
+        {
             *state.tools.write() = mcp_tools(manager).await;
         }
     }
@@ -1063,12 +1067,13 @@ impl Agent {
             .tools
             .iter()
             .map(|t| t.name().to_string())
-            .chain(
-                self.mcp
-                    .get()
-                    .into_iter()
-                    .flat_map(|s| s.tools.read().iter().map(|t| t.name().to_string()).collect::<Vec<_>>()),
-            )
+            .chain(self.mcp.get().into_iter().flat_map(|s| {
+                s.tools
+                    .read()
+                    .iter()
+                    .map(|t| t.name().to_string())
+                    .collect::<Vec<_>>()
+            }))
             .collect();
         lent.retain(|t| taken.insert(t.name().to_string()));
         *self.lent.write() = Arc::new(lent);

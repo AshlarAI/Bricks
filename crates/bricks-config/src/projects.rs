@@ -49,9 +49,7 @@ pub fn announced_tools(bricks: &BricksConfig) -> Vec<String> {
         .collect();
     names.push("TodoWrite".to_string());
     if bricks.agents.enabled && !names.iter().any(|n| n == "Agent") {
-        names.extend(
-            ["Agent", "AgentControl", "AgentProfiles", "Messagent"].map(String::from),
-        );
+        names.extend(["Agent", "AgentControl", "AgentProfiles", "Messagent"].map(String::from));
     }
     names
 }
@@ -124,6 +122,10 @@ mod tests {
         }
         b.agents.enabled = false;
         let names = announced_tools(&b);
-        assert!(!names.iter().any(|n| n.starts_with("Agent") || n == "Messagent"));
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.starts_with("Agent") || n == "Messagent")
+        );
     }
 }

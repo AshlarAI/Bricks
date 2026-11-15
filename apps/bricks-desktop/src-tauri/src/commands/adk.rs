@@ -12,7 +12,10 @@ use tauri::State;
 /// them (`bricks_agent::agents::InstanceRecord`, durable across runs).
 /// Empty when the session has no sub-agent runtime.
 #[tauri::command]
-pub async fn session_agents(state: State<'_, AppState>, session_id: String) -> IpcResult<serde_json::Value> {
+pub async fn session_agents(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<serde_json::Value> {
     let entry = open_or_not_found(&state, &session_id)?;
     let records = entry
         .controller
@@ -26,7 +29,10 @@ pub async fn session_agents(state: State<'_, AppState>, session_id: String) -> I
 /// (`bricks_agent::agents::workspace::ChangeSet`), in the runtime's order.
 /// Empty when the session has no sub-agent runtime.
 #[tauri::command]
-pub async fn session_changesets(state: State<'_, AppState>, session_id: String) -> IpcResult<serde_json::Value> {
+pub async fn session_changesets(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> IpcResult<serde_json::Value> {
     let entry = open_or_not_found(&state, &session_id)?;
     let sets = entry
         .controller

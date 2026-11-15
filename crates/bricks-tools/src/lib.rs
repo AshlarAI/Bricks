@@ -9,7 +9,6 @@ pub mod file_edit;
 pub mod file_history;
 pub mod file_lock;
 pub mod file_read;
-pub mod view_image;
 pub mod file_snapshot;
 pub mod file_watcher;
 pub mod file_write;
@@ -18,8 +17,8 @@ pub mod glob_tool;
 pub mod grep_tool;
 pub mod jobs;
 pub mod lsp_tool;
-pub mod memory_tools;
 pub mod mcp_tool;
+pub mod memory_tools;
 pub mod permissions;
 pub mod powershell;
 pub mod preview;
@@ -29,6 +28,7 @@ pub mod todo_write;
 pub mod tool_feedback;
 pub mod tool_primitives;
 pub mod tool_report;
+pub mod view_image;
 #[cfg(feature = "vms")]
 pub mod vm_tools;
 pub mod web_fetch;
@@ -490,7 +490,10 @@ pub fn all() -> Vec<Box<dyn Tool>> {
 pub fn coding() -> Vec<Box<dyn Tool>> {
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     tools.extend(filesystem());
-    tools.extend(shell_with_jobs(jobs::JobRegistry::new(Default::default(), None)));
+    tools.extend(shell_with_jobs(jobs::JobRegistry::new(
+        Default::default(),
+        None,
+    )));
     tools.extend(web());
     tools
 }
@@ -709,7 +712,10 @@ mod unknown_parameter_policy {
             .filter(|t| required_params(t.as_ref()).is_empty())
             .map(|t| t.name().to_string())
             .collect();
-        assert_eq!(unprobed, UNPROBED, "a tool lost or gained its required parameters");
+        assert_eq!(
+            unprobed, UNPROBED,
+            "a tool lost or gained its required parameters"
+        );
         assert_eq!(
             covered,
             all().len() - UNPROBED.len(),

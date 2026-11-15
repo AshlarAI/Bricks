@@ -48,9 +48,8 @@ fn main() {
         )
         .unwrap();
         let u2 = write_user_entry(&path, "s1", Message::user("Fix the bug"), "/tmp").unwrap();
-        let a2 =
-            write_assistant_entry(&path, "s1", Message::assistant("Done!"), "/tmp", Some(&u2))
-                .unwrap();
+        let a2 = write_assistant_entry(&path, "s1", Message::assistant("Done!"), "/tmp", Some(&u2))
+            .unwrap();
         let u3 = write_user_entry(&path, "s1", Message::user("Delete this"), "/tmp").unwrap();
 
         let entries = load_transcript(&path).unwrap();
@@ -62,8 +61,14 @@ fn main() {
 
         let messages = messages_from_transcript(&entries);
         check!("4 messages extracted", messages.len() == 4);
-        check!("First message correct", messages[0].get_text().unwrap() == "Hello");
-        check!("Last message correct", messages[3].get_text().unwrap() == "Done!");
+        check!(
+            "First message correct",
+            messages[0].get_text().unwrap() == "Hello"
+        );
+        check!(
+            "Last message correct",
+            messages[3].get_text().unwrap() == "Done!"
+        );
         check!(
             "Tombstoned message gone",
             messages
@@ -124,7 +129,10 @@ fn main() {
         }
         let load_us = start.elapsed().as_micros() / 10;
         check!(
-            &format!("Session load (100 entries): {}μs (target < 5000μs)", load_us),
+            &format!(
+                "Session load (100 entries): {}μs (target < 5000μs)",
+                load_us
+            ),
             load_us < 5000
         );
         println!();

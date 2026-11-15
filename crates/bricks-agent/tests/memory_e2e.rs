@@ -340,9 +340,7 @@ async fn tool_outputs_and_cancelled_runs_still_capture_and_maintain_memory() {
         .unwrap();
     agent.run("Check the database config").await.unwrap();
     assert!(ran_tool.load(Ordering::SeqCst));
-    let exchanges = memory
-        .entries(EntryFilter::Exchanges, "", 0, 50)
-        .unwrap();
+    let exchanges = memory.entries(EntryFilter::Exchanges, "", 0, 50).unwrap();
     assert!(
         exchanges
             .entries
@@ -401,5 +399,9 @@ async fn tool_outputs_and_cancelled_runs_still_capture_and_maintain_memory() {
         "expected cancelled run after valid tool turn to capture tool output: {:?}",
         after.entries
     );
-    assert_eq!(memory.pending_work().unwrap(), 0, "maintenance should have processed cancelled run capture");
+    assert_eq!(
+        memory.pending_work().unwrap(),
+        0,
+        "maintenance should have processed cancelled run capture"
+    );
 }

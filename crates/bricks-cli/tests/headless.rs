@@ -195,12 +195,20 @@ fn an_obsolete_permissions_section_is_not_applied() {
     // The old `[permissions]` denial of writes is not applied: the write is
     // asked, which a headless run cannot answer (refused as approval_required,
     // not as a denial).
-    let p = Project::new(&m.url, "[permissions]\nwrite = \"deny\"\nexecute = \"allow\"\n");
+    let p = Project::new(
+        &m.url,
+        "[permissions]\nwrite = \"deny\"\nexecute = \"allow\"\n",
+    );
     let out = p.run(
         &["run", "--json", "--non-interactive", "Écris le fichier"],
         None,
     );
-    assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let evs = envelopes(&out.stdout);
     let fin = evs.iter().find(|e| e["type"] == "run_finished").unwrap();
     assert_eq!(fin["failure"], "approval_required");
@@ -301,8 +309,16 @@ fn write_skill(root: &std::path::Path, name: &str, body: &str) {
 fn skills_are_chosen_explicitly_from_the_store_and_project_folders_are_not_read() {
     let m = model(vec![text("fait"), text("fait")]);
     let p = Project::new(&m.url, "");
-    write_skill(&p.path().join(".agents/skills"), "project-only", "PROJECT-ONLY-BODY");
-    write_skill(&p.home.path().join("skills"), "house-style", "HOUSE-STYLE-BODY");
+    write_skill(
+        &p.path().join(".agents/skills"),
+        "project-only",
+        "PROJECT-ONLY-BODY",
+    );
+    write_skill(
+        &p.home.path().join("skills"),
+        "house-style",
+        "HOUSE-STYLE-BODY",
+    );
     write_skill(&p.home.path().join("skills"), "mine", "MINE-BODY");
 
     // The project folder is not read: its skill is refused, nothing is sent.
@@ -329,7 +345,10 @@ fn skills_are_chosen_explicitly_from_the_store_and_project_folders_are_not_read(
         .find(|e| e["type"] == "command_rejected")
         .unwrap();
     assert!(
-        rejected["reason"].as_str().unwrap().contains("project-only"),
+        rejected["reason"]
+            .as_str()
+            .unwrap()
+            .contains("project-only"),
         "{rejected}"
     );
     assert!(m.seen.lock().unwrap().is_empty(), "no request sent");
@@ -461,10 +480,7 @@ fn a_background_child_still_running_at_the_end_is_cancelled_at_once() {
         ],
         HANG.into(),
     );
-    let p = Project::new(
-        &m.url,
-        "[agents]\nbackground_drain_ms = 0\n",
-    );
+    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 0\n");
     p.allow_tools_by_default(&["Agent"]);
     let started = Instant::now();
     let out = p.run(
@@ -497,10 +513,7 @@ fn a_background_child_that_finishes_in_the_drain_completes_the_run() {
         ],
         text("Fait."),
     );
-    let p = Project::new(
-        &m.url,
-        "[agents]\nbackground_drain_ms = 10000\n",
-    );
+    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 10000\n");
     p.allow_tools_by_default(&["Agent"]);
     let out = p.run(
         &["run", "--non-interactive", "Lance un travail rapide"],
@@ -526,10 +539,7 @@ fn drain_zero_cancels_at_once_and_still_reports_the_final_usage() {
         ],
         HANG.into(),
     );
-    let p = Project::new(
-        &m.url,
-        "[agents]\nbackground_drain_ms = 0\n",
-    );
+    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 0\n");
     p.allow_tools_by_default(&["Agent"]);
     let started = Instant::now();
     let out = p.run(
@@ -639,10 +649,7 @@ fn an_explicit_drain_is_the_wait_the_run_announces() {
         ],
         HANG.into(),
     );
-    let p = Project::new(
-        &m.url,
-        "[agents]\nbackground_drain_ms = 600000\n",
-    );
+    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 600000\n");
     p.allow_tools_by_default(&["Agent"]);
     let mut c = p.command(&["run", "--non-interactive", "Lance un travail de fond"]);
     c.stdin(std::process::Stdio::null())

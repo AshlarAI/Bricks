@@ -30,8 +30,12 @@ pub async fn run(global: &Global, launch: &Path, command: McpCmd) -> i32 {
             Ok(false) => Err(format!("no MCP server of yours named '{name}'")),
             Err(e) => Err(e),
         },
-        McpCmd::Enable { name } => mcp::set_enabled(&home, &name, true).map(|_| println!("'{name}' is on.")),
-        McpCmd::Disable { name } => mcp::set_enabled(&home, &name, false).map(|_| println!("'{name}' is off.")),
+        McpCmd::Enable { name } => {
+            mcp::set_enabled(&home, &name, true).map(|_| println!("'{name}' is on."))
+        }
+        McpCmd::Disable { name } => {
+            mcp::set_enabled(&home, &name, false).map(|_| println!("'{name}' is off."))
+        }
         McpCmd::Approve { name } | McpCmd::Deny { name } if project.is_none() => {
             Err(format!("no project folder to decide on '{name}'"))
         }
@@ -115,7 +119,10 @@ fn list(home: &Path, project: Option<&Path>, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn pairs(items: &[String], what: &str) -> Result<std::collections::HashMap<String, String>, String> {
+fn pairs(
+    items: &[String],
+    what: &str,
+) -> Result<std::collections::HashMap<String, String>, String> {
     items
         .iter()
         .map(|item| {
@@ -169,11 +176,18 @@ async fn test(home: &Path, project: Option<&Path>, name: &str) -> i32 {
     };
     // A repository's server runs only once the person approved it.
     if view.source == Source::Project && view.decision != Some(Decision::Approved) {
-        eprintln!("bricks: '{name}' is declared by the project and not approved: `bricks mcp approve {name}` first");
+        eprintln!(
+            "bricks: '{name}' is declared by the project and not approved: `bricks mcp approve {name}` first"
+        );
         return exit::FAILED;
     }
     let manager = McpManager::connect(std::slice::from_ref(&view.entry.config)).await;
-    let outcome = match manager.statuses().await.into_iter().find(|(n, _)| n == name) {
+    let outcome = match manager
+        .statuses()
+        .await
+        .into_iter()
+        .find(|(n, _)| n == name)
+    {
         Some((_, McpServerStatus::Connected)) => {
             let tools = manager.tools().await;
             println!("'{name}' answers: {} tool(s).", tools.len());

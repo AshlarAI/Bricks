@@ -159,7 +159,10 @@ auth = "none"
         std::fs::write(&path, both).unwrap();
         migrate_with(&path, &|n| (n == "SOME_SET_VAR").then(|| "sk-older".into()));
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains("api_key = \"sk-newer\"") && !text.contains("sk-older"), "{text}");
+        assert!(
+            text.contains("api_key = \"sk-newer\"") && !text.contains("sk-older"),
+            "{text}"
+        );
     }
 
     #[test]

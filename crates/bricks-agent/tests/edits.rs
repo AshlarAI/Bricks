@@ -6,9 +6,9 @@
 mod common;
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::{PermissionEffect, PermissionProfile, SessionPolicy};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionEffect, PermissionProfile, SessionPolicy};
 use serde_json::json;
 use std::time::Duration;
 

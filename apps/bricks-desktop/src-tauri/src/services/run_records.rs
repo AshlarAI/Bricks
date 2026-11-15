@@ -14,10 +14,10 @@
 //! each event to its run (sub-agents and jobs by their owner) and says when a
 //! run's record must be written.
 
-use crate::i18n::{msg, tr};
 use super::io_error;
 use super::run_labels::{append_line, check_session_id, move_lines};
 use crate::contract::{IpcResult, RunCommand, RunFile, RunRecord, RunUsageRecord};
+use crate::i18n::{msg, tr};
 use bricks_agent::control::{Envelope, Event, RunOutcome, WrittenFile, cap_text};
 use bricks_tools::preview::ChangeKind;
 use bricks_types::Usage;
@@ -1547,9 +1547,14 @@ mod revision_tests {
         assert_eq!(store.set_aside_from("s1", 1).unwrap(), 2);
 
         assert_eq!(store.list("s1").unwrap(), vec![first, unproven]);
-        let aside = std::fs::read_to_string(root.path().join("run-records").join("s1.revised.jsonl")).unwrap();
+        let aside =
+            std::fs::read_to_string(root.path().join("run-records").join("s1.revised.jsonl"))
+                .unwrap();
         assert_eq!(aside.lines().count(), 2);
-        assert!(aside.contains("run_b") && aside.contains("run_c"), "{aside}");
+        assert!(
+            aside.contains("run_b") && aside.contains("run_c"),
+            "{aside}"
+        );
     }
 
     #[test]
@@ -1571,7 +1576,10 @@ mod revision_tests {
         assert!(aside.exists());
         store.delete("s1").unwrap();
         assert_eq!(store.set_aside_from("s1", 0).unwrap(), 0);
-        assert!(!aside.exists(), "deleting the session removes its set-aside records");
+        assert!(
+            !aside.exists(),
+            "deleting the session removes its set-aside records"
+        );
         assert!(store.list("s1").unwrap().is_empty());
     }
 }

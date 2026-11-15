@@ -9,9 +9,9 @@
 mod common;
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::{PermissionEffect, SessionPolicy};
 use bricks_agent::control::scripted::{Reply, Script, ScriptedCatalog};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionEffect, SessionPolicy};
 use bricks_provider::CompletionRequest;
 use bricks_skills::{Scope, SkillRoot};
 use bricks_types::{ContentBlock, ToolResultContent};
@@ -535,7 +535,10 @@ async fn an_active_skill_and_its_allowed_tools_grant_nothing() {
     assert!(is_error && out.contains("Permission denied"), "{out}");
     assert!(!env.project.path().join("ran.txt").exists());
     let snapshot = env.ctl.snapshot();
-    assert_eq!(snapshot.permission_revision, 0, "nothing changed the session policy");
+    assert_eq!(
+        snapshot.permission_revision, 0,
+        "nothing changed the session policy"
+    );
 }
 
 // ─── A person's activation ───────────────────────────────────────────────────

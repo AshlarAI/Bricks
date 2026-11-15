@@ -63,8 +63,12 @@ impl AppState {
                 out.extend(items);
             }
         }
-        if let Ok(chats) = self.projects.get(crate::services::projects::CHATS_PROJECT_ID)
-            && !out.iter().any(|i| i.project_id.as_deref() == Some(chats.id.as_str()))
+        if let Ok(chats) = self
+            .projects
+            .get(crate::services::projects::CHATS_PROJECT_ID)
+            && !out
+                .iter()
+                .any(|i| i.project_id.as_deref() == Some(chats.id.as_str()))
             && let Ok(items) = self.sessions_list(&chats.id).await
         {
             out.extend(items);
@@ -76,7 +80,12 @@ impl AppState {
 
     /// The messages of a conversation from `offset` (its own history when it
     /// is open, else the stored one).
-    pub async fn session_page(&self, id: &str, offset: usize, limit: usize) -> IpcResult<HistoryPage> {
+    pub async fn session_page(
+        &self,
+        id: &str,
+        offset: usize,
+        limit: usize,
+    ) -> IpcResult<HistoryPage> {
         check_session_id(id)?;
         let messages = match self.open_entry(id) {
             Some(entry) => entry.controller.history().await,
@@ -96,7 +105,13 @@ impl AppState {
             .enumerate()
             .skip(offset)
             .take(limit)
-            .map(|(i, m)| format!("[{i}] {}: {}", role_name(m), clip(&message_summary(m), MESSAGE_CHARS)))
+            .map(|(i, m)| {
+                format!(
+                    "[{i}] {}: {}",
+                    role_name(m),
+                    clip(&message_summary(m), MESSAGE_CHARS)
+                )
+            })
             .collect();
         Ok(HistoryPage {
             total: messages.len(),
@@ -118,7 +133,9 @@ impl AppState {
             return Err(invalid("the message is empty"));
         }
         if text.chars().count() > MAIL_CHARS {
-            return Err(invalid(format!("the message is longer than {MAIL_CHARS} characters")));
+            return Err(invalid(format!(
+                "the message is longer than {MAIL_CHARS} characters"
+            )));
         }
         if self.mail.is_replying(from) {
             return Err(rejected(
@@ -141,9 +158,18 @@ impl AppState {
         let mail = self.mail.record(from, to, &to_title, text);
         let prompt = format!(
             "Message de la conversation « {} » ({from}) :\n\n{text}\n\nTa réponse finale lui sera transmise : elle la récupère avec l'outil Session.",
-            if from_title.is_empty() { "sans titre" } else { from_title.as_str() },
+            if from_title.is_empty() {
+                "sans titre"
+            } else {
+                from_title.as_str()
+            },
         );
-        tauri::async_runtime::spawn(deliver(entry, Arc::clone(&self.mail), mail.id.clone(), prompt));
+        tauri::async_runtime::spawn(deliver(
+            entry,
+            Arc::clone(&self.mail),
+            mail.id.clone(),
+            prompt,
+        ));
         Ok(mail)
     }
 
@@ -193,9 +219,10 @@ impl AppState {
             .map(|m| m.len())
             .unwrap_or(0);
         let item = self.item_from_meta(&forked, count, false, false);
-        self.hub.publish(crate::contract::DesktopEvent::SessionUpdated {
-            session: item.clone(),
-        });
+        self.hub
+            .publish(crate::contract::DesktopEvent::SessionUpdated {
+                session: item.clone(),
+            });
         Ok(item)
     }
 
@@ -213,19 +240,33 @@ impl AppState {
         let new_files = format!("{new_id}.files");
         let moved = |messages: Vec<Message>| -> IpcResult<Vec<Message>> {
             let text = serde_json::to_string(&messages).map_err(|e| io(e.to_string()))?;
-            serde_json::from_str(&text.replace(&old_files, &new_files)).map_err(|e| io(e.to_string()))
+            serde_json::from_str(&text.replace(&old_files, &new_files))
+                .map_err(|e| io(e.to_string()))
         };
-        let histories = store.load_histories(id).await.map_err(|e| io(e.to_string()))?;
+        let histories = store
+            .load_histories(id)
+            .await
+            .map_err(|e| io(e.to_string()))?;
         let histories = SessionHistories {
             active: moved(histories.active)?,
             raw: moved(histories.raw)?,
         };
         store
-            .store_histories(new_id, histories, SaveRevision { owner: rand_owner(), seq: 1 })
+            .store_histories(
+                new_id,
+                histories,
+                SaveRevision {
+                    owner: rand_owner(),
+                    seq: 1,
+                },
+            )
             .await
             .map_err(|e| io(e.to_string()))?;
         let mut n = 1;
-        while dir.join(format!("{}.jsonl", session_keys::snapshot(id, n))).exists() {
+        while dir
+            .join(format!("{}.jsonl", session_keys::snapshot(id, n)))
+            .exists()
+        {
             let snapshot = store
                 .load(&session_keys::snapshot(id, n))
                 .await
@@ -241,7 +282,11 @@ impl AppState {
         forked.id = new_id.to_string();
         forked.title = format!(
             "{} (fork)",
-            if meta.title.trim().is_empty() { "Conversation" } else { meta.title.trim() }
+            if meta.title.trim().is_empty() {
+                "Conversation"
+            } else {
+                meta.title.trim()
+            }
         );
         forked.parent = Some(id.to_string());
         forked.created_at = now;
@@ -285,9 +330,10 @@ impl AppState {
             .map_err(|e| error(IpcErrorCode::Io, e))?;
         let count = super::live::stored_message_count(self.sessions_dir(), id).await;
         let item = self.item_from_meta(&meta, count, false, false);
-        self.hub.publish(crate::contract::DesktopEvent::SessionUpdated {
-            session: item.clone(),
-        });
+        self.hub
+            .publish(crate::contract::DesktopEvent::SessionUpdated {
+                session: item.clone(),
+            });
         Ok(item)
     }
 }
@@ -312,7 +358,10 @@ async fn deliver(
             let command = Command::Submit {
                 prompt: Prompt::text(prompt.clone()),
             };
-            match entry.send_tagged(command, None, Vec::new(), Some(id.clone())).await {
+            match entry
+                .send_tagged(command, None, Vec::new(), Some(id.clone()))
+                .await
+            {
                 Ok(()) => break,
                 // Someone else started a run meanwhile: wait again.
                 Err(_) if entry.is_busy() => {}
@@ -421,7 +470,9 @@ fn message_summary(m: &Message) -> String {
                     .unwrap_or_default();
                 parts.push(format!("[tool {name}{target}]"));
             }
-            ContentBlock::ToolResult { content, is_error, .. } => {
+            ContentBlock::ToolResult {
+                content, is_error, ..
+            } => {
                 let text = match content {
                     ToolResultContent::Text(t) => t.clone(),
                     ToolResultContent::Blocks(blocks) => blocks
@@ -433,7 +484,11 @@ fn message_summary(m: &Message) -> String {
                         .collect::<Vec<_>>()
                         .join("\n"),
                 };
-                let mark = if is_error.unwrap_or(false) { "error" } else { "result" };
+                let mark = if is_error.unwrap_or(false) {
+                    "error"
+                } else {
+                    "result"
+                };
                 parts.push(format!("[tool {mark}: {}]", clip(&text, 400)));
             }
             ContentBlock::Image { .. } => parts.push("[image]".into()),
@@ -454,7 +509,12 @@ fn image_count(messages: &[Message]) -> u64 {
                     ContentBlock::ToolResult {
                         content: ToolResultContent::Blocks(inner),
                         ..
-                    } => n += inner.iter().filter(|b| matches!(b, ContentBlock::Image { .. })).count() as u64,
+                    } => {
+                        n += inner
+                            .iter()
+                            .filter(|b| matches!(b, ContentBlock::Image { .. }))
+                            .count() as u64
+                    }
                     _ => {}
                 }
             }
@@ -477,7 +537,9 @@ pub struct SessionLender {
 
 impl bricks_agent::ToolLender for SessionLender {
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        vec![Arc::new(SessionTool { app: self.app.clone() })]
+        vec![Arc::new(SessionTool {
+            app: self.app.clone(),
+        })]
     }
 }
 
@@ -714,7 +776,11 @@ fn list_text(items: &[SessionItem], me: &str, limit: usize) -> String {
             format!(
                 "- {} « {} »{mine}: {state}, {} messages, {}{parent}",
                 i.id,
-                if i.title.is_empty() { "untitled" } else { i.title.as_str() },
+                if i.title.is_empty() {
+                    "untitled"
+                } else {
+                    i.title.as_str()
+                },
                 i.message_count,
                 i.working_dir.as_deref().unwrap_or("?"),
             )
@@ -761,7 +827,11 @@ async fn context_text(state: &AppState, me: &str) -> Result<String, String> {
     let c = &snap.context;
     let used = c.context_used.tokens;
     let limit = c.input_limit;
-    let pct = if limit == 0 { 0.0 } else { used as f64 * 100.0 / limit as f64 };
+    let pct = if limit == 0 {
+        0.0
+    } else {
+        used as f64 * 100.0 / limit as f64
+    };
     let usable = limit.saturating_sub(c.margin);
     let policy = bricks_agent::context::ContextPolicy::default();
     let compact_at = (limit as f64 * policy.compact_threshold) as u64;
@@ -776,7 +846,10 @@ async fn context_text(state: &AppState, me: &str) -> Result<String, String> {
         c.reserved_output,
     );
     if c.context_used.upper_bound > used {
-        text.push_str(&format!(" The count may reach {} tokens.", c.context_used.upper_bound));
+        text.push_str(&format!(
+            " The count may reach {} tokens.",
+            c.context_used.upper_bound
+        ));
     }
     // The split is estimated: text shares of the last request, applied to
     // the tokens used, and a fixed cost per image.
@@ -785,7 +858,9 @@ async fn context_text(state: &AppState, me: &str) -> Result<String, String> {
         let image_tokens = (images * policy.image_tokens).min(used);
         let text_tokens = used.saturating_sub(image_tokens);
         let ch = b.chars;
-        let total = (ch.instructions + ch.conversation + ch.tool_results + ch.tool_definitions + ch.other).max(1);
+        let total =
+            (ch.instructions + ch.conversation + ch.tool_results + ch.tool_definitions + ch.other)
+                .max(1);
         let part = |x: u64| text_tokens * x / total;
         text.push_str(&format!(
             "\nEstimated split (not measured): instructions ≈ {}, tool definitions ≈ {}, messages ≈ {}, \
@@ -809,7 +884,9 @@ fn mail_text(m: &Mail, with_answer: bool) -> String {
     };
     let mut text = format!("{} to « {} » ({}): {state}.", m.id, m.to_title, m.to);
     if let Some(outcome) = m.outcome.as_deref().filter(|o| *o != "succeeded") {
-        text.push_str(&format!(" Its run ended as {outcome}: the answer may be partial or empty."));
+        text.push_str(&format!(
+            " Its run ended as {outcome}: the answer may be partial or empty."
+        ));
     }
     if let Some(reason) = &m.reason {
         text.push_str(&format!(" {reason}."));

@@ -9,8 +9,8 @@
 mod common;
 
 use bricks_agent::BricksConfig;
-use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use bricks_agent::control::*;
+use bricks_agent::permission::{PermissionProfile, SessionPolicy};
 use bricks_provider::ProviderRegistry;
 use serde_json::Value;
 use std::io::{Read, Write};

@@ -21,8 +21,8 @@ use bricks_agent::control::ModelChoice;
 use bricks_agent::control::protocol::{Prompt, PromptBlock};
 use std::path::Path;
 
-/// The refusal of an image sent to a model without image input. The composer
-/// shows the same text.
+// The refusal of an image sent to a model without image input. The composer
+// shows the same text.
 
 /// Whether the model `selection` takes images. A model the catalog does not
 /// know is left to the engine, which refuses it on its own.

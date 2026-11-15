@@ -15,7 +15,7 @@ pub fn desktop_dir() -> PathBuf {
 pub fn check_folder(path: &Path) -> Result<(), String> {
     let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
     if !meta.is_dir() {
-        return Err(tr!(msg::THIS_ISNT_A_FOLDER).into());
+        return Err(tr!(msg::THIS_ISNT_A_FOLDER));
     }
     std::fs::read_dir(path)
         .map(|_| ())
@@ -30,10 +30,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .parent()
         .ok_or_else(|| std::io::Error::other("no parent folder"))?;
     std::fs::create_dir_all(dir)?;
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let tmp = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4().simple()));
     let written = (|| {
         let mut file = std::fs::File::create(&tmp)?;

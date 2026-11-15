@@ -35,7 +35,11 @@ pub async fn project_remove(state: State<'_, AppState>, project_id: String) -> I
 }
 
 #[tauri::command]
-pub async fn project_rename(state: State<'_, AppState>, project_id: String, name: String) -> IpcResult<Project> {
+pub async fn project_rename(
+    state: State<'_, AppState>,
+    project_id: String,
+    name: String,
+) -> IpcResult<Project> {
     let store = Arc::clone(&state.projects);
     tokio::task::spawn_blocking(move || store.rename(&project_id, &name))
         .await
@@ -45,6 +49,10 @@ pub async fn project_rename(state: State<'_, AppState>, project_id: String, name
 /// Moves the project to another folder (its folder was moved or renamed).
 /// Its conversations follow it.
 #[tauri::command]
-pub async fn project_relocate(state: State<'_, AppState>, project_id: String, path: String) -> IpcResult<Project> {
+pub async fn project_relocate(
+    state: State<'_, AppState>,
+    project_id: String,
+    path: String,
+) -> IpcResult<Project> {
     state.relocate_project(&project_id, &path).await
 }

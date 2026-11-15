@@ -571,9 +571,17 @@ async fn a_background_server_is_supervised_and_independent() {
     );
 
     // Paged logs with a cursor.
-    let page = task.read(bricks_tools::shell::background::Stream::Stdout, bricks_tools::shell::background::OutputPosition::Offset(0), 10);
+    let page = task.read(
+        bricks_tools::shell::background::Stream::Stdout,
+        bricks_tools::shell::background::OutputPosition::Offset(0),
+        10,
+    );
     assert_eq!(page.lines[0].1, "function-inherited");
-    let err = task.read(bricks_tools::shell::background::Stream::Stderr, bricks_tools::shell::background::OutputPosition::Offset(0), 1);
+    let err = task.read(
+        bricks_tools::shell::background::Stream::Stderr,
+        bricks_tools::shell::background::OutputPosition::Offset(0),
+        1,
+    );
     assert_eq!(err.lines[0].1, "inherited");
     assert_eq!(err.next_offset, 1);
 
@@ -625,7 +633,11 @@ async fn the_test_server_starts_answers_and_stops_without_reverse_dns() {
         .run(&format!("python3 -c \"import urllib.request as u; print(u.urlopen('http://127.0.0.1:{port}/').status)\""))
         .await;
     assert_eq!(o.stdout.text, "200\n", "{}", o.stderr.text);
-    let err = task.read(bricks_tools::shell::background::Stream::Stderr, bricks_tools::shell::background::OutputPosition::Offset(0), 50);
+    let err = task.read(
+        bricks_tools::shell::background::Stream::Stderr,
+        bricks_tools::shell::background::OutputPosition::Offset(0),
+        50,
+    );
     assert!(
         !err.lines.iter().any(|(_, l)| l.contains("getfqdn")),
         "{:?}",
@@ -826,7 +838,10 @@ async fn jobs_report_the_directory_they_started_in() {
         .await;
     let mut ids = Vec::new();
     for r in [&background, &yielded] {
-        let data = r.metadata.as_ref().unwrap_or_else(|| panic!("{}", r.content));
+        let data = r
+            .metadata
+            .as_ref()
+            .unwrap_or_else(|| panic!("{}", r.content));
         let cwd = data["cwd"].as_str().unwrap();
         assert!(cwd.ends_with("/subdir"), "{cwd}: {}", r.content);
         assert!(r.content.contains("/subdir"), "{}", r.content);

@@ -3,7 +3,7 @@
 # sync_cargo.sh — publish the library crates of the workspace to crates.io.
 #
 # It publishes the crates listed in CRATES below — an explicit selection, not
-# every workspace member (`bricks-testkit` and `longmem-bench` are private;
+# every workspace member (`bricks-testkit` is private;
 # `bricks-cli` is not published by this script) — at the
 # version declared in the workspace `Cargo.toml`, in dependency order (leaves
 # first), so crates.io always has a crate's dependencies before its dependents.

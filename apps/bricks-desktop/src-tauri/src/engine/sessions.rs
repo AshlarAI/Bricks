@@ -8,13 +8,15 @@
 //!   save cannot recreate it;
 //! * operations that create or retire controllers run one at a time.
 
-use crate::i18n::{msg, tr};
-use super::live::{self, OpenSession, files_dir, load_meta, session_item, spawn_consumer, stored_message_count};
+use super::live::{
+    self, OpenSession, files_dir, load_meta, session_item, spawn_consumer, stored_message_count,
+};
 use super::{AppState, error};
 use crate::contract::{
     DesktopEvent, IpcErrorCode, IpcResult, OpenSessionRequest, OpenedSession, SearchMatch,
     SessionItem, SessionSearchHit,
 };
+use crate::i18n::{msg, tr};
 use crate::services::conversations::{
     contains_folded, item_from_summary, message_text, path_text, snippet,
 };
@@ -70,7 +72,8 @@ impl AppState {
                 .map(|m| m.working_dir)
                 .unwrap_or_else(|| PathBuf::from(&project.path)),
         };
-        let fresh_dir = (project.chats && request.session_id.is_none()).then(|| working_dir.clone());
+        let fresh_dir =
+            (project.chats && request.session_id.is_none()).then(|| working_dir.clone());
         let mut cfg = bricks_config::engine_config(&working_dir, Arc::clone(&registry), true);
         // The catalog is the application's: a change reaches every session,
         // at its next run. New sessions start from this home's default policy.
@@ -93,7 +96,9 @@ impl AppState {
         let mut lenders: Vec<Arc<dyn bricks_agent::ToolLender>> =
             vec![Arc::clone(&self.computer_use) as Arc<dyn bricks_agent::ToolLender>];
         if let Some(app) = self.app.get() {
-            lenders.push(Arc::new(super::session_tool::SessionLender { app: app.clone() }));
+            lenders.push(Arc::new(super::session_tool::SessionLender {
+                app: app.clone(),
+            }));
         }
         cfg.tool_lender = Some(Arc::new(super::session_tool::Lenders(lenders)));
         // Sessions are stored under this application state's home (tests use
@@ -137,7 +142,9 @@ impl AppState {
         while let Some(env) = stream.try_next() {
             live::ingest(&self.hub, &entry, env);
         }
-        self.sessions.lock().insert(session_id.clone(), entry.clone());
+        self.sessions
+            .lock()
+            .insert(session_id.clone(), entry.clone());
         spawn_consumer(self.hub.clone(), entry.clone(), stream, stop);
         self.projects.touch(&project.id);
         self.hub.publish(DesktopEvent::SessionState {
@@ -199,7 +206,10 @@ impl AppState {
         if let Some(dir) = chat_dir
             && let Err(e) = std::fs::remove_dir_all(&dir)
         {
-            eprintln!("bricks-desktop: dossier de conversation {} : {e}", dir.display());
+            eprintln!(
+                "bricks-desktop: dossier de conversation {} : {e}",
+                dir.display()
+            );
         }
         self.hub.publish(DesktopEvent::SessionDeleted {
             session_id: session_id.to_string(),
@@ -216,7 +226,10 @@ impl AppState {
             return Err(invalid(tr!(msg::THE_TITLE_CANT_BE_EMPTY)));
         }
         if title.chars().count() > TITLE_MAX_CHARS {
-            return Err(invalid(tr!(msg::THE_TITLE_EXCEEDS_CHARACTERS, TITLE_MAX_CHARS = TITLE_MAX_CHARS)));
+            return Err(invalid(tr!(
+                msg::THE_TITLE_EXCEEDS_CHARACTERS,
+                TITLE_MAX_CHARS = TITLE_MAX_CHARS
+            )));
         }
         let _gate = self.lifecycle.lock().await;
         let item = match self.open_entry(session_id) {
@@ -372,7 +385,10 @@ impl AppState {
                 continue;
             }
             let messages = store.load(&item.id).await.unwrap_or_default();
-            if let Some(text) = messages.iter().find_map(|m| snippet(&message_text(m), needle)) {
+            if let Some(text) = messages
+                .iter()
+                .find_map(|m| snippet(&message_text(m), needle))
+            {
                 hits.push(SessionSearchHit {
                     session: item,
                     matched: SearchMatch::Message,
@@ -439,11 +455,18 @@ impl AppState {
     /// The image a tool call showed the model (`Read` of an image), as a data URL,
     /// read from the open session's history: the bytes the model received,
     /// never the file as it is now. `None` when the call showed none.
-    pub async fn tool_image(&self, session_id: &str, tool_call_id: &str) -> IpcResult<Option<String>> {
+    pub async fn tool_image(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+    ) -> IpcResult<Option<String>> {
         check_session_id(session_id)?;
         let entry = self.require_open(session_id)?;
         let history = entry.controller.history().await;
-        Ok(crate::services::conversations::tool_image(&history, tool_call_id))
+        Ok(crate::services::conversations::tool_image(
+            &history,
+            tool_call_id,
+        ))
     }
 
     /// The engine's snapshot of an open session.

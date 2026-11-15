@@ -56,29 +56,65 @@ fn matrix() -> Vec<Case> {
             "/model test/b deep",
             Engine(json!({"type": "set_model", "model": "test/b", "reasoning": "deep"})),
         ),
-        case("model", "/model test/b", Engine(json!({"type": "set_model", "model": "test/b"}))),
-        case("m", "/m test/b", Engine(json!({"type": "set_model", "model": "test/b"}))),
+        case(
+            "model",
+            "/model test/b",
+            Engine(json!({"type": "set_model", "model": "test/b"})),
+        ),
+        case(
+            "m",
+            "/m test/b",
+            Engine(json!({"type": "set_model", "model": "test/b"})),
+        ),
         // /effort: `default` resets the profile, an id is sent as is (the engine refuses unknown ids)
         case("effort", "/effort", Pres(json!({"view": "effort_picker"}))),
-        case("effort", "/effort high", Engine(json!({"type": "set_reasoning", "profile": "high"}))),
-        case("effort", "/effort   high  ", Engine(json!({"type": "set_reasoning", "profile": "high"}))),
-        case("effort", "/effort deep", Engine(json!({"type": "set_reasoning", "profile": "deep"}))),
-        case("effort", "/effort inconnu", Engine(json!({"type": "set_reasoning", "profile": "inconnu"}))),
+        case(
+            "effort",
+            "/effort high",
+            Engine(json!({"type": "set_reasoning", "profile": "high"})),
+        ),
+        case(
+            "effort",
+            "/effort   high  ",
+            Engine(json!({"type": "set_reasoning", "profile": "high"})),
+        ),
+        case(
+            "effort",
+            "/effort deep",
+            Engine(json!({"type": "set_reasoning", "profile": "deep"})),
+        ),
+        case(
+            "effort",
+            "/effort inconnu",
+            Engine(json!({"type": "set_reasoning", "profile": "inconnu"})),
+        ),
         // /search (/s): plain text, `re:` regex
         case(
             "search",
             "/search rapport final",
             Engine(json!({"type": "search", "text": "rapport final", "regex": false})),
         ),
-        case("s", "/s rapport", Engine(json!({"type": "search", "text": "rapport", "regex": false}))),
-        case("search", "/search re:a.b", Engine(json!({"type": "search", "text": "a.b", "regex": true}))),
+        case(
+            "s",
+            "/s rapport",
+            Engine(json!({"type": "search", "text": "rapport", "regex": false})),
+        ),
+        case(
+            "search",
+            "/search re:a.b",
+            Engine(json!({"type": "search", "text": "a.b", "regex": true})),
+        ),
         case(
             "s",
             "/s re:^fn\\s+main",
             Engine(json!({"type": "search", "text": "^fn\\s+main", "regex": true})),
         ),
         // Quirk kept from the TUI: an empty regex is passed to the engine.
-        case("search", "/search re:", Engine(json!({"type": "search", "text": "", "regex": true}))),
+        case(
+            "search",
+            "/search re:",
+            Engine(json!({"type": "search", "text": "", "regex": true})),
+        ),
         case("search", "/search", Invalid("give a text to search for")),
         case("s", "/s   ", Invalid("give a text to search for")),
         // /agents: profiles, then the instance sub-commands
@@ -92,8 +128,16 @@ fn matrix() -> Vec<Case> {
             "/agents explore rust",
             Engine(json!({"type": "list_agent_profiles", "query": "explore rust", "page": 0})),
         ),
-        case("agents", "/agents reload", Engine(json!({"type": "reload_agent_profiles"}))),
-        case("agents", "/agents running", Engine(json!({"type": "agent_control", "action": "list"}))),
+        case(
+            "agents",
+            "/agents reload",
+            Engine(json!({"type": "reload_agent_profiles"})),
+        ),
+        case(
+            "agents",
+            "/agents running",
+            Engine(json!({"type": "agent_control", "action": "list"})),
+        ),
         case(
             "agents",
             "/agents status a1",
@@ -116,18 +160,46 @@ fn matrix() -> Vec<Case> {
             Engine(json!({"type": "list_agent_profiles", "query": "status", "page": 0})),
         ),
         // /skills: catalogue, paging, trust decisions
-        case("skills", "/skills", Engine(json!({"type": "list_skills", "query": "", "page": 0}))),
+        case(
+            "skills",
+            "/skills",
+            Engine(json!({"type": "list_skills", "query": "", "page": 0})),
+        ),
         case(
             "skills",
             "/skills pdf page 2",
             Engine(json!({"type": "list_skills", "query": "pdf", "page": 2})),
         ),
-        case("skills", "/skills page 3", Engine(json!({"type": "list_skills", "query": "", "page": 3}))),
-        case("skills", "/skills reload", Engine(json!({"type": "reload_skills"}))),
-        case("skills", "/skills trust", Engine(json!({"type": "trust_project_skills", "allow": true}))),
-        case("skills", "/skills allow", Engine(json!({"type": "trust_project_skills", "allow": true}))),
-        case("skills", "/skills deny", Engine(json!({"type": "trust_project_skills", "allow": false}))),
-        case("skills", "/skills refuse", Engine(json!({"type": "trust_project_skills", "allow": false}))),
+        case(
+            "skills",
+            "/skills page 3",
+            Engine(json!({"type": "list_skills", "query": "", "page": 3})),
+        ),
+        case(
+            "skills",
+            "/skills reload",
+            Engine(json!({"type": "reload_skills"})),
+        ),
+        case(
+            "skills",
+            "/skills trust",
+            Engine(json!({"type": "trust_project_skills", "allow": true})),
+        ),
+        case(
+            "skills",
+            "/skills allow",
+            Engine(json!({"type": "trust_project_skills", "allow": true})),
+        ),
+        case(
+            "skills",
+            "/skills deny",
+            Engine(json!({"type": "trust_project_skills", "allow": false})),
+        ),
+        case(
+            "skills",
+            "/skills refuse",
+            Engine(json!({"type": "trust_project_skills", "allow": false})),
+        ),
         // /skill <name> <request>: the skill travels in `prompt.skills`
         case(
             "skill",
@@ -145,27 +217,39 @@ fn matrix() -> Vec<Case> {
             "/skill pdf",
             Invalid("give the request after the skill: /skill pdf <request>"),
         ),
-        case("skill", "/skill", Invalid("give a skill name (see /skills)")),
+        case(
+            "skill",
+            "/skill",
+            Invalid("give a skill name (see /skills)"),
+        ),
         // /changes <id> [inspect|apply|discard]
         case(
             "changes",
             "/changes cs-1",
-            Engine(json!({"type": "agent_control", "action": "inspect_changes", "changeset_id": "cs-1"})),
+            Engine(
+                json!({"type": "agent_control", "action": "inspect_changes", "changeset_id": "cs-1"}),
+            ),
         ),
         case(
             "changes",
             "/changes cs-1 inspect",
-            Engine(json!({"type": "agent_control", "action": "inspect_changes", "changeset_id": "cs-1"})),
+            Engine(
+                json!({"type": "agent_control", "action": "inspect_changes", "changeset_id": "cs-1"}),
+            ),
         ),
         case(
             "changes",
             "/changes cs-1 apply",
-            Engine(json!({"type": "agent_control", "action": "apply_changes", "changeset_id": "cs-1"})),
+            Engine(
+                json!({"type": "agent_control", "action": "apply_changes", "changeset_id": "cs-1"}),
+            ),
         ),
         case(
             "changes",
             "/changes cs-1 discard",
-            Engine(json!({"type": "agent_control", "action": "discard_changes", "changeset_id": "cs-1"})),
+            Engine(
+                json!({"type": "agent_control", "action": "discard_changes", "changeset_id": "cs-1"}),
+            ),
         ),
         case(
             "changes",
@@ -178,26 +262,62 @@ fn matrix() -> Vec<Case> {
             Invalid("give a ChangeSet id (from `changes ready`)"),
         ),
         // /jobs: engine jobs of the session, graceful stop by id
-        case("jobs", "/jobs", Engine(json!({"type": "agent_control", "action": "jobs"}))),
+        case(
+            "jobs",
+            "/jobs",
+            Engine(json!({"type": "agent_control", "action": "jobs"})),
+        ),
         case(
             "jobs",
             "/jobs stop job-7",
             Engine(json!({"type": "agent_control", "action": "stop_job", "job_id": "job-7"})),
         ),
-        case("jobs", "/jobs stop", Invalid("`/jobs` or `/jobs stop <job id>`")),
-        case("jobs", "/jobs kill job-7", Invalid("`/jobs` or `/jobs stop <job id>`")),
+        case(
+            "jobs",
+            "/jobs stop",
+            Invalid("`/jobs` or `/jobs stop <job id>`"),
+        ),
+        case(
+            "jobs",
+            "/jobs kill job-7",
+            Invalid("`/jobs` or `/jobs stop <job id>`"),
+        ),
         // Inspectors (presentations only, no engine call)
         case("memory", "/memory", Pres(json!({"view": "memory"}))),
         case("context", "/context", Pres(json!({"view": "context"}))),
         case("ctx", "/ctx", Pres(json!({"view": "context"}))),
-        case("context", "/context details", Pres(json!({"view": "context_details"}))),
-        case("ctx", "/ctx details", Pres(json!({"view": "context_details"}))),
-        case("context", "/context all", Invalid("unknown argument `all`: /context or /context details")),
+        case(
+            "context",
+            "/context details",
+            Pres(json!({"view": "context_details"})),
+        ),
+        case(
+            "ctx",
+            "/ctx details",
+            Pres(json!({"view": "context_details"})),
+        ),
+        case(
+            "context",
+            "/context all",
+            Invalid("unknown argument `all`: /context or /context details"),
+        ),
         case("cost", "/cost", Pres(json!({"view": "cost"}))),
         case("usage", "/usage", Pres(json!({"view": "cost"}))),
-        case("cost", "/cost details", Pres(json!({"view": "cost_details"}))),
-        case("usage", "/usage details", Pres(json!({"view": "cost_details"}))),
-        case("cost", "/cost all", Invalid("unknown argument `all`: /cost or /cost details")),
+        case(
+            "cost",
+            "/cost details",
+            Pres(json!({"view": "cost_details"})),
+        ),
+        case(
+            "usage",
+            "/usage details",
+            Pres(json!({"view": "cost_details"})),
+        ),
+        case(
+            "cost",
+            "/cost all",
+            Invalid("unknown argument `all`: /cost or /cost details"),
+        ),
         case("session", "/session", Pres(json!({"view": "session"}))),
         case("diff", "/diff", Pres(json!({"view": "diff"}))),
         case("tools", "/tools", Pres(json!({"view": "tools"}))),
@@ -205,7 +325,11 @@ fn matrix() -> Vec<Case> {
         case("config", "/config", Pres(json!({"view": "config"}))),
         // /resume (/sessions): picker without an id; with an id, the desktop open path
         case("resume", "/resume", Pres(json!({"view": "session_picker"}))),
-        case("sessions", "/sessions", Pres(json!({"view": "session_picker"}))),
+        case(
+            "sessions",
+            "/sessions",
+            Pres(json!({"view": "session_picker"})),
+        ),
         case(
             "resume",
             "/resume 2026-x",
@@ -223,7 +347,9 @@ fn matrix() -> Vec<Case> {
         case(
             "file",
             "/file Mes documents/rapport final é.md",
-            Pres(json!({"view": "attach", "kind": "file", "path": "Mes documents/rapport final é.md"})),
+            Pres(
+                json!({"view": "attach", "kind": "file", "path": "Mes documents/rapport final é.md"}),
+            ),
         ),
         case(
             "file",
@@ -294,7 +420,10 @@ async fn parse_err(line: &str) -> (IpcErrorCode, String) {
 
 /// The first word of a line, without the leading slash.
 fn first_token(line: &str) -> &str {
-    line.trim_start_matches('/').split_whitespace().next().unwrap_or("")
+    line.trim_start_matches('/')
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
 }
 
 #[tokio::test]
@@ -310,7 +439,12 @@ async fn every_registry_name_and_alias_has_a_matrix_row() {
         "every name and alias of the registry must have a row (and only those)"
     );
     for c in &cases {
-        assert_eq!(first_token(c.line), c.token, "row token must start its line: {}", c.line);
+        assert_eq!(
+            first_token(c.line),
+            c.token,
+            "row token must start its line: {}",
+            c.line
+        );
     }
 }
 
@@ -323,8 +457,9 @@ async fn every_matrix_line_maps_to_its_expected_action() {
                 assert_eq!(&got, &engine(expected.clone()), "{}", case.line);
                 // The engine command the frontend forwards must be a real engine `Command`.
                 let command = got["command"].clone();
-                serde_json::from_value::<Command>(command.clone())
-                    .unwrap_or_else(|e| panic!("{}: not an engine Command ({e}): {command}", case.line));
+                serde_json::from_value::<Command>(command.clone()).unwrap_or_else(|e| {
+                    panic!("{}: not an engine Command ({e}): {command}", case.line)
+                });
             }
             Want::Present(expected) => {
                 assert_eq!(
@@ -366,7 +501,11 @@ async fn aliases_act_exactly_like_their_command() {
                 let sep = if argument.is_empty() { "" } else { " " };
                 let by_name = outcome(&format!("/{}{sep}{argument}", c.name)).await;
                 let by_alias = outcome(&format!("/{alias}{sep}{argument}")).await;
-                assert_eq!(by_alias, by_name, "/{alias}{sep}{argument} differs from /{}", c.name);
+                assert_eq!(
+                    by_alias, by_name,
+                    "/{alias}{sep}{argument} differs from /{}",
+                    c.name
+                );
             }
         }
     }
@@ -382,7 +521,11 @@ async fn resume_with_an_id_never_becomes_an_engine_resume() {
                 present(json!({"view": "resume", "session_id": id })),
                 "/{word} {id}"
             );
-            assert_ne!(got["kind"], json!("engine"), "/{word} {id} must not be an engine command");
+            assert_ne!(
+                got["kind"],
+                json!("engine"),
+                "/{word} {id} must not be an engine command"
+            );
         }
     }
 }
@@ -401,7 +544,10 @@ async fn skill_without_a_request_is_an_error_and_sends_nothing() {
 #[tokio::test]
 async fn effort_default_is_a_level_name_like_any_other() {
     let got = parse_ok("/effort default").await;
-    assert_eq!(got, engine(json!({"type": "set_reasoning", "profile": "default"})));
+    assert_eq!(
+        got,
+        engine(json!({"type": "set_reasoning", "profile": "default"}))
+    );
 }
 
 #[tokio::test]
@@ -479,7 +625,10 @@ async fn the_palette_lists_every_registry_entry_in_order() {
     assert_eq!(list.len(), COMMANDS.len());
     for (info, c) in list.iter().zip(COMMANDS.iter()) {
         assert_eq!(info.name, c.name);
-        assert_eq!(info.aliases, c.aliases.iter().map(|a| a.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            info.aliases,
+            c.aliases.iter().map(|a| a.to_string()).collect::<Vec<_>>()
+        );
         assert_eq!(info.args, c.args);
         assert_eq!(info.description, c.description);
         assert_eq!(info.description_fr, c.description_fr);

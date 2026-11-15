@@ -249,7 +249,7 @@ impl ComputerUse {
             .await
             .map_err(|e| tr!(msg::SYSTEM_SETTINGS_COULD_NOT_OPEN, e = e))?;
         if !out.status.success() {
-            return Err(tr!(msg::SYSTEM_SETTINGS_COULD_NOT_OPEN_2).into());
+            return Err(tr!(msg::SYSTEM_SETTINGS_COULD_NOT_OPEN_2));
         }
         Ok(())
     }
@@ -304,7 +304,7 @@ async fn launch_daemon(driver: &Driver) -> Result<(), String> {
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    Err(tr!(msg::CUA_DRIVER_DOESNT_ANSWER_AFTER_ITS).into())
+    Err(tr!(msg::CUA_DRIVER_DOESNT_ANSWER_AFTER_ITS))
 }
 
 async fn daemon_running(exe: &Path) -> bool {

@@ -62,11 +62,7 @@ pub fn view(path: &Path) -> ProvidersFile {
         });
     match parsed {
         Ok(config) => ProvidersFile {
-            providers: config
-                .providers
-                .iter()
-                .map(provider_view)
-                .collect(),
+            providers: config.providers.iter().map(provider_view).collect(),
             path: path_text,
             revision,
             error: None,
