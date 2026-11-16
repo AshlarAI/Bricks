@@ -5,6 +5,7 @@
 	import { app } from '$lib/state/app.svelte';
 	import { errorMessage, gitStatus } from '$lib/ipc/client';
 	import type { GitStatus, Project } from '$lib/ipc/client';
+	import { FocusGate } from '$lib/state/focus-gate';
 	import { Button } from '$lib/components/ui/button';
 	import SectionCard from '$lib/layout/SectionCard.svelte';
 	import CheckIcon from '@lucide/svelte/icons/check';
@@ -42,6 +43,10 @@
 	const gitView = $derived(git && git.projectId === projectId ? git.result : null);
 	/** Only the latest request may update the view (project switches, focus). */
 	let requestSeq = 0;
+	let inFlightProjectId: string | null = null;
+	let queuedProjectId: string | null = null;
+	let destroyed = false;
+	const gitFocusGate = new FocusGate();
 
 	function countEntries(status: GitStatus): GitCounts {
 		const counts: GitCounts = { staged: 0, unstaged: 0, untracked: 0, conflicted: 0 };
@@ -59,15 +64,30 @@
 		return s.head ? branch : t('context.noCommits', { branch });
 	}
 
-	async function refreshGit(id: string) {
+	async function refreshGit(id: string, queueIfBusy = false) {
+		if (gitFocusGate.busy && inFlightProjectId === id) {
+			if (queueIfBusy) queuedProjectId = id;
+			return;
+		}
 		const seq = ++requestSeq;
+		inFlightProjectId = id;
+		queuedProjectId = null;
 		try {
-			const status = await gitStatus(id);
+			const status = await gitFocusGate.track(() => gitStatus(id));
 			if (seq === requestSeq)
 				git = { projectId: id, result: { kind: 'ready', status, counts: countEntries(status) } };
 		} catch (e) {
 			if (seq === requestSeq)
 				git = { projectId: id, result: { kind: 'error', message: errorMessage(e) } };
+		} finally {
+			if (seq === requestSeq) {
+				inFlightProjectId = null;
+				if (!destroyed && queuedProjectId === projectId && !projectMissing) {
+					const queued = queuedProjectId;
+					queuedProjectId = null;
+					if (queued) void refreshGit(queued);
+				}
+			}
 		}
 	}
 
@@ -88,7 +108,7 @@
 			if (c.projectId === id && !running && lastRunning[c.sessionId] === true) finished = true;
 			lastRunning[c.sessionId] = running;
 		}
-		if (finished && !projectMissing) void refreshGit(id);
+		if (finished && !projectMissing) void refreshGit(id, true);
 	});
 
 	let copied = $state(false);
@@ -105,12 +125,15 @@
 		}
 	}
 
-	onDestroy(() => clearTimeout(copyTimer));
+	onDestroy(() => {
+		destroyed = true;
+		clearTimeout(copyTimer);
+	});
 </script>
 
 <svelte:window
 	onfocus={() => {
-		if (!projectMissing) void refreshGit(projectId);
+		if (!projectMissing && gitFocusGate.canRunOnFocus()) void refreshGit(projectId);
 	}}
 />
 

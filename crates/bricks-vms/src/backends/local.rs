@@ -16,6 +16,7 @@ use crate::types::{
     SandboxStatus, Signal, SnapshotId,
 };
 use async_trait::async_trait;
+use bricks_types::process::NoWindowExt;
 use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -314,7 +315,7 @@ impl Commands for LocalCommands {
             .unwrap_or_else(|| self.host_workdir.clone());
 
         let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(&req.command).current_dir(&cwd);
+        cmd.arg("-c").arg(&req.command).current_dir(&cwd).no_window();
         for (k, v) in &self.env {
             cmd.env(k, v);
         }
@@ -374,7 +375,7 @@ impl Commands for LocalCommands {
             .unwrap_or_else(|| self.host_workdir.clone());
 
         let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(&req.command).current_dir(&cwd);
+        cmd.arg("-c").arg(&req.command).current_dir(&cwd).no_window();
         for (k, v) in &self.env {
             cmd.env(k, v);
         }

@@ -20,6 +20,7 @@ use crate::services::prefs::PrefsStore;
 use bricks_agent::ToolLender;
 use bricks_mcp::{McpManager, McpServerConfig, McpServerStatus};
 use bricks_tools::Tool;
+use bricks_types::process::NoWindowExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -333,7 +334,9 @@ async fn daemon_running(exe: &Path) -> bool {
 
 /// Runs `exe args…` within [`COMMAND_LIMIT`]: (success, stdout).
 async fn driver_command(exe: &Path, args: &[&str]) -> Result<(bool, String), String> {
-    let run = Command::new(exe).args(args).kill_on_drop(true).output();
+    let mut cmd = Command::new(exe);
+    cmd.args(args).no_window().kill_on_drop(true);
+    let run = cmd.output();
     match tokio::time::timeout(COMMAND_LIMIT, run).await {
         Ok(Ok(out)) => Ok((
             out.status.success(),

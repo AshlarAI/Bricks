@@ -689,12 +689,13 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::Termination;
+    use bricks_types::process::{DETACHED_NO_WINDOW, NoWindowExt};
     use std::time::Duration;
 
     /// What `setsid` gives on Unix: a process group of its own, which a Ctrl+C
     /// of the console does not reach, and no console window (the desktop
     /// application has none to share). `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`.
-    pub const DETACHED: u32 = 0x0000_0200 | 0x0800_0000;
+    pub const DETACHED: u32 = DETACHED_NO_WINDOW;
 
     /// Not enumerated on Windows; trees are terminated with `taskkill /T`.
     pub fn descendants(_root: u32) -> Vec<u32> {
@@ -704,6 +705,7 @@ mod imp {
     pub fn is_running(pid: u32) -> bool {
         std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .no_window()
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
             .unwrap_or(false)
@@ -754,6 +756,7 @@ mod imp {
     pub fn terminate_tree_now(root: u32) {
         let _ = std::process::Command::new("taskkill")
             .args(["/T", "/F", "/PID", &root.to_string()])
+            .no_window()
             .output();
     }
 }

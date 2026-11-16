@@ -291,6 +291,10 @@ impl LspClient {
             cmd.env(k, v);
         }
 
+        // CREATE_NO_WINDOW prevents flashing console windows when launched from Windows GUI apps.
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+
         let mut child = cmd
             .spawn()
             .map_err(|e| LspError::SpawnFailed(format!("{}: {e}", self.config.command)))?;

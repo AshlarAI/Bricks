@@ -2,6 +2,7 @@
 //! inherited repository redirection (`GIT_DIR` and friends), no prompts.
 
 use crate::i18n::{msg, tr};
+use bricks_types::process::NoWindowExt;
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
@@ -77,6 +78,7 @@ async fn run(dir: &Path, args: &[&str], cap: usize) -> IpcResult<Captured> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .no_window()
         .kill_on_drop(true);
 
     let mut child = command.spawn().map_err(|e| match e.kind() {

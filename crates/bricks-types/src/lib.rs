@@ -9,6 +9,7 @@ mod media;
 pub use media::{MediaKind, detect_mime};
 pub mod duration;
 pub mod http;
+pub mod process;
 pub mod tokens;
 
 // ─── Roles ───────────────────────────────────────────────────────────────────

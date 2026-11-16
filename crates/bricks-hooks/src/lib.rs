@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use bricks_types::Message;
+use bricks_types::process::NoWindowExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -120,13 +121,14 @@ impl Hook for ShellHook {
         }))
         .unwrap_or_default();
 
-        let output = match std::process::Command::new(sh)
-            .args([flag, &self.command])
+        let mut cmd = std::process::Command::new(sh);
+        cmd.args([flag, &self.command])
             .env("CERSEI_HOOK_CONTEXT", &ctx_json)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .output()
+            .no_window();
+        let output = match cmd.output()
         {
             Ok(o) => o,
             Err(e) => {

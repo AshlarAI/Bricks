@@ -3,6 +3,7 @@
 //! request (the git state when it may have changed), bounded, never fatal.
 
 use crate::system_prompt::{GitSnapshot, ModelIdentity, RequestContext};
+use bricks_types::process::NoWindowExt;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -169,6 +170,7 @@ async fn git_out(dir: &Path, args: &[&str]) -> Option<String> {
         .env("GIT_OPTIONAL_LOCKS", "0")
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .no_window()
         .kill_on_drop(true);
     let out = tokio::time::timeout(GIT_TIMEOUT, cmd.output())
         .await

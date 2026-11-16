@@ -53,7 +53,7 @@
 	let previousRunning = 0;
 	$effect(() => {
 		const now = runningHere;
-		if (previousRunning > now) untrack(() => void git?.refresh());
+		if (previousRunning > now) untrack(() => void git?.refresh(true));
 		previousRunning = now;
 	});
 
@@ -99,7 +99,7 @@
 	}
 </script>
 
-<svelte:window onfocus={() => void git?.refresh()} />
+<svelte:window onfocus={() => void git?.refreshOnFocus()} />
 
 {#if !app.currentProjectId}
 	<EmptyState title={t('common.noOpenProject')} description={t('changes.chooseAProjectToSeeIts')} />

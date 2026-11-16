@@ -336,10 +336,20 @@ fn to_project_path(path: &str, prefix: &str) -> Option<String> {
     }
 }
 
+fn has_git_ancestor(dir: &Path) -> bool {
+    dir.ancestors().any(|ancestor| ancestor.join(".git").exists())
+}
+
 /// `Some(prefix)` when the folder is inside a work tree (the prefix is the
 /// folder's path from the repository root, empty at the root), `None` when
 /// it is not a repository.
 async fn repo_prefix(dir: &Path) -> IpcResult<Option<String>> {
+    // `git::run` strips GIT_DIR/GIT_WORK_TREE/GIT_COMMON_DIR, so a folder with
+    // no `.git` entry in any ancestor (resolving symlinks/junctions) is not a repo.
+    let canonical = tokio::fs::canonicalize(dir).await.ok();
+    if !has_git_ancestor(dir) && !canonical.as_deref().is_some_and(has_git_ancestor) {
+        return Ok(None);
+    }
     let out = run::capture(
         dir,
         &["rev-parse", "--is-inside-work-tree", "--show-prefix"],

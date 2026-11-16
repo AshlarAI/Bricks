@@ -6,6 +6,7 @@
 
 use crate::envd::protocol::{Request, Response, methods};
 use crate::types::{FileEntry, FileKind, RunOutput, RunRequest};
+use bricks_types::process::NoWindowExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -68,6 +69,7 @@ async fn process_run(params: Option<Value>) -> Result<Value, String> {
         cmd.env(k, v);
     }
     cmd.kill_on_drop(true)
+        .no_window()
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let child = cmd.spawn().map_err(|e| e.to_string())?;

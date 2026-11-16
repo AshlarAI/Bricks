@@ -8,6 +8,7 @@
 	import type { ComputerUseStatus } from '$lib/ipc/bindings/ComputerUseStatus';
 	import type { ComputerUsePermission } from '$lib/ipc/bindings/ComputerUsePermission';
 	import { app } from '$lib/state/app.svelte';
+	import { FocusGate } from '$lib/state/focus-gate';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Switch } from '$lib/components/ui/switch';
@@ -25,6 +26,8 @@
 	let busy = $state(false);
 	let checking = $state(false);
 	let actionError = $state<string | null>(null);
+	let inFlight: Promise<void> | null = null;
+	const focusGate = new FocusGate(1_500);
 
 	const PERMISSIONS: { id: ComputerUsePermission; label: string; key: 'accessibility' | 'screen_recording' }[] = [
 		{ id: 'accessibility', get label() { return t('settings.accessibility') }, key: 'accessibility' },
@@ -34,16 +37,22 @@
 	const available = $derived(status !== null && status.state !== 'unsupported' && status.state !== 'missing');
 	const enabled = $derived(status?.enabled ?? app.prefs.computer_use_enabled);
 
-	async function refresh() {
+	function refresh(): Promise<void> {
+		if (inFlight) return inFlight;
 		checking = true;
-		try {
-			status = await ipc.computerUseStatus();
-			loadError = null;
-		} catch (e) {
-			loadError = ipc.errorMessage(e);
-		} finally {
-			checking = false;
-		}
+		const run = (async () => {
+			try {
+				status = await ipc.computerUseStatus();
+				loadError = null;
+			} catch (e) {
+				loadError = ipc.errorMessage(e);
+			} finally {
+				checking = false;
+				inFlight = null;
+			}
+		})();
+		inFlight = run;
+		return run;
 	}
 
 	async function setEnabled(on: boolean) {
@@ -71,9 +80,12 @@
 	onMount(() => {
 		void refresh();
 		// Back from System Settings: the grants are read again.
-		const onFocus = () => void refresh();
+		const onFocus = () => {
+			if (inFlight || !focusGate.canRunOnFocus()) return;
+			void focusGate.track(() => refresh());
+		};
 		const onVisible = () => {
-			if (document.visibilityState === 'visible') void refresh();
+			if (document.visibilityState === 'visible') onFocus();
 		};
 		window.addEventListener('focus', onFocus);
 		document.addEventListener('visibilitychange', onVisible);

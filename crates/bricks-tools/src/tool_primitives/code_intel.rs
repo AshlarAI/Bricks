@@ -492,12 +492,14 @@ pub fn scan_project(root: &Path, max_files: usize) -> Vec<FileIntel> {
 
 /// Discover source files in a project (respects .gitignore via git ls-files).
 fn discover_source_files(root: &Path, max: usize) -> Vec<PathBuf> {
+    use bricks_types::process::NoWindowExt;
     use std::process::Command;
 
     // Try git ls-files first
     let output = Command::new("git")
         .args(["ls-files", "--cached", "--others", "--exclude-standard"])
         .current_dir(root)
+        .no_window()
         .output()
         .ok();
 

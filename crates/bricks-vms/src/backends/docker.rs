@@ -31,6 +31,7 @@ use crate::types::{
     SandboxStatus, Signal, SnapshotId,
 };
 use async_trait::async_trait;
+use bricks_types::process::NoWindowExt;
 use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -44,6 +45,12 @@ use tokio::process::Command;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 const SNAPSHOT_IMAGE_PREFIX: &str = "cersei-snapshot";
+
+fn docker_cmd(bin: &str) -> Command {
+    let mut cmd = Command::new(bin);
+    cmd.no_window();
+    cmd
+}
 
 pub struct DockerRuntime {
     inner: Arc<DockerInner>,
@@ -87,7 +94,7 @@ impl DockerRuntime {
     }
 
     async fn docker_text(&self, args: &[&str]) -> Result<String> {
-        let out = Command::new(&self.inner.docker_bin)
+        let out = docker_cmd(&self.inner.docker_bin)
             .args(args)
             .output()
             .await
@@ -289,7 +296,7 @@ impl Sandbox for DockerSandbox {
     async fn snapshot(&self) -> Result<SnapshotId> {
         let id = SnapshotId::new();
         let tag = format!("{SNAPSHOT_IMAGE_PREFIX}:{}", id.as_str());
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args(["commit", &self.container_name, &tag])
             .output()
             .await?;
@@ -315,7 +322,7 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn pause(&self) -> Result<()> {
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args(["pause", &self.container_name])
             .output()
             .await?;
@@ -330,7 +337,7 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn resume(&self) -> Result<()> {
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args(["unpause", &self.container_name])
             .output()
             .await?;
@@ -345,7 +352,7 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn kill(&self) -> Result<()> {
-        let _ = Command::new(&self.docker_bin)
+        let _ = docker_cmd(&self.docker_bin)
             .args(["rm", "-f", &self.container_name])
             .output()
             .await;
@@ -382,7 +389,7 @@ impl Commands for DockerCommands {
         args.push("-c".into());
         args.push(req.command.clone());
 
-        let child = Command::new(&self.docker_bin)
+        let child = docker_cmd(&self.docker_bin)
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -427,7 +434,7 @@ impl Commands for DockerCommands {
         args.push("-c".into());
         args.push(req.command.clone());
 
-        let mut child = Command::new(&self.docker_bin)
+        let mut child = docker_cmd(&self.docker_bin)
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -494,7 +501,7 @@ impl Commands for DockerCommands {
         // Signals into a container map to `docker kill --signal=...` on the
         // *container PID 1*. For an arbitrary child PID we go through `kill`
         // inside the container.
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args([
                 "exec",
                 &self.container_name,
@@ -522,7 +529,7 @@ struct DockerFilesystem {
 
 impl DockerFilesystem {
     async fn exec_text(&self, script: &str) -> Result<String> {
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args(["exec", &self.container_name, "/bin/sh", "-c", script])
             .output()
             .await?;
@@ -545,7 +552,7 @@ impl Filesystem for DockerFilesystem {
         // `docker cp <container>:<path> -` streams a tar archive; for raw
         // file contents we use `cat` over the exec channel — simpler and
         // avoids tar parsing in Phase 1.
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args(["exec", &self.container_name, "cat", path])
             .output()
             .await?;
@@ -573,7 +580,7 @@ impl Filesystem for DockerFilesystem {
             ))
             .await?;
         }
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args([
                 "cp",
                 &tmp.path().display().to_string(),
@@ -678,7 +685,7 @@ impl Filesystem for DockerFilesystem {
     }
 
     async fn upload(&self, local: &Path, remote: &str) -> Result<()> {
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args([
                 "cp",
                 &local.display().to_string(),
@@ -699,7 +706,7 @@ impl Filesystem for DockerFilesystem {
     }
 
     async fn download(&self, remote: &str, local: &Path) -> Result<()> {
-        let out = Command::new(&self.docker_bin)
+        let out = docker_cmd(&self.docker_bin)
             .args([
                 "cp",
                 &format!("{}:{}", self.container_name, remote),

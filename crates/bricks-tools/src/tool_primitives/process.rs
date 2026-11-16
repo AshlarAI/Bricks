@@ -3,6 +3,7 @@
 //! Stateless — no persistent cwd or env. Each call is independent.
 //! Shell state persistence (for coding agents) is a higher-level concern.
 
+use bricks_types::process::NoWindowExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -56,14 +57,13 @@ pub enum OutputLine {
     Stderr(String),
 }
 
-/// Execute a command through a shell. Returns when the command completes or times out.
-pub async fn exec(command: &str, opts: ExecOptions) -> Result<ExecOutput, std::io::Error> {
+fn build_exec_command(command: &str, opts: &ExecOptions) -> tokio::process::Command {
     let (program, args) = shell_args(&opts.shell, command);
-
     let mut cmd = tokio::process::Command::new(&program);
     cmd.args(&args)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        .no_window();
 
     if let Some(cwd) = &opts.cwd {
         cmd.current_dir(cwd);
@@ -73,7 +73,12 @@ pub async fn exec(command: &str, opts: ExecOptions) -> Result<ExecOutput, std::i
         cmd.env(k, v);
     }
 
-    let child = cmd.spawn()?;
+    cmd
+}
+
+/// Execute a command through a shell. Returns when the command completes or times out.
+pub async fn exec(command: &str, opts: ExecOptions) -> Result<ExecOutput, std::io::Error> {
+    let child = build_exec_command(command, &opts).spawn()?;
 
     let timeout = opts.timeout.unwrap_or(Duration::from_secs(120));
 
@@ -111,22 +116,7 @@ pub fn exec_streaming(
     ),
     std::io::Error,
 > {
-    let (program, args) = shell_args(&opts.shell, command);
-
-    let mut cmd = tokio::process::Command::new(&program);
-    cmd.args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    if let Some(cwd) = &opts.cwd {
-        cmd.current_dir(cwd);
-    }
-
-    for (k, v) in &opts.env {
-        cmd.env(k, v);
-    }
-
-    let mut child = cmd.spawn()?;
+    let mut child = build_exec_command(command, &opts).spawn()?;
     let (tx, rx) = mpsc::channel(256);
 
     let stdout = child.stdout.take();

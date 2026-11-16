@@ -6,6 +6,7 @@
 //! proposal can only win if it genuinely passes the real check.
 
 use async_trait::async_trait;
+use bricks_types::process::NoWindowExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,6 +51,7 @@ impl Verifier for CommandVerifier {
         cmd.arg("-c")
             .arg(&self.command)
             .current_dir(workdir)
+            .no_window()
             .kill_on_drop(true);
         let fut = cmd.output();
         match tokio::time::timeout(self.timeout, fut).await {

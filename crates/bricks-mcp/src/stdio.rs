@@ -17,6 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader, ReadBuf};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
 use crate::config::McpServerConfig;
+use bricks_types::process::NoWindowExt;
 
 /// Last lines of a server's stderr.
 #[derive(Clone, Default)]
@@ -134,6 +135,7 @@ pub fn spawn(config: &McpServerConfig) -> std::io::Result<(StdioProcess, StdioPi
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_window()
         .kill_on_drop(true);
     if let Some(dir) = &config.cwd {
         cmd.current_dir(dir);

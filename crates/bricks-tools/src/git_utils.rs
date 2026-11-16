@@ -2,6 +2,7 @@
 //!
 //! Used by the system prompt builder to inject git context.
 
+use bricks_types::process::NoWindowExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -10,6 +11,7 @@ fn run_git(path: &Path, args: &[&str]) -> Option<Output> {
     Command::new("git")
         .args(args)
         .current_dir(path)
+        .no_window()
         .output()
         .ok()
 }

@@ -3,6 +3,7 @@
 // `loadCommits()`; nothing here computes a diff.
 
 import { errorMessage, gitLog, gitStatus, type GitCommit, type GitStatus } from '$lib/ipc/client'
+import { FocusGate } from '$lib/state/focus-gate'
 
 /** Commits per page. */
 export const COMMIT_PAGE = 30
@@ -20,25 +21,50 @@ export class GitState {
   commitsError = $state<string | null>(null)
   commitsExhausted = $state(false)
   #statusSeq = 0
+  #statusInFlight: Promise<void> | null = null
+  #statusQueued = false
+  readonly #statusGate = new FocusGate()
 
   constructor(projectId: string) {
     this.projectId = projectId
   }
 
-  async refresh(): Promise<void> {
+  refresh(queueIfBusy = false): Promise<void> {
+    if (this.#statusInFlight) {
+      if (queueIfBusy) this.#statusQueued = true
+      return this.#statusInFlight
+    }
     const seq = ++this.#statusSeq
     this.statusLoading = true
-    try {
-      const status = await gitStatus(this.projectId)
-      if (seq !== this.#statusSeq) return
-      this.status = status
-      this.statusError = null
-      this.revision++
-    } catch (e) {
-      if (seq === this.#statusSeq) this.statusError = errorMessage(e)
-    } finally {
-      if (seq === this.#statusSeq) this.statusLoading = false
-    }
+    const run = this.#statusGate
+      .track(async () => {
+        try {
+          const status = await gitStatus(this.projectId)
+          if (seq !== this.#statusSeq) return
+          this.status = status
+          this.statusError = null
+          this.revision++
+        } catch (e) {
+          if (seq === this.#statusSeq) this.statusError = errorMessage(e)
+        } finally {
+          if (seq === this.#statusSeq) this.statusLoading = false
+        }
+      })
+      .finally(() => {
+        if (this.#statusInFlight === run) this.#statusInFlight = null
+      })
+      .then(async () => {
+        if (this.#statusQueued) {
+          this.#statusQueued = false
+          await this.refresh()
+        }
+      })
+    this.#statusInFlight = run
+    return run
+  }
+
+  refreshOnFocus(): Promise<void> {
+    return this.#statusGate.canRunOnFocus() ? this.refresh() : Promise.resolve()
   }
 
   /** The first page of commits, or the next one when `next` is set. */

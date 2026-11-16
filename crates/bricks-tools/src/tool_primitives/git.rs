@@ -2,6 +2,7 @@
 //!
 //! All functions use `tokio::process::Command` — no blocking I/O.
 
+use bricks_types::process::NoWindowExt;
 use std::path::{Path, PathBuf};
 
 /// Git repository status.
@@ -57,6 +58,7 @@ async fn git_cmd(path: &Path, args: &[&str]) -> Result<String, GitError> {
         .current_dir(path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_window()
         .output()
         .await?;
 

@@ -29,6 +29,7 @@
 //! A worktree is not a sandbox: processes, network, ports, databases and
 //! the repository's shared metadata stay shared.
 
+use bricks_types::process::NoWindowExt;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -430,7 +431,8 @@ async fn git(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .no_window();
     for (k, v) in env {
         cmd.env(k, v);
     }
