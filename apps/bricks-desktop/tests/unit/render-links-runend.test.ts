@@ -202,9 +202,9 @@ describe('run-end card: a finished run shows its reason, its error and the files
 		expect(text).toContain('img.png binaire');
 	});
 
-	it('shows the error of a failed run as its only line: the state is in the work bar', () => {
+	it('leaves the error of a failed run to the banner above the composer: no line under the answer', () => {
 		const { conv, item } = runOf({ outcome: 'failed', error: 'quota dépassé', at: T0 + 120 }, []);
-		expect(visibleCard(conv, item)).toBe('Erreur : quota dépassé');
+		expect(visibleCard(conv, item)).toBe('');
 	});
 
 	it('gives the reason of an incomplete run and the approvals it never got', () => {

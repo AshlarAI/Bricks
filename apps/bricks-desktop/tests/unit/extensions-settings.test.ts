@@ -78,6 +78,8 @@ beforeEach(() => {
 	vi.mocked(ipc.computerUseRequestPermission).mockReset();
 	vi.mocked(ipc.computerUseRequestPermission).mockResolvedValue(undefined);
 	app.prefs = { ...DEFAULT_PREFERENCES, computer_use_enabled: false };
+	// The permissions are macOS grants: these tests run as on a Mac unless they say otherwise.
+	app.info = { platform: 'macos' } as typeof app.info;
 	noteSpy = vi.spyOn(app, 'noteComputerUse');
 	target = document.createElement('div');
 	document.body.appendChild(target);
@@ -87,6 +89,7 @@ afterEach(() => {
 	if (component) void unmount(component);
 	component = null;
 	noteSpy.mockRestore();
+	app.info = null;
 	target.remove();
 });
 
@@ -184,6 +187,14 @@ describe('the permissions of the driver', () => {
 		await settle();
 		expect(ipc.computerUseRequestPermission).toHaveBeenCalledTimes(1);
 		expect(ipc.computerUseRequestPermission).toHaveBeenCalledWith('screen_recording');
+	});
+
+	it('lists no permissions on Windows, where the driver has none to ask for', async () => {
+		app.info = { platform: 'windows' } as typeof app.info;
+		await open(status({ state: 'ready', enabled: true, accessibility: 'unknown', screen_recording: 'unknown' }));
+		expect(row('accessibility')).toBeNull();
+		expect(row('screen_recording')).toBeNull();
+		expect(target.textContent).not.toContain('Ouvrir les Réglages');
 	});
 
 	it('the permissions are not listed while the driver is missing', async () => {

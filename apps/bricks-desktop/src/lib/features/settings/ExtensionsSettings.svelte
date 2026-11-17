@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Extensions: the MCP servers of Bricks. Computer Use (Cua Driver) is built in: it can be
-	// turned on and off, never removed. Its macOS permissions are those of the driver's own
-	// process, read again when the window comes back to the front.
+	// turned on and off, never removed. On macOS its permissions are those of the driver's own
+	// process, read again when the window comes back to the front; Windows has none to ask for.
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { onMount } from 'svelte';
 	import * as ipc from '$lib/ipc/client';
@@ -35,6 +35,8 @@
 	];
 
 	const available = $derived(status !== null && status.state !== 'unsupported' && status.state !== 'missing');
+	/** Accessibility and Screen Recording are macOS grants. */
+	const hasPermissions = $derived(app.info?.platform === 'macos');
 	const enabled = $derived(status?.enabled ?? app.prefs.computer_use_enabled);
 
 	function refresh(): Promise<void> {
@@ -143,7 +145,7 @@
 		{/if}
 	</SettingsGroup>
 
-	{#if available && status}
+	{#if available && status && hasPermissions}
 		<SettingsGroup title={t('settings.computerUsePermissions')}>
 			{#snippet action()}
 				<Button

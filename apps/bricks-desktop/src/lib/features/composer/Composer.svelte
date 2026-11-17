@@ -8,7 +8,10 @@
   import * as Tooltip from '$lib/components/ui/tooltip'
   import { app } from '$lib/state/app.svelte'
   import { ui } from '$lib/state/ui.svelte'
-  import type { Conversation, Draft, DraftAttachment } from '$lib/state/conversation.svelte'
+  import type { Conversation, Draft, DraftAttachment, UserItem } from '$lib/state/conversation.svelte'
+  import ChatErrorBanner from '$lib/features/conversation/ChatErrorBanner.svelte'
+  import { resolveChatError, type ChatErrorView } from '$lib/features/conversation/chat-error'
+  import { runEndSummary } from '$lib/features/conversation/runend'
   import {
     appQuit,
     attachmentImportBytes,
@@ -614,6 +617,55 @@
     rejection ? (REJECTION_LABELS[rejection.command] ?? t('composer.commandRefused')) : null,
   )
 
+  // The error banner above the editor: a refused command (the newest), else this composer's
+  // own refusal, else the failed last run of the conversation. Closing it hides that error only.
+  let dismissedRunError = $state<string | null>(null)
+  let retrying = $state(false)
+  const lastRunError = $derived.by(() => {
+    const conv = conversation
+    if (!conv || running) return null
+    for (let i = conv.items.length - 1; i >= 0; i--) {
+      const item = conv.items[i]
+      if (item.kind !== 'run_end') continue
+      const error = runEndSummary(conv.runs.get(item.runId)).error
+      return error ? { runId: item.runId, error } : null
+    }
+    return null
+  })
+  const chatError = $derived.by((): { view: ChatErrorView; source: 'rejection' | 'refusal' | 'run'; runId?: string } | null => {
+    if (rejection && rejectionLabel) return { view: resolveChatError(rejection.reason, rejectionLabel), source: 'rejection' }
+    // The engine's refusal of a command also comes back as this composer's refusal: shown once.
+    if (refusal && refusal !== conversation?.lastRejection?.reason) return { view: resolveChatError(refusal), source: 'refusal' }
+    const failed = lastRunError
+    if (failed && failed.runId !== dismissedRunError) return { view: resolveChatError(failed.error), source: 'run', runId: failed.runId }
+    return null
+  })
+  /** The message of the failed run, run again as it was. */
+  const retryItem = $derived.by((): UserItem | null => {
+    const runId = chatError?.source === 'run' ? chatError.runId : undefined
+    if (!conversation || !runId) return null
+    const sent = conversation.items.find((i): i is UserItem => i.kind === 'user' && i.runId === runId)
+    return sent ?? null
+  })
+
+  function dismissChatError() {
+    const current = chatError
+    if (!current) return
+    if (current.source === 'rejection' && rejection) {
+      dismissedRejectionAt = rejection.at
+      if (refusal === rejection.reason) refusal = null
+    } else if (current.source === 'refusal') refusal = null
+    else if (current.runId) dismissedRunError = current.runId
+  }
+
+  async function retryRun() {
+    const item = retryItem
+    if (!conversation || !item || retrying) return
+    retrying = true
+    refusal = await app.reviseMessage(conversation, item, item.text)
+    retrying = false
+  }
+
   /** Progress and result of the `/compact` sent from this composer. */
   const compactStatus = $derived.by(() => {
     const w = compactWatch
@@ -1081,30 +1133,22 @@
   class="shrink-0 px-4 pt-1 pb-3"
 >
   <div class="mx-auto flex max-w-3xl flex-col">
+    {#if chatError}
+      <div class="mb-3 w-full shrink-0">
+        <ChatErrorBanner
+          error={chatError.view}
+          onDismiss={dismissChatError}
+          onOpenModelSettings={() => ui.openSettings('models')}
+          onRetry={retryItem ? () => void retryRun() : undefined}
+          retryDisabled={retrying || running}
+        />
+      </div>
+    {/if}
+
     <!-- Notices sit on a strip tucked under the card: the card overlaps its lower edge. -->
-    {#if (rejection && rejectionLabel) || (refusal && refusal !== rejection?.reason) || compactStatus}
+    {#if compactStatus}
       <div class="relative z-0 mx-2 -mb-3.5 flex flex-col gap-1 rounded-t-2xl bg-popover px-3.5 pt-1.5 pb-5 text-xs">
-        {#if rejection && rejectionLabel}
-          <div role="alert" class="flex items-start justify-between gap-2 text-destructive">
-            <p class="py-0.5">{rejectionLabel} : {rejection.reason}</p>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={t('composer.hideThisMessage')}
-              onclick={() => (dismissedRejectionAt = rejection.at)}
-            >
-              <XIcon aria-hidden="true" />
-            </Button>
-          </div>
-        {/if}
-
-        {#if refusal && refusal !== rejection?.reason}
-          <p role="alert" class="py-0.5 text-destructive">{refusal}</p>
-        {/if}
-
-        {#if compactStatus}
-          <p class="py-0.5 text-muted-foreground" role="status">{compactStatus}</p>
-        {/if}
+        <p class="py-0.5 text-muted-foreground" role="status">{compactStatus}</p>
       </div>
     {/if}
 

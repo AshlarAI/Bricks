@@ -53,6 +53,7 @@
 	--border-subtle: color-mix(in oklch, var(--border) 65%, transparent);
 	--border-strong: color-mix(in oklch, var(--foreground) 20%, var(--border));
 	--panel-input: color-mix(in oklch, var(--background) 55%, var(--muted));
+	--surface: color-mix(in oklch, oklch(0.145 0 0) 3%, transparent);
 	--ui-font-family: 'Google Sans Flex', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--code-font-family: 'Google Sans Code', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 	--ui-font-weight: 400;
@@ -115,4 +116,5 @@
 	--border-subtle: color-mix(in oklch, var(--border) 65%, transparent);
 	--border-strong: color-mix(in oklch, var(--foreground) 20%, var(--border));
 	--panel-input: color-mix(in oklch, var(--background) 55%, var(--muted));
+	--surface: color-mix(in oklch, oklch(1 0 0) 5%, transparent);
 }

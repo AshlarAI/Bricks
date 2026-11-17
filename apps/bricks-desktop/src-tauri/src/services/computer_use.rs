@@ -1,12 +1,21 @@
 //! Computer Use: the Cua Driver built into Bricks, as an MCP server lent
 //! to the agent of every session ([`ToolLender`]).
 //!
-//! The driver is the `CuaDriver.app` Bricks ships (in its resources), else
-//! the one installed in `/Applications` or `~/Applications`
-//! (`BRICKS_CUA_DRIVER` names another). Turning it on launches its daemon
-//! through LaunchServices, so that macOS attributes the Accessibility and
-//! Screen Recording grants to the driver itself (`com.trycua.driver`), not
-//! to Bricks; then connects `cua-driver mcp`, which talks to that daemon.
+//! On macOS the driver is the `CuaDriver.app` Bricks ships (in its
+//! resources), else the one installed in `/Applications` or
+//! `~/Applications` (`BRICKS_CUA_DRIVER` names another). Turning it on
+//! launches its daemon through LaunchServices, so that macOS attributes the
+//! Accessibility and Screen Recording grants to the driver itself
+//! (`com.trycua.driver`), not to Bricks.
+//!
+//! On Windows the driver is `cua-driver.exe` (the Rust port): next to
+//! Bricks, else in the folder of its installer (`CUA_DRIVER_RS_INSTALL_DIR`,
+//! by default `%LOCALAPPDATA%\Programs\Cua\cua-driver\bin`), else on the
+//! `PATH` (`BRICKS_CUA_DRIVER` names another executable). Its daemon runs
+//! in the user's session, started without a console window; Windows has no
+//! grants to ask for.
+//!
+//! Then Bricks connects `cua-driver mcp`, which talks to that daemon.
 //! Turning it off closes the connection and stops the daemon Bricks
 //! launched. The choice is the `computer_use_enabled` preference; a run
 //! sees the tools as they are when it starts, deferred: their names are
@@ -28,8 +37,10 @@ use tokio::process::Command;
 
 /// The server's name: its tools are `mcp__computer-use__<tool>`.
 pub const SERVER: &str = "computer-use";
-/// The bundle Bricks looks for.
+/// The bundle Bricks looks for (macOS).
 const BUNDLE: &str = "CuaDriver.app";
+/// The executable Bricks looks for (Windows).
+const WINDOWS_EXE: &str = "cua-driver.exe";
 /// How long the daemon has to answer after its launch.
 const DAEMON_START: Duration = Duration::from_secs(15);
 /// The longest a driver command (status, stop, permissions) may take.
@@ -38,7 +49,8 @@ const COMMAND_LIMIT: Duration = Duration::from_secs(10);
 /// An installed driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Driver {
-    /// The `CuaDriver.app` bundle.
+    /// What is shown as its place: the `CuaDriver.app` bundle (macOS), the
+    /// executable itself (Windows).
     pub app: PathBuf,
     /// Its `cua-driver` executable.
     pub exe: PathBuf,
@@ -51,11 +63,29 @@ impl Driver {
         let exe = app.join("Contents/MacOS/cua-driver");
         exe.is_file().then_some(Self { app, exe, bundled })
     }
+
+    /// A bare executable (Windows).
+    fn exe_at(exe: PathBuf, bundled: bool) -> Option<Self> {
+        exe.is_file().then(|| Self {
+            app: exe.clone(),
+            exe,
+            bundled,
+        })
+    }
 }
 
-/// The driver to use: `BRICKS_CUA_DRIVER` (a bundle), the copy shipped in
-/// Bricks' resources, then `/Applications` and `~/Applications`.
+/// Whether Bricks can run the driver on this system.
+pub const fn supported() -> bool {
+    cfg!(any(target_os = "macos", target_os = "windows"))
+}
+
+/// The driver to use. macOS: `BRICKS_CUA_DRIVER` (a bundle), the copy
+/// shipped in Bricks' resources, then `/Applications` and `~/Applications`.
+/// Windows: see [`locate_windows`].
 pub fn locate() -> Option<Driver> {
+    if cfg!(target_os = "windows") {
+        return locate_windows();
+    }
     if !cfg!(target_os = "macos") {
         return None;
     }
@@ -73,6 +103,50 @@ fn candidates(bundled: Option<PathBuf>, home: Option<PathBuf>) -> Option<Driver>
         .and_then(|b| Driver::at(b, true))
         .or_else(|| Driver::at(Path::new("/Applications").join(BUNDLE), false))
         .or_else(|| home.and_then(|h| Driver::at(h.join("Applications").join(BUNDLE), false)))
+}
+
+/// Windows: `BRICKS_CUA_DRIVER` (the executable), a copy next to Bricks,
+/// the installer's folder, then the `PATH`.
+fn locate_windows() -> Option<Driver> {
+    let var = |key: &str| std::env::var_os(key).map(PathBuf::from);
+    if let Some(exe) = var("BRICKS_CUA_DRIVER") {
+        return Driver::exe_at(exe, false);
+    }
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    windows_candidates(
+        beside,
+        var("CUA_DRIVER_RS_INSTALL_DIR"),
+        var("LOCALAPPDATA"),
+        std::env::var_os("PATH"),
+    )
+}
+
+/// The Windows places in order: next to Bricks (shipped), the installer's
+/// folder (`CUA_DRIVER_RS_INSTALL_DIR`, else its default under
+/// `%LOCALAPPDATA%`), then each `PATH` entry.
+fn windows_candidates(
+    beside: Option<PathBuf>,
+    install_dir: Option<PathBuf>,
+    local_app_data: Option<PathBuf>,
+    path: Option<std::ffi::OsString>,
+) -> Option<Driver> {
+    let default_dir = local_app_data.map(|d| {
+        d.join("Programs")
+            .join("Cua")
+            .join("cua-driver")
+            .join("bin")
+    });
+    beside
+        .and_then(|d| Driver::exe_at(d.join(WINDOWS_EXE), true))
+        .or_else(|| install_dir.and_then(|d| Driver::exe_at(d.join(WINDOWS_EXE), false)))
+        .or_else(|| default_dir.and_then(|d| Driver::exe_at(d.join(WINDOWS_EXE), false)))
+        .or_else(|| {
+            path.and_then(|p| {
+                std::env::split_paths(&p).find_map(|d| Driver::exe_at(d.join(WINDOWS_EXE), false))
+            })
+        })
 }
 
 /// What is running now.
@@ -215,28 +289,33 @@ impl ComputerUse {
             .or_else(locate);
         let phase = self.phase.read().clone();
         let (state, error) = match (&driver, phase) {
-            _ if !cfg!(target_os = "macos") => (ComputerUseState::Unsupported, None),
+            _ if !supported() => (ComputerUseState::Unsupported, None),
             (None, _) => (ComputerUseState::Missing, None),
             (_, Phase::Off) => (ComputerUseState::Off, None),
             (_, Phase::Starting) => (ComputerUseState::Starting, None),
             (_, Phase::Ready) => (ComputerUseState::Ready, None),
             (_, Phase::Failed(e)) => (ComputerUseState::Error, Some(e)),
         };
+        // Only macOS has grants to check.
         let permissions = match &driver {
-            Some(d) => permissions(&d.exe).await,
-            None => None,
+            Some(d) if cfg!(target_os = "macos") => permissions(&d.exe).await,
+            _ => None,
         };
         let (accessibility, screen_recording) = permissions.unwrap_or_default();
+        let driver = match driver {
+            Some(d) => Some(ComputerUseDriver {
+                path: d.app.display().to_string(),
+                version: driver_version(&d).await,
+                bundled: d.bundled,
+            }),
+            None => None,
+        };
         ComputerUseStatus {
             enabled,
             state,
             error,
             tools: self.tools.read().len() as u32,
-            driver: driver.as_ref().map(|d| ComputerUseDriver {
-                path: d.app.display().to_string(),
-                version: bundle_version(&d.app),
-                bundled: d.bundled,
-            }),
+            driver,
             accessibility,
             screen_recording,
         }
@@ -301,10 +380,27 @@ async fn connect() -> Result<Running, String> {
     })
 }
 
-/// `open -n -g -a <bundle> --args serve --no-permissions-gate`: the daemon
-/// is its own responsible process, and reports its grants instead of
-/// showing the driver's onboarding window (Bricks shows them).
+/// Starts the daemon, then waits for it to answer.
 async fn launch_daemon(driver: &Driver) -> Result<(), String> {
+    if cfg!(target_os = "windows") {
+        spawn_daemon(driver)?;
+    } else {
+        open_daemon(driver).await?;
+    }
+    let deadline = tokio::time::Instant::now() + DAEMON_START;
+    while tokio::time::Instant::now() < deadline {
+        if daemon_running(&driver.exe).await {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Err(tr!(msg::CUA_DRIVER_DOESNT_ANSWER_AFTER_ITS))
+}
+
+/// macOS: `open -n -g -a <bundle> --args serve --no-permissions-gate`: the
+/// daemon is its own responsible process, and reports its grants instead of
+/// showing the driver's onboarding window (Bricks shows them).
+async fn open_daemon(driver: &Driver) -> Result<(), String> {
     let out = Command::new("open")
         .args(["-n", "-g", "-a"])
         .arg(&driver.app)
@@ -318,14 +414,25 @@ async fn launch_daemon(driver: &Driver) -> Result<(), String> {
             detail = String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let deadline = tokio::time::Instant::now() + DAEMON_START;
-    while tokio::time::Instant::now() < deadline {
-        if daemon_running(&driver.exe).await {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+    Ok(())
+}
+
+/// Windows: `cua-driver.exe serve` in the user's session, in its own process
+/// group and without a console window. It outlives the call; `stop` ends it.
+fn spawn_daemon(driver: &Driver) -> Result<(), String> {
+    let mut cmd = std::process::Command::new(&driver.exe);
+    cmd.arg("serve")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(bricks_types::process::DETACHED_NO_WINDOW);
     }
-    Err(tr!(msg::CUA_DRIVER_DOESNT_ANSWER_AFTER_ITS))
+    cmd.spawn()
+        .map(drop)
+        .map_err(|e| tr!(msg::CUA_DRIVER_COULD_NOT_BE_LAUNCHED, e = e))
 }
 
 async fn daemon_running(exe: &Path) -> bool {
@@ -364,6 +471,26 @@ fn parse_permissions(json: &str) -> Option<(PermissionState, PermissionState)> {
         None => PermissionState::Unknown,
     };
     Some((state("accessibility"), state("screen_recording")))
+}
+
+/// The driver's version: its bundle's (macOS), else what `--version` prints
+/// (`cua-driver 0.53.0` gives `0.53.0`).
+async fn driver_version(driver: &Driver) -> Option<String> {
+    if let Some(v) = bundle_version(&driver.app) {
+        return Some(v);
+    }
+    let (ok, out) = driver_command(&driver.exe, &["--version"]).await.ok()?;
+    ok.then(|| version_of(&out)).flatten()
+}
+
+/// The version in the first line: its last word, without a leading `v`,
+/// when it starts with a digit.
+fn version_of(text: &str) -> Option<String> {
+    let line = text.lines().next()?.trim();
+    let word = line.split_whitespace().last()?;
+    let word = word.trim_start_matches('v');
+    word.starts_with(|c: char| c.is_ascii_digit())
+        .then(|| word.to_string())
 }
 
 /// `CFBundleShortVersionString` of the bundle, read from its `Info.plist`.
@@ -410,6 +537,103 @@ mod tests {
             assert!(!found.bundled);
             assert_ne!(found.app, bundled);
         }
+    }
+
+    fn fake_exe(dir: &Path) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let exe = dir.join(WINDOWS_EXE);
+        std::fs::write(&exe, "").unwrap();
+        exe
+    }
+
+    #[test]
+    fn windows_looks_beside_bricks_then_the_installer_folders_then_the_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let beside = tmp.path().join("Bricks");
+        let custom = tmp.path().join("custom");
+        let local = tmp.path().join("Local");
+        let default = local
+            .join("Programs")
+            .join("Cua")
+            .join("cua-driver")
+            .join("bin");
+        let on_path = tmp.path().join("tools");
+        let path = std::env::join_paths([tmp.path().join("empty"), on_path.clone()]).unwrap();
+
+        // Only on the PATH.
+        let exe = fake_exe(&on_path);
+        let found = windows_candidates(
+            Some(beside.clone()),
+            Some(custom.clone()),
+            Some(local.clone()),
+            Some(path.clone()),
+        )
+        .unwrap();
+        assert_eq!(found.exe, exe);
+        assert_eq!(found.app, exe);
+        assert!(!found.bundled);
+
+        // The installer's default folder comes before the PATH.
+        let exe = fake_exe(&default);
+        let found = windows_candidates(
+            Some(beside.clone()),
+            Some(custom.clone()),
+            Some(local.clone()),
+            Some(path.clone()),
+        )
+        .unwrap();
+        assert_eq!(found.exe, exe);
+
+        // CUA_DRIVER_RS_INSTALL_DIR comes before the default folder.
+        let exe = fake_exe(&custom);
+        let found = windows_candidates(
+            Some(beside.clone()),
+            Some(custom.clone()),
+            Some(local.clone()),
+            Some(path.clone()),
+        )
+        .unwrap();
+        assert_eq!(found.exe, exe);
+
+        // A copy next to Bricks comes first, and is the shipped one.
+        let exe = fake_exe(&beside);
+        let found =
+            windows_candidates(Some(beside), Some(custom), Some(local), Some(path)).unwrap();
+        assert_eq!(found.exe, exe);
+        assert!(found.bundled);
+    }
+
+    #[test]
+    fn windows_finds_nothing_without_an_executable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("bin");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = std::env::join_paths([dir.clone()]).unwrap();
+        assert!(
+            windows_candidates(Some(dir.clone()), Some(dir.clone()), Some(dir), Some(path))
+                .is_none()
+        );
+        assert!(windows_candidates(None, None, None, None).is_none());
+    }
+
+    #[test]
+    fn the_version_is_read_from_the_first_line() {
+        assert_eq!(
+            version_of("cua-driver 0.53.0\nbuilt today").as_deref(),
+            Some("0.53.0")
+        );
+        assert_eq!(version_of("cua-driver v0.2.7").as_deref(), Some("0.2.7"));
+        assert_eq!(version_of("0.51.1").as_deref(), Some("0.51.1"));
+        assert_eq!(version_of("cua-driver").as_deref(), None);
+        assert_eq!(version_of("").as_deref(), None);
+    }
+
+    #[test]
+    fn this_build_supports_the_driver_on_macos_and_windows_only() {
+        assert_eq!(
+            supported(),
+            cfg!(any(target_os = "macos", target_os = "windows"))
+        );
     }
 
     #[test]

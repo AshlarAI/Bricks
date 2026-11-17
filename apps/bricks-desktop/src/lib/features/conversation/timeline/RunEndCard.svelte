@@ -1,6 +1,6 @@
 <script lang="ts">
-  // End of a response, under its answer: why it did not succeed, when it did not,
-  // then the files it changed (cumulative counts of the applied operations). Each
+  // End of a response, under its answer: why it stopped early (an error shows in the banner
+  // above the composer), then the files it changed (cumulative counts of the applied operations). Each
   // file opens its changes in the reader, or shows itself in the Finder. The time
   // worked is in the bar of its steps (WorkBlock.svelte).
   import { localeTag, t } from '$lib/i18n/i18n.svelte'
@@ -75,13 +75,10 @@
   }
 </script>
 
-{#if reason || summary.error || unsatisfied > 0 || files.length > 0}
+{#if reason || unsatisfied > 0 || files.length > 0}
 <div class="flex flex-col gap-2">
   {#if reason}
     <p class="text-xs break-words text-warning">{t('conversation.reason', { reason })}</p>
-  {/if}
-  {#if summary.error}
-    <p class="text-xs break-words whitespace-pre-wrap text-destructive">{t('conversation.error', { error: summary.error })}</p>
   {/if}
   {#if unsatisfied > 0}
     <p class="text-xs text-warning">

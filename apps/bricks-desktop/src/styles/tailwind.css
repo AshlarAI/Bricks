@@ -57,6 +57,7 @@
 	/* Interaction surfaces and lines, in the grammar of Atlas: an overlay of the text colour,
 	   so they follow light, dark and the custom colours. */
 	--color-element-hover: var(--element-hover);
+	--color-surface: var(--surface);
 	--color-element-selected: var(--element-selected);
 	--color-element-active: var(--element-active);
 	--color-border-subtle: var(--border-subtle);
