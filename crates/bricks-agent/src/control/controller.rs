@@ -63,6 +63,11 @@ pub trait ModelCatalog: Send + Sync {
     /// The provider of `selection`, with `reasoning` checked against the
     /// model's profiles.
     fn build(&self, selection: &str, reasoning: Option<&str>) -> Result<Box<dyn Provider>, String>;
+    /// `selection` is configured, offered in the lists or not (a disabled
+    /// model still serves the sessions that use it).
+    fn knows(&self, selection: &str) -> bool {
+        self.models().iter().any(|c| c.selection == selection)
+    }
     /// Changes whenever the models or their parameters change. A session
     /// rebuilds its provider at its next run when this differs from the
     /// revision its provider was built with. Constant catalogs keep the
@@ -73,6 +78,10 @@ pub trait ModelCatalog: Send + Sync {
 }
 
 impl ModelCatalog for bricks_provider::ProviderRegistry {
+    fn knows(&self, selection: &str) -> bool {
+        self.resolve(selection).is_ok()
+    }
+
     fn models(&self) -> Vec<ModelChoice> {
         self.models()
             .iter()
@@ -778,12 +787,7 @@ fn prepare(
                     meta.model = m.to_string();
                     meta.reasoning = None;
                 }
-            } else if !cfg
-                .catalog
-                .models()
-                .iter()
-                .any(|c| c.selection == meta.model)
-            {
+            } else if !cfg.catalog.knows(&meta.model) {
                 return Err(format!(
                     "the session's model `{}` is no longer configured; choose one with --model \
                      ({}); none is substituted",
@@ -1092,7 +1096,10 @@ impl Controller {
     /// title only if it is still `provisional`: a rename meanwhile wins.
     fn spawn_title(&self, agent: &Arc<Agent>, prompt: String, provisional: String) {
         let provider = agent.provider();
-        let selection = self.inner.meta.lock().model.clone();
+        let (selection, session_id) = {
+            let meta = self.inner.meta.lock();
+            (meta.model.clone(), meta.id.clone())
+        };
         let profile = self
             .inner
             .cfg
@@ -1106,8 +1113,13 @@ impl Controller {
             });
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
-            let Some(title) =
-                super::title::generate(provider.as_ref(), &prompt, profile.as_deref()).await
+            let Some(title) = super::title::generate(
+                provider.as_ref(),
+                &prompt,
+                profile.as_deref(),
+                Some(&session_id),
+            )
+            .await
             else {
                 return;
             };

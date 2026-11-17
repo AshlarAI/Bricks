@@ -9,6 +9,7 @@
 	import Palette from '@lucide/svelte/icons/palette';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import Cpu from '@lucide/svelte/icons/cpu';
+	import ChartColumn from '@lucide/svelte/icons/chart-column';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import AppWindow from '@lucide/svelte/icons/app-window';
 	import Brain from '@lucide/svelte/icons/brain';
@@ -16,6 +17,7 @@
 	import AppearanceSettings from './AppearanceSettings.svelte';
 	import GeneralSettings from './GeneralSettings.svelte';
 	import ModelSettings from './ModelSettings.svelte';
+	import UsageSettings from './UsageSettings.svelte';
 	import SkillsSettings from './SkillsSettings.svelte';
 	import ApplicationSettings from './ApplicationSettings.svelte';
 	import MemorySettings from './MemorySettings.svelte';
@@ -24,7 +26,7 @@
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
-	type SectionId = 'appearance' | 'general' | 'memory' | 'models' | 'skills' | 'extensions' | 'application';
+	type SectionId = 'appearance' | 'general' | 'memory' | 'models' | 'usage' | 'skills' | 'extensions' | 'application';
 
 	const SECTIONS: {
 		id: SectionId;
@@ -35,6 +37,7 @@
 		{ id: 'general', get label() { return t('settings.general') }, icon: SlidersHorizontal },
 		{ id: 'memory', get label() { return t('common.memory') }, icon: Brain },
 		{ id: 'models', get label() { return t('settings.models') }, icon: Cpu },
+		{ id: 'usage', get label() { return t('common.usage') }, icon: ChartColumn },
 		{ id: 'skills', get label() { return t('common.skills') }, icon: Sparkles },
 		{ id: 'extensions', get label() { return t('settings.extensions') }, icon: Plug },
 		{ id: 'application', get label() { return t('settings.application') }, icon: AppWindow }
@@ -113,6 +116,13 @@
 				<ScrollArea class="h-full">
 					<div class="p-6">
 						<ModelSettings />
+					</div>
+				</ScrollArea>
+			</Tabs.Content>
+			<Tabs.Content value="usage" class="min-h-0 flex-1">
+				<ScrollArea class="h-full">
+					<div class="p-6">
+						<UsageSettings />
 					</div>
 				</ScrollArea>
 			</Tabs.Content>

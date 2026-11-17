@@ -52,6 +52,11 @@ impl ModelCatalog for DesktopCatalog {
         }
     }
 
+    fn knows(&self, selection: &str) -> bool {
+        self.registry()
+            .is_ok_and(|registry| <ProviderRegistry as ModelCatalog>::knows(&registry, selection))
+    }
+
     /// A removed model is an error here: nothing substitutes it.
     fn build(&self, selection: &str, reasoning: Option<&str>) -> Result<Box<dyn Provider>, String> {
         let registry = self.registry()?;

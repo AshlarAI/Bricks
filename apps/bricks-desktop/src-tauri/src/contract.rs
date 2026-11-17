@@ -1028,6 +1028,74 @@ pub struct ProviderView {
     /// Names of extra headers (values are secrets).
     pub header_names: Vec<String>,
     pub models: Vec<ModelView>,
+    /// The brand whose logo the settings show (`opencode`), read from the
+    /// endpoint; `None` for any other endpoint.
+    pub logo: Option<String>,
+}
+
+/// What the model responses consumed, per day, provider and model (the
+/// « Usage » settings), oldest day first.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UsageStats {
+    pub rows: Vec<UsageRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UsageRow {
+    /// Local day, `YYYY-MM-DD`.
+    pub date: String,
+    pub provider: String,
+    pub model: String,
+    pub requests: u32,
+    /// Conversations that used the model that day.
+    pub sessions: u32,
+    #[ts(type = "number")]
+    pub input_tokens: u64,
+    #[ts(type = "number")]
+    pub output_tokens: u64,
+    #[ts(type = "number")]
+    pub cache_read_input_tokens: u64,
+    #[ts(type = "number")]
+    pub cache_creation_input_tokens: u64,
+    /// The cost of the priced responses, in USD (charged, for a gateway that
+    /// says what it charged).
+    pub cost_usd: f64,
+    /// Responses with no known price: `cost_usd` leaves them out.
+    pub unpriced_requests: u32,
+}
+
+/// How much of OpenCode Go's limits is used.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct GoQuota {
+    pub windows: Vec<GoQuotaWindow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct GoQuotaWindow {
+    /// `rolling` (5 hours), `weekly` or `monthly`.
+    pub id: String,
+    /// 0 to 100.
+    pub percent: f64,
+    /// When the window starts over (ISO 8601).
+    pub resets_at: Option<String>,
+    pub status: Option<String>,
+}
+
+/// A provider Bricks adds in one step, models included: OpenCode Go or Zen
+/// through one of its three APIs.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ProviderTemplate {
+    /// Also the id of the provider it creates (`opencode-go-chat`).
+    pub id: String,
+    pub name: String,
+    /// `OpenCode Go` or `OpenCode Zen`: the group of the picker.
+    pub brand: String,
+    pub logo: String,
+    pub endpoint: String,
+    /// `chat_completions` | `responses` | `anthropic_messages`.
+    pub protocol: String,
+    /// Where the key is created.
+    pub key_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1045,6 +1113,8 @@ pub struct ModelView {
     pub streaming: bool,
     /// Tools start while the answer still streams.
     pub async_tool_calls: bool,
+    /// Offered in the model lists.
+    pub enabled: bool,
     #[ts(type = "number")]
     pub max_input_tokens: u64,
     #[ts(type = "number")]
@@ -1118,6 +1188,9 @@ pub struct ModelPatch {
     /// Tools start while the answer still streams (the default); `true`
     /// removes the key, `false` writes it.
     pub async_tool_calls: Option<bool>,
+    /// Offered in the model lists (the default); `true` removes the key,
+    /// `false` writes it.
+    pub enabled: Option<bool>,
 }
 
 // ─── colours, reasoning profiles, skills catalogue ─────────────

@@ -243,6 +243,7 @@ pub(crate) fn parse_usage(u: &Value) -> Usage {
         output_tokens: n(&u["output_tokens"]),
         cache_creation_input_tokens: n(&u["cache_creation_input_tokens"]),
         cache_read_input_tokens: n(&u["cache_read_input_tokens"]),
+        billing: bricks_types::Billing::from_usage(u),
         ..Default::default()
     };
     if let Some(by_ttl) = u["cache_creation"].as_object() {
@@ -666,6 +667,27 @@ mod tests {
                 .provider_usage
                 .is_null()
         );
+    }
+
+    #[test]
+    fn opencode_billing_is_read_from_usage() {
+        let u = parse_usage(&json!({
+            "input_tokens": 50, "output_tokens": 70, "cost": 0.0123,
+            "opencode": {"billing_source": "go-plus", "allowance": 0.01}
+        }));
+        let b = u.billing.expect("OpenCode billing");
+        assert_eq!(
+            (
+                b.source.as_str(),
+                b.charged_usd,
+                b.list_usd,
+                b.allowance_usd,
+                b.estimated
+            ),
+            ("go-plus", 0.0123, None, Some(0.01), false)
+        );
+        let plain = parse_usage(&json!({"input_tokens": 1, "output_tokens": 1, "cost": 0.5}));
+        assert!(plain.billing.is_none());
     }
 
     #[test]

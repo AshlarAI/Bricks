@@ -17,6 +17,7 @@ const PROVIDER: ProviderView = {
 	has_credentials: true,
 	path: null,
 	header_names: [],
+	logo: null,
 	models: []
 };
 

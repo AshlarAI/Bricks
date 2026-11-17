@@ -117,6 +117,7 @@ impl AppState {
         providers_path: PathBuf,
     ) -> Self {
         let desktop = home.join("desktop");
+        crate::services::usage_ledger::init(desktop.join("usage.jsonl"));
         let projects = ProjectStore::load(desktop.join("projects.json"));
         let prefs = Arc::new(PrefsStore::at(desktop.join("preferences.json")));
         let journal = Arc::new(ChangeJournal::at(desktop.join("changes")));

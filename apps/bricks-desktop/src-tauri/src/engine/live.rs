@@ -414,6 +414,9 @@ pub fn ingest(hub: &Arc<Hub>, entry: &Arc<OpenSession>, env: Envelope) {
     let mut attachment_record = None;
     let mut record = None;
     let mut revised = None;
+    // A response to record in the usage ledger: the model (`None`: the
+    // session's current one) and what it consumed.
+    let mut spent: Option<(Option<String>, bricks_types::Usage)> = None;
     {
         let mut live = entry.live.lock();
         live.last_seq = env.seq;
@@ -518,6 +521,10 @@ pub fn ingest(hub: &Arc<Hub>, entry: &Arc<OpenSession>, env: Envelope) {
                     files,
                 ));
             }
+            Event::Usage { turn, .. } => spent = Some((None, (**turn).clone())),
+            Event::AgentFinished { result } => {
+                spent = Some((Some(result.model.clone()), result.usage.clone()));
+            }
             _ => {}
         }
         // A finished run's record is written again when a late event (a
@@ -532,6 +539,27 @@ pub fn ingest(hub: &Arc<Hub>, entry: &Arc<OpenSession>, env: Envelope) {
             project_id: Some(entry.project_id.clone()),
             envelope: value,
         });
+    }
+    if let Some((model, usage)) = spent
+        && let Some(ledger) = crate::services::usage_ledger::global()
+    {
+        let model = model.unwrap_or_else(|| entry.controller.snapshot().model);
+        if let Some(line) = crate::services::usage_ledger::UsageEntry::new(
+            env.at,
+            &entry.session_id,
+            &model,
+            &usage,
+        ) {
+            let write = move || {
+                if let Err(e) = ledger.append(&line) {
+                    eprintln!("bricks: usage ledger: {e}");
+                }
+            };
+            match tokio::runtime::Handle::try_current() {
+                Ok(runtime) => drop(runtime.spawn_blocking(write)),
+                Err(_) => write(),
+            }
+        }
     }
     if let Some(running) = running_changed {
         hub.publish(DesktopEvent::SessionState {

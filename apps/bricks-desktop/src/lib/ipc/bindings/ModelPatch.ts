@@ -20,4 +20,9 @@ profiles: Array<ReasoningProfileEdit> | null,
  * Tools start while the answer still streams (the default); `true`
  * removes the key, `false` writes it.
  */
-async_tool_calls: boolean | null, };
+async_tool_calls: boolean | null, 
+/**
+ * Offered in the model lists (the default); `true` removes the key,
+ * `false` writes it.
+ */
+enabled: boolean | null, };

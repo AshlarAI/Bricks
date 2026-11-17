@@ -21,4 +21,9 @@ has_credentials: boolean, path: string | null,
 /**
  * Names of extra headers (values are secrets).
  */
-header_names: Array<string>, models: Array<ModelView>, };
+header_names: Array<string>, models: Array<ModelView>, 
+/**
+ * The brand whose logo the settings show (`opencode`), read from the
+ * endpoint; `None` for any other endpoint.
+ */
+logo: string | null, };

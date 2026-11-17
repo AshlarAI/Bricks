@@ -102,6 +102,12 @@ pub struct AgentIdentity {
     pub root_run_id: String,
 }
 
+/// The conversation a sub-agent works in: the session that started its root
+/// run. Model requests name it to gateways that route or cache by
+/// conversation.
+#[derive(Debug, Clone)]
+pub struct ConversationId(pub String);
+
 /// The parent's model and reasoning profile, as of the current run.
 #[derive(Debug, Clone)]
 pub struct ParentModel {
@@ -2045,6 +2051,9 @@ impl AgentSpawner {
         }
         if let Some(c) = &pc.shell {
             ext.insert(c.clone());
+        }
+        if !self.session_id.is_empty() {
+            ext.insert(ConversationId(self.session_id.clone()));
         }
         ext.insert(AgentIdentity {
             agent_id: info.agent_id.clone(),

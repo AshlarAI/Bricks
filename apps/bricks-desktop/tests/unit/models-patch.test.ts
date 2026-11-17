@@ -25,6 +25,7 @@ const provider: ProviderView = {
 	has_credentials: true,
 	path: null,
 	header_names: [],
+	logo: null,
 	models: []
 };
 
@@ -39,6 +40,7 @@ const model: ModelView = {
 	output_modalities: ['text'],
 	streaming: true,
 	async_tool_calls: false,
+	enabled: true,
 	max_input_tokens: 128000,
 	max_output_tokens: 8192,
 	profiles: [

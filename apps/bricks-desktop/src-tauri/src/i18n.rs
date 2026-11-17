@@ -88,6 +88,10 @@ messages! {
     A_MODEL_ALREADY_EXISTS_IN_THIS: "a model “{id}” already exists in this provider", "un modèle « {id} » existe déjà dans ce fournisseur";
     A_PAGE_HOLDS_1_TO_50: "a page holds 1 to 50 entries", "une page compte de 1 à 50 entrées";
     A_PROVIDER_ALREADY_EXISTS: "a provider “{id}” already exists", "un fournisseur « {id} » existe déjà";
+    CATALOG_HAS_NO_MODEL: "the model catalog lists no model for {name}", "le catalogue de modèles ne liste aucun modèle pour {name}";
+    MODEL_TEST_TIMED_OUT: "no reply within 60 seconds", "pas de réponse en 60 secondes";
+    CATALOG_UNREACHABLE: "could not read the model catalog (models.dev): {e}", "impossible de lire le catalogue de modèles (models.dev) : {e}";
+    UNKNOWN_TEMPLATE: "unknown provider template “{id}”", "modèle de fournisseur inconnu « {id} »";
     A_RANGE_END_WITH_NO_START: "a range end with no start line", "une fin de plage sans ligne de début";
     A_RUN_IS_IN_PROGRESS_CANCEL: "a run is in progress: cancel it or wait for it to finish", "une exécution est en cours : annulez-la ou attendez sa fin";
     BINARY_FILE: "binary file", "fichier binaire";

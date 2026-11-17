@@ -36,6 +36,7 @@ const model: ModelView = {
 	output_modalities: ['text'],
 	streaming: true,
 	async_tool_calls: false,
+	enabled: true,
 	max_input_tokens: 128000,
 	max_output_tokens: 8192,
 	profiles: [],
@@ -71,6 +72,7 @@ function providerWith(models: ModelView[]): ProviderView {
 		has_credentials: false,
 		path: null,
 		header_names: [],
+		logo: null,
 		models
 	};
 }
@@ -170,7 +172,8 @@ describe('buildModelCreatePatch', () => {
 			input_modalities: ['text', 'image', 'document'],
 			pricing: { input: '0.30', output: '1.20', cache_read: '0' },
 			profiles: null,
-			async_tool_calls: null
+			async_tool_calls: null,
+			enabled: null
 		});
 	});
 

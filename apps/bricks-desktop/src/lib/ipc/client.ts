@@ -356,6 +356,11 @@ export const projectFiles = (projectId: string, query: string, limit = 50, refre
 export type * from './bindings/PermissionsDefault'
 export type * from './bindings/ProvidersFile'
 export type * from './bindings/ProviderView'
+export type * from './bindings/ProviderTemplate'
+export type * from './bindings/UsageStats'
+export type * from './bindings/UsageRow'
+export type * from './bindings/GoQuota'
+export type * from './bindings/GoQuotaWindow'
 export type * from './bindings/ModelView'
 export type * from './bindings/ModelProfileView'
 export type * from './bindings/ProviderPatch'
@@ -363,6 +368,9 @@ export type * from './bindings/ModelPatch'
 export type * from './bindings/PricingView'
 export type * from './bindings/PricingEdit'
 import type { ProvidersFile } from './bindings/ProvidersFile'
+import type { ProviderTemplate } from './bindings/ProviderTemplate'
+import type { UsageStats } from './bindings/UsageStats'
+import type { GoQuota } from './bindings/GoQuota'
 import type { ProviderPatch } from './bindings/ProviderPatch'
 import type { ModelPatch } from './bindings/ModelPatch'
 
@@ -375,6 +383,8 @@ export const modelUpdate = (providerId: string, modelId: string, patch: ModelPat
   call<ProvidersFile>('model_update', { providerId, modelId, patch, revision })
 export const providerDelete = (providerId: string, revision: string) =>
   call<ProvidersFile>('provider_delete', { providerId, revision })
+/** Sends a short prompt to the model as configured; resolves with the reply time in milliseconds. */
+export const modelTest = (providerId: string, modelId: string) => call<number>('model_test', { providerId, modelId })
 export const modelDelete = (providerId: string, modelId: string, revision: string) =>
   call<ProvidersFile>('model_delete', { providerId, modelId, revision })
 export const providerCreate = (providerId: string, patch: ProviderPatch, revision: string) =>
@@ -384,6 +394,15 @@ export const modelCreate = (providerId: string, modelId: string, patch: ModelPat
 /** Writes 0 for every missing input, output and cache-read price, in one edit. */
 export const providersFillMissingPrices = (revision: string) =>
   call<ProvidersFile>('providers_fill_missing_prices', { revision })
+/** The providers Bricks adds in one step (OpenCode Go and Zen, one API each). */
+export const providerTemplates = () => call<ProviderTemplate[]>('provider_templates')
+/** Adds a template's provider with its current models (read from models.dev) and the key. */
+export const providerCreateFromTemplate = (templateId: string, apiKey: string | null, revision: string) =>
+  call<ProvidersFile>('provider_create_from_template', { templateId, apiKey, revision })
+/** Daily usage per provider and model, from the usage ledger. */
+export const usageStats = () => call<UsageStats>('usage_stats')
+/** How much of OpenCode Go's limits the provider's key has used; null when unknown. */
+export const usageGoQuota = (providerId: string) => call<GoQuota | null>('usage_go_quota', { providerId })
 
 // ─── skills catalogue, colours, reasoning profiles ──────────────
 

@@ -325,6 +325,14 @@ pub struct ModelConfig {
     /// redone behind a call that started.
     #[serde(default = "async_tool_calls_default")]
     pub async_tool_calls: bool,
+    /// Offered in the model lists (default). A disabled model stays
+    /// configured, and a session that already uses it keeps it.
+    #[serde(default = "enabled_default")]
+    pub enabled: bool,
+}
+
+fn enabled_default() -> bool {
+    true
 }
 
 /// `async_tool_calls` of a model that does not set it.

@@ -44,6 +44,14 @@ pub enum Edit {
         model_id: String,
         patch: ModelPatch,
     },
+    /// A provider and its streamed models in one go (a template), under
+    /// `base_id` or, when taken, the first free `base_id-2`, `base_id-3`…
+    /// (the name gets the same number).
+    ProviderCreateWithModels {
+        base_id: String,
+        patch: ProviderPatch,
+        models: Vec<(String, ModelPatch)>,
+    },
     /// Every model without a price for input, output or cache read gets `0`
     /// for it (USD per million tokens). Prices already written are kept.
     FillMissingPrices,
@@ -183,6 +191,44 @@ pub fn apply(text: &str, edit: &Edit, origin: &str) -> IpcResult<String> {
             apply_model_patch(&mut table, patch)?;
             models.push(table);
             separate_last(models);
+        }
+        Edit::ProviderCreateWithModels {
+            base_id,
+            patch,
+            models,
+        } => {
+            let base = new_id(&tr!(msg::PROVIDER_IDENTIFIER), base_id)?;
+            let providers = providers_array_mut(&mut doc)?;
+            let (id, number) = (1..)
+                .map(|n: u32| match n {
+                    1 => (base.to_string(), n),
+                    _ => (format!("{base}-{n}"), n),
+                })
+                .find(|(id, _)| provider_index(providers, id).is_err())
+                .unwrap_or_else(|| (base.to_string(), 1));
+            let mut patch = patch.clone();
+            if number > 1 {
+                patch.name = patch.name.map(|name| format!("{name} {number}"));
+            }
+            let mut table = Table::new();
+            set_str(&mut table, "id", &id);
+            apply_provider_patch(&mut table, &patch)?;
+            let list = models_array_mut(&mut table)?;
+            for (model_id, model) in models {
+                let model_id = new_id(&tr!(msg::MODEL_IDENTIFIER), model_id)?;
+                if model_index(list, model_id).is_ok() {
+                    continue;
+                }
+                let mut entry = Table::new();
+                set_str(&mut entry, "id", model_id);
+                entry.insert("limits", Item::Table(Table::new()));
+                apply_model_patch(&mut entry, model)?;
+                set_value(&mut entry, "streaming", Value::from(true));
+                list.push(entry);
+                separate_last(list);
+            }
+            providers.push(table);
+            separate_last(providers);
         }
         Edit::FillMissingPrices => {
             if let Some(providers) = doc.get_mut("providers") {
@@ -400,6 +446,13 @@ fn apply_model_patch(table: &mut Table, patch: &ModelPatch) -> IpcResult<()> {
         Some(false) => set_value(table, "async_tool_calls", Value::from(false)),
         Some(true) => {
             table.remove("async_tool_calls");
+        }
+        None => {}
+    }
+    match patch.enabled {
+        Some(false) => set_value(table, "enabled", Value::from(false)),
+        Some(true) => {
+            table.remove("enabled");
         }
         None => {}
     }
@@ -891,6 +944,24 @@ mod tests {
             provider_id: provider.into(),
             patch,
         }
+    }
+
+    #[test]
+    fn a_model_is_disabled_by_writing_enabled_false() {
+        let set = |value| {
+            model_update(
+                "local",
+                "small",
+                ModelPatch {
+                    enabled: Some(value),
+                    ..Default::default()
+                },
+            )
+        };
+        let off = apply(PROVIDERS, &set(false), "test").unwrap();
+        assert!(off.contains("enabled = false"), "{off}");
+        let back = apply(&off, &set(true), "test").unwrap();
+        assert_eq!(back, PROVIDERS);
     }
 
     #[test]

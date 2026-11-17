@@ -372,6 +372,69 @@ pub struct Usage {
     /// Provider-specific usage data not covered by the fields above.
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub provider_usage: Value,
+    /// What a billing gateway (OpenCode Go or Zen) reported it charged.
+    /// When present, it is the cost, rather than an estimate from prices.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing: Option<Billing>,
+}
+
+/// The cost a gateway reports with its usage (OpenCode's `usage.cost` and
+/// `usage.opencode`), in US dollars.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct Billing {
+    /// Who paid: `free`, `balance`, `go`, `go-plus` or `byok`; several joined
+    /// with `+` in a total.
+    pub source: String,
+    /// Charged to the balance (0 for free models and for Go within its limits).
+    pub charged_usd: f64,
+    /// The same tokens at the model's list price.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_usd: Option<f64>,
+    /// Go only: how much the request counted toward the plan's limits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowance_usd: Option<f64>,
+    /// `charged_usd` is an estimate (with the user's own provider key).
+    #[serde(default)]
+    pub estimated: bool,
+}
+
+impl Billing {
+    /// The billing of a gateway usage object, when it has one: OpenCode adds
+    /// `cost` and an `opencode` object next to the token counts.
+    pub fn from_usage(u: &Value) -> Option<Billing> {
+        let oc = u.get("opencode")?.as_object()?;
+        let f = |v: Option<&Value>| v.and_then(Value::as_f64);
+        let source = oc
+            .get("billing_source")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        // Without `cost`, nothing says what was charged (a free model costs 0):
+        // the configured price then stays the estimate.
+        let charged_usd = f(u.get("cost")).or_else(|| (source == "free").then_some(0.0))?;
+        Some(Billing {
+            source,
+            charged_usd,
+            list_usd: f(oc.get("list_cost")),
+            allowance_usd: f(oc.get("allowance")),
+            estimated: oc.get("estimated").and_then(Value::as_bool) == Some(true),
+        })
+    }
+
+    /// The bill of two requests.
+    fn add(&mut self, other: &Billing) {
+        let add = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
+        };
+        if !self.source.split('+').any(|s| s == other.source) {
+            self.source = format!("{}+{}", self.source, other.source);
+        }
+        self.charged_usd += other.charged_usd;
+        self.list_usd = add(self.list_usd, other.list_usd);
+        self.allowance_usd = add(self.allowance_usd, other.allowance_usd);
+        self.estimated |= other.estimated;
+    }
 }
 
 /// A cost estimate in USD, with the information needed to read it honestly.
@@ -460,6 +523,11 @@ impl Usage {
         } else if other.cost_usd.is_some() {
             self.cost_usd = other.cost_usd;
         }
+        match (&mut self.billing, &other.billing) {
+            (Some(a), Some(b)) => a.add(b),
+            (None, Some(b)) => self.billing = Some(b.clone()),
+            _ => {}
+        }
     }
 
     /// Merge for usage events WITHIN one streamed message, where counters are
@@ -483,6 +551,9 @@ impl Usage {
         self.total_tokens = self.input_tokens + self.output_tokens;
         if other.cost_usd.is_some() {
             self.cost_usd = other.cost_usd;
+        }
+        if other.billing.is_some() {
+            self.billing = other.billing.clone();
         }
     }
 }
@@ -788,6 +859,7 @@ pub struct MemoryEntry {
 #[cfg(test)]
 mod usage_tests {
     use super::*;
+    use serde_json::json;
 
     /// P3 #2: the cache accounting fields are first-class and must survive
     /// cross-request accumulation (session totals, CostTracker).
@@ -840,6 +912,123 @@ mod usage_tests {
             ..Default::default()
         });
         assert_eq!((msg.input_tokens, msg.output_tokens), before);
+    }
+
+    /// The bill of one gateway request, paid from `source`.
+    fn bill(source: &str, charged: f64) -> Usage {
+        Usage {
+            billing: Some(Billing {
+                source: source.into(),
+                charged_usd: charged,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn billing_reads_the_opencode_usage_object() {
+        let u = json!({
+            "prompt_tokens": 1000,
+            "completion_tokens": 300,
+            "cost": 0.0042,
+            "opencode": {
+                "billing_source": "go",
+                "list_cost": 0.0061,
+                "allowance": 0.0042,
+                "estimated": true
+            }
+        });
+        assert_eq!(
+            Billing::from_usage(&u),
+            Some(Billing {
+                source: "go".into(),
+                charged_usd: 0.0042,
+                list_usd: Some(0.0061),
+                allowance_usd: Some(0.0042),
+                estimated: true,
+            })
+        );
+        // Without the `opencode` object there is no billing, whatever `cost` says.
+        assert_eq!(Billing::from_usage(&json!({"cost": 0.5})), None);
+    }
+
+    #[test]
+    fn missing_cost_is_zero_only_for_a_free_model() {
+        assert!(Billing::from_usage(&json!({"opencode": {"billing_source": "go"}})).is_none());
+        let b = Billing::from_usage(&json!({"opencode": {"billing_source": "free"}})).unwrap();
+        assert_eq!(b.source, "free");
+        assert_eq!(
+            (b.charged_usd, b.list_usd, b.allowance_usd),
+            (0.0, None, None)
+        );
+        assert!(!b.estimated);
+    }
+
+    #[test]
+    fn billing_merge_sums_and_joins_sources() {
+        let mut total = Usage::default();
+        total.merge(&bill("go", 0.5));
+        total.merge(&bill("go", 0.25));
+        let b = total.billing.clone().unwrap();
+        assert_eq!(b.source, "go", "the same source is not repeated");
+        assert_eq!(b.charged_usd, 0.75);
+
+        total.merge(&bill("balance", 0.1));
+        let b = total.billing.clone().unwrap();
+        assert_eq!(b.source, "go+balance");
+        assert!((b.charged_usd - 0.85).abs() < 1e-9, "{b:?}");
+
+        // A request without billing leaves the total unchanged.
+        total.merge(&Usage::default());
+        assert_eq!(
+            total.billing.as_ref().map(|b| b.source.as_str()),
+            Some("go+balance")
+        );
+    }
+
+    #[test]
+    fn billing_merge_ors_estimated_and_keeps_none_only_when_both_are_none() {
+        let mut total = Usage::default();
+        total.merge(&bill("go", 0.1));
+        assert_eq!(total.billing.as_ref().unwrap().list_usd, None);
+
+        total.merge(&Usage {
+            billing: Some(Billing {
+                source: "go".into(),
+                list_usd: Some(0.2),
+                estimated: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let b = total.billing.unwrap();
+        assert_eq!(b.list_usd, Some(0.2), "a missing side counts as zero");
+        assert_eq!(
+            b.allowance_usd, None,
+            "None stays None when both sides lack it"
+        );
+        assert!(b.estimated);
+    }
+
+    /// Within one message a billing snapshot replaces the earlier one, since
+    /// the gateway reports a running total; a snapshot without billing keeps it.
+    #[test]
+    fn merge_cumulative_replaces_billing() {
+        let mut msg = bill("go", 0.1);
+        msg.merge_cumulative(&Usage {
+            output_tokens: 5,
+            ..Default::default()
+        });
+        assert_eq!(msg.billing.as_ref().map(|b| b.charged_usd), Some(0.1));
+
+        msg.merge_cumulative(&bill("balance", 0.3));
+        let b = msg.billing.unwrap();
+        assert_eq!(
+            (b.source.as_str(), b.charged_usd),
+            ("balance", 0.3),
+            "replaced, not summed or joined"
+        );
     }
 }
 

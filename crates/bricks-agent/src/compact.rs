@@ -400,6 +400,9 @@ pub struct CompactionPlan {
     pub frame_tokens: u64,
     /// Extra instructions for the summariser.
     pub instructions: Option<String>,
+    /// The conversation the summary call belongs to (see
+    /// [`bricks_provider::SESSION_ID_OPTION`]).
+    pub session_id: Option<String>,
 }
 
 /// What a compaction did. Anything but `Compacted` leaves the history as it
@@ -820,6 +823,10 @@ pub async fn compact_history_with(
         });
     }
     let transcript = render_for_summary(old, call_budget, est);
+    let mut options = bricks_provider::ProviderOptions::default();
+    if let Some(id) = &plan.session_id {
+        options.set(bricks_provider::SESSION_ID_OPTION, id);
+    }
     let request = bricks_provider::CompletionRequest {
         model: String::new(),
         messages: vec![Message::user(format!(
@@ -831,7 +838,7 @@ pub async fn compact_history_with(
         max_tokens: plan.summary_max_tokens,
         temperature: None,
         stop_sequences: Vec::new(),
-        options: bricks_provider::ProviderOptions::default(),
+        options,
         output_modalities: Vec::new(),
     };
 
@@ -1216,6 +1223,7 @@ mod tests {
             min_gain: 0.2,
             frame_tokens: 300,
             instructions: None,
+            session_id: None,
         }
     }
 

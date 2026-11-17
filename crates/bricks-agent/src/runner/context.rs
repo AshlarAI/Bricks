@@ -292,6 +292,7 @@ pub(super) async fn run_compaction(
         min_gain: policy.min_compaction_gain,
         frame_tokens,
         instructions: None,
+        session_id: super::conversation_id(agent),
     };
     let run = compact_history_with(
         agent.provider().as_ref(),

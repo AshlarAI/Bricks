@@ -222,6 +222,7 @@ fn plan() -> CompactionPlan {
         min_gain: 0.1,
         frame_tokens: 0,
         instructions: None,
+        session_id: None,
     }
 }
 

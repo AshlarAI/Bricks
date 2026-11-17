@@ -1,0 +1,12 @@
+{
+  "logos": [
+    {
+      "brand": "OpenCode",
+      "light": "opencode-light.svg",
+      "dark": "opencode-dark.svg",
+      "sourceUrl": "https://opencode.ai/brand",
+      "sourceOwner": "OpenCode",
+      "notes": "Official 300x300 square SVGs, unchanged (light square for light themes, dark square for dark themes)."
+    }
+  ]
+}

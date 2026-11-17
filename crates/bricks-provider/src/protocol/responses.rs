@@ -209,6 +209,7 @@ pub(crate) fn parse_usage(u: &Value) -> Usage {
         cache_read_input_tokens: cached,
         reasoning_tokens: n(&u["output_tokens_details"]["reasoning_tokens"]),
         provider_usage: u.clone(),
+        billing: bricks_types::Billing::from_usage(u),
         ..Default::default()
     }
 }
@@ -818,6 +819,29 @@ mod tests {
             ),
             (300, 200, 90, 60)
         );
+    }
+
+    #[test]
+    fn opencode_billing_is_read_from_usage() {
+        let u = parse_usage(&json!({
+            "input_tokens": 500, "input_tokens_details": {"cached_tokens": 200},
+            "output_tokens": 90, "cost": 0.0031,
+            "opencode": {"billing_source": "balance", "list_cost": 0.004, "estimated": true}
+        }));
+        assert_eq!(u.input_tokens, 300, "cached input is counted apart");
+        let b = u.billing.expect("OpenCode billing");
+        assert_eq!(
+            (
+                b.source.as_str(),
+                b.charged_usd,
+                b.list_usd,
+                b.allowance_usd,
+                b.estimated
+            ),
+            ("balance", 0.0031, Some(0.004), None, true)
+        );
+        let plain = parse_usage(&json!({"input_tokens": 1, "output_tokens": 1, "cost": 0.5}));
+        assert!(plain.billing.is_none());
     }
 
     fn text_stream() -> Vec<Value> {

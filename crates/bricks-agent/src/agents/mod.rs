@@ -19,7 +19,7 @@ pub use registry::{
 };
 pub use runtime::{AgentRuntime, InstanceRecord, RunUsage, RuntimeHandle};
 pub use spawn::{
-    AgentIdentity, AgentResult, AgentSpawnRequest, AgentSpawner, BatchOptions, ChildTools, Choice,
+    AgentIdentity, AgentResult, ConversationId, AgentSpawnRequest, AgentSpawner, BatchOptions, ChildTools, Choice,
     CommandRun, DelegationSettings, InstanceState, ParentModel, SkillLoad, SpawnError, SpawnInfo,
     Spawned, SubAgentEvent, SubAgentSink, render_result,
 };

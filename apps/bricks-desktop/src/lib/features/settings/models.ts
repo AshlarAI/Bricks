@@ -413,7 +413,8 @@ export function buildModelPatch(
 		input_modalities: modalitiesNow.join('|') === modalitiesBefore.join('|') ? null : modalitiesNow,
 		pricing: changedPricing(model, form),
 		profiles,
-		async_tool_calls: form.asyncToolCalls === model.async_tool_calls ? null : form.asyncToolCalls
+		async_tool_calls: form.asyncToolCalls === model.async_tool_calls ? null : form.asyncToolCalls,
+		enabled: null
 	};
 }
 
@@ -467,7 +468,8 @@ export function buildModelCreatePatch(form: ModelForm, profiles: ReasoningProfil
 		input_modalities: orderedModalities(form.modalities),
 		pricing: pricingOf(form),
 		profiles: profiles && profiles.length > 0 ? profiles : null,
-		async_tool_calls: form.asyncToolCalls ? null : false
+		async_tool_calls: form.asyncToolCalls ? null : false,
+		enabled: null
 	};
 }
 
@@ -508,3 +510,70 @@ export function writeFailure(error: unknown): WriteOutcome {
 	const message = error instanceof Error ? error.message : String(error);
 	return { ok: false, message: message || t('settings.couldNotSave'), conflict: false };
 }
+
+// ─── Provider list ───────────────────────────────────────────────────────────
+
+/** The provider can answer: a key (or none needed) and at least one enabled model. */
+export function providerReady(provider: ProviderView): boolean {
+	return provider.has_credentials && provider.models.some((m) => m.enabled);
+}
+
+/** What the status dot of a provider says. */
+export function providerStatusLabel(provider: ProviderView): string {
+	if (!provider.has_credentials) return t('settings.credentialsMissing');
+	if (!provider.models.some((m) => m.enabled)) return t('settings.noModelForThisProvider');
+	return t('settings.providerReady');
+}
+
+const BRANDS: Record<string, string> = { opencode: 'OpenCode' };
+
+export interface ProviderGroup {
+	/** A brand's logo key, or `custom`. */
+	id: string;
+	title: string;
+	providers: ProviderView[];
+}
+
+/** Providers of a known brand first, grouped by brand, then the custom ones; file order inside. */
+export function providerGroups(providers: ProviderView[]): ProviderGroup[] {
+	const groups: ProviderGroup[] = [];
+	for (const provider of providers) {
+		const id = provider.logo && BRANDS[provider.logo] ? provider.logo : 'custom';
+		let group = groups.find((g) => g.id === id);
+		if (!group) {
+			group = { id, title: BRANDS[id] ?? '', providers: [] };
+			groups.push(group);
+		}
+		group.providers.push(provider);
+	}
+	return groups.sort((a, b) => Number(a.id === 'custom') - Number(b.id === 'custom'));
+}
+
+/** A patch that changes only whether the model is offered in the model lists. */
+export function enabledPatch(enabled: boolean): ModelPatch {
+	return {
+		name: null,
+		api_model: null,
+		max_input_tokens: null,
+		max_output_tokens: null,
+		input_modalities: null,
+		pricing: null,
+		profiles: null,
+		async_tool_calls: null,
+		enabled
+	};
+}
+
+/** A patch that changes only the given provider fields. */
+export function providerFieldPatch(fields: Partial<ProviderPatch>): ProviderPatch {
+	return { name: null, endpoint: null, protocol: null, auth: null, auth_header: null, api_key: null, ...fields };
+}
+
+/** Where to create a key for a provider of a known brand. */
+export const KEY_URLS: Record<string, string> = { opencode: 'https://opencode.ai/auth' };
+
+/** Why a pasted key cannot be one, or null: a key never holds a space or a line break. */
+export function keyProblem(key: string): string | null {
+	return /\s/.test(key.trim()) ? t('settings.keyHasSpaces') : null;
+}
+

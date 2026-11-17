@@ -14,7 +14,11 @@ protocol: string | null, endpoint: string | null, input_modalities: Array<string
 /**
  * Tools start while the answer still streams.
  */
-async_tool_calls: boolean, max_input_tokens: number, max_output_tokens: number, profiles: Array<ModelProfileView>, priced: boolean, 
+async_tool_calls: boolean, 
+/**
+ * Offered in the model lists.
+ */
+enabled: boolean, max_input_tokens: number, max_output_tokens: number, profiles: Array<ModelProfileView>, priced: boolean, 
 /**
  * MIME types of the documents the model accepts (`document` input).
  */

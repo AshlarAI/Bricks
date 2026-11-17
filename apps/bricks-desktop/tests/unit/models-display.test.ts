@@ -52,6 +52,7 @@ describe('deletion text with unnamed models', () => {
 			has_credentials: false,
 			path: null,
 			header_names: [],
+			logo: null,
 			models: [
 				{
 					id: 'mystery',
@@ -64,6 +65,7 @@ describe('deletion text with unnamed models', () => {
 					output_modalities: [],
 					streaming: false,
 					async_tool_calls: false,
+					enabled: true,
 					max_input_tokens: 1,
 					max_output_tokens: 1,
 					profiles: [],

@@ -42,6 +42,7 @@ pub async fn generate(
     provider: &dyn Provider,
     prompt: &str,
     profile: Option<&str>,
+    session_id: Option<&str>,
 ) -> Option<String> {
     let excerpt: String = prompt.trim().chars().take(PROMPT_MAX_CHARS).collect();
     if excerpt.is_empty() {
@@ -50,6 +51,9 @@ pub async fn generate(
     let mut options = ProviderOptions::default();
     if let Some(p) = profile {
         options.set(REASONING_PROFILE_OPTION, p);
+    }
+    if let Some(id) = session_id {
+        options.set(bricks_provider::SESSION_ID_OPTION, id);
     }
     let request = CompletionRequest {
         model: String::new(),

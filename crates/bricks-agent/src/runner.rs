@@ -900,6 +900,9 @@ async fn run_loop(
         if let Some(profile) = selection.reasoning.clone() {
             options.set(bricks_provider::REASONING_PROFILE_OPTION, &profile);
         }
+        if let Some(conversation) = conversation_id(agent) {
+            options.set(bricks_provider::SESSION_ID_OPTION, &conversation);
+        }
 
         // The system of this request: guidance for the tools it announces,
         // its own date, environment, git state, model and plan (the plan's
@@ -2014,6 +2017,17 @@ fn record_breakdown(agent: &Agent, request: &CompletionRequest, turn: u32) {
         .context
         .lock()
         .record_breakdown(ContextBreakdown { turn, chars });
+}
+
+/// The conversation a request belongs to: the agent's session, or for a
+/// sub-agent the session of the run that started it.
+pub(crate) fn conversation_id(agent: &Agent) -> Option<String> {
+    agent.session_id.clone().or_else(|| {
+        agent
+            .extensions
+            .get::<crate::agents::ConversationId>()
+            .map(|c| c.0.clone())
+    })
 }
 
 /// One response's usage, in its root run's ledger (once, as this agent's

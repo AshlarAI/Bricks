@@ -88,6 +88,7 @@ fn provider_view(p: &ProviderConfig) -> ProviderView {
         has_credentials: credentials_available(p),
         path: p.path.clone(),
         header_names: p.headers.keys().cloned().collect(),
+        logo: crate::services::provider_catalog::logo_of(&p.endpoint).map(str::to_string),
         models: p
             .models
             .iter()
@@ -102,6 +103,7 @@ fn provider_view(p: &ProviderConfig) -> ProviderView {
                 output_modalities: m.output_modalities.iter().map(|x| x.to_string()).collect(),
                 streaming: m.streaming,
                 async_tool_calls: m.async_tool_calls,
+                enabled: m.enabled,
                 max_input_tokens: m.limits.max_input_tokens,
                 max_output_tokens: m.limits.max_output_tokens,
                 profiles: m

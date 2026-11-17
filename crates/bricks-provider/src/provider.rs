@@ -30,6 +30,24 @@ use tokio::sync::mpsc;
 /// Option key a request can use to pick a reasoning profile for that call.
 pub const REASONING_PROFILE_OPTION: &str = "reasoning_profile";
 
+/// Option key carrying the conversation the request belongs to (a string),
+/// stable for the whole conversation, its sub-agents included. Gateways that
+/// route or cache by conversation get it as a header (see
+/// [`session_header`]).
+pub const SESSION_ID_OPTION: &str = "session_id";
+
+/// What Bricks calls itself on every model request.
+pub const USER_AGENT: &str = concat!("Bricks/", env!("CARGO_PKG_VERSION"));
+
+/// The header naming the conversation for the endpoint `url`, if it has one:
+/// OpenCode Go requires `x-opencode-session` and Zen uses it for routing and
+/// prompt caching.
+pub fn session_header(url: &reqwest::Url) -> Option<&'static str> {
+    let host = url.host_str()?.to_ascii_lowercase();
+    (url.scheme() == "https" && (host == "opencode.ai" || host.ends_with(".opencode.ai")))
+        .then_some("x-opencode-session")
+}
+
 /// Builds a [`ConfiguredProvider`], resolving the secret reference.
 pub struct ProviderBuilder {
     model: ResolvedModel,
@@ -165,11 +183,30 @@ impl ConfiguredProvider {
         redact_secrets(text, self.key.as_ref(), &self.model)
     }
 
-    fn request_headers(&self, stream: bool) -> Result<HeaderMap> {
+    /// The headers of a request to `url`: content type, Bricks' user agent, the
+    /// conversation header the endpoint asks for, then the configured headers
+    /// (which win) and the key.
+    fn request_headers(
+        &self,
+        stream: bool,
+        url: &reqwest::Url,
+        request: &CompletionRequest,
+    ) -> Result<HeaderMap> {
         let mut map = HeaderMap::new();
         map.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if stream {
             map.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+        }
+        map.insert(
+            reqwest::header::USER_AGENT,
+            HeaderValue::from_static(USER_AGENT),
+        );
+        if let (Some(name), Some(id)) = (
+            session_header(url),
+            request.options.get::<String>(SESSION_ID_OPTION),
+        ) && let Ok(value) = HeaderValue::from_str(&id)
+        {
+            map.insert(HeaderName::from_static(name), value);
         }
         for (name, value) in &self.model.headers {
             let n = HeaderName::from_bytes(name.as_bytes())
@@ -305,8 +342,19 @@ impl CostRelay {
                 if let Some(u) = &usage {
                     self.absorb(u);
                 }
-                let usage = match &self.model.pricing {
-                    Some(pricing) => {
+                let usage = match (&self.cum.billing, &self.model.pricing) {
+                    // A gateway that says what it charged is the cost, not an estimate.
+                    (Some(billing), _) => {
+                        self.cum.cost_usd = Some(billing.charged_usd);
+                        self.cum.cost_estimate = Some(bricks_types::CostEstimate {
+                            amount_usd: billing.charged_usd,
+                            tariff: billing.source.clone(),
+                            partial: false,
+                            unpriced: Vec::new(),
+                        });
+                        Some(self.cum.clone())
+                    }
+                    (None, Some(pricing)) => {
                         let est = pricing
                             .estimate(&self.cum, self.tariff.as_deref(), &self.unmetered)
                             .ok()
@@ -315,7 +363,7 @@ impl CostRelay {
                         self.cum.cost_estimate = est;
                         Some(self.cum.clone())
                     }
-                    None => usage,
+                    (None, None) => usage,
                 };
                 StreamEvent::MessageDelta { stop_reason, usage }
             }
@@ -464,8 +512,8 @@ impl Provider for ConfiguredProvider {
             .unwrap_or_default();
         let http = self
             .client
-            .post(url)
-            .headers(self.request_headers(false)?)
+            .post(url.clone())
+            .headers(self.request_headers(false, &url, request)?)
             .json(&body)
             .build()
             .map_err(|e| BricksError::Http(e.without_url()))?;
@@ -508,7 +556,7 @@ impl Provider for ConfiguredProvider {
         let http = self
             .client
             .post(m.url.clone())
-            .headers(self.request_headers(stream)?)
+            .headers(self.request_headers(stream, &m.url, &request)?)
             .json(&body)
             .build()
             .map_err(|e| BricksError::Http(e.without_url()))?;
@@ -636,5 +684,158 @@ impl Provider for ConfiguredProvider {
             }
         });
         Ok(CompletionStream::new(rx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::tests_support::BASIC;
+    use crate::registry::ProviderRegistry;
+
+    const KEY: &str = "sk-test-key-123456";
+    const OPENCODE: &str = "https://opencode.ai/zen/v1/chat/completions";
+    const OTHER: &str = "https://api.example.com/v1/chat/completions";
+
+    /// `custom/flash` has prices (USD 0.30 per million input tokens);
+    /// `custom/expert` has none.
+    fn resolve(selection: &str) -> ResolvedModel {
+        ProviderRegistry::from_toml_str(BASIC, "test.toml")
+            .unwrap()
+            .resolve(selection)
+            .unwrap()
+    }
+
+    fn url(text: &str) -> reqwest::Url {
+        reqwest::Url::parse(text).unwrap()
+    }
+
+    /// The value of header `name` as text, or `None` when it is not sent.
+    fn header(headers: &HeaderMap, name: &str) -> Option<String> {
+        headers.get(name).map(|v| v.to_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn session_header_is_only_for_opencode_hosts() {
+        for text in [
+            "https://opencode.ai/zen/v1",
+            "https://OpenCode.AI/zen/v1",
+            "https://go.opencode.ai/v1/messages",
+        ] {
+            assert_eq!(
+                session_header(&url(text)),
+                Some("x-opencode-session"),
+                "{text}"
+            );
+        }
+        for text in [
+            "https://notopencode.ai/v1",
+            "https://opencode.ai.evil.com/v1",
+            "https://api.example.com/opencode.ai/v1",
+            "http://opencode.ai/zen/v1",
+        ] {
+            assert_eq!(session_header(&url(text)), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn request_headers_name_bricks_and_send_the_session_to_opencode_only() {
+        let p = ProviderBuilder::new(resolve("custom/flash"))
+            .api_key(KEY)
+            .build()
+            .unwrap();
+        let mut req = CompletionRequest::new("ignored");
+        req.options.set(SESSION_ID_OPTION, "conv-42");
+
+        let h = p.request_headers(false, &url(OTHER), &req).unwrap();
+        assert_eq!(header(&h, "user-agent").as_deref(), Some(USER_AGENT));
+        assert_eq!(header(&h, "x-opencode-session"), None);
+
+        let h = p.request_headers(false, &url(OPENCODE), &req).unwrap();
+        assert_eq!(header(&h, "user-agent").as_deref(), Some(USER_AGENT));
+        assert_eq!(header(&h, "x-opencode-session").as_deref(), Some("conv-42"));
+
+        let h = p
+            .request_headers(false, &url(OPENCODE), &CompletionRequest::new("ignored"))
+            .unwrap();
+        assert_eq!(
+            header(&h, "x-opencode-session"),
+            None,
+            "no session, no header"
+        );
+
+        // A configured User-Agent still wins over Bricks'.
+        let mut model = resolve("custom/flash");
+        model
+            .headers
+            .insert("User-Agent".into(), Secret::new("Mine/1.0"));
+        let p = ProviderBuilder::new(model).api_key(KEY).build().unwrap();
+        let h = p.request_headers(false, &url(OTHER), &req).unwrap();
+        assert_eq!(header(&h, "user-agent").as_deref(), Some("Mine/1.0"));
+    }
+
+    fn relay(selection: &str) -> CostRelay {
+        CostRelay {
+            cum: Usage::default(),
+            model: Arc::new(resolve(selection)),
+            tariff: None,
+            unmetered: Vec::new(),
+        }
+    }
+
+    /// Passes one final `message_delta` through the relay and returns its usage.
+    fn relayed(relay: &mut CostRelay, usage: Usage) -> Usage {
+        let ev = relay.map(StreamEvent::MessageDelta {
+            stop_reason: None,
+            usage: Some(usage),
+        });
+        let StreamEvent::MessageDelta { usage: Some(u), .. } = ev else {
+            panic!("the delta keeps its usage");
+        };
+        u
+    }
+
+    fn tokens(input: u64, output: u64) -> Usage {
+        Usage {
+            input_tokens: input,
+            output_tokens: output,
+            ..Default::default()
+        }
+    }
+
+    fn billed(charged: f64) -> Usage {
+        Usage {
+            billing: Some(bricks_types::Billing {
+                source: "go".into(),
+                charged_usd: charged,
+                ..Default::default()
+            }),
+            ..tokens(1000, 100)
+        }
+    }
+
+    #[test]
+    fn billing_is_the_cost_even_without_prices() {
+        let u = relayed(&mut relay("custom/expert"), billed(0.0042));
+        assert_eq!(u.cost_usd, Some(0.0042));
+        let est = u.cost_estimate.expect("the bill is the estimate");
+        assert_eq!(
+            (est.amount_usd, est.tariff.as_str(), est.partial),
+            (0.0042, "go", false)
+        );
+        assert!(est.unpriced.is_empty());
+    }
+
+    #[test]
+    fn billing_beats_a_configured_price() {
+        // Without billing, the configured price is the estimate.
+        let u = relayed(&mut relay("custom/flash"), tokens(1_000_000, 0));
+        assert!((u.cost_usd.unwrap() - 0.30).abs() < 1e-9, "{u:?}");
+
+        // With billing, the bill replaces that estimate.
+        let u = relayed(&mut relay("custom/flash"), billed(0.5));
+        assert_eq!(u.cost_usd, Some(0.5));
+        let est = u.cost_estimate.expect("the bill is the estimate");
+        assert_eq!((est.amount_usd, est.tariff.as_str()), (0.5, "go"));
     }
 }

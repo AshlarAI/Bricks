@@ -45,7 +45,10 @@ pub use config::{
 pub use decimal::Decimal;
 pub use modality::{Capabilities, ProtocolSupport, protocol_support};
 pub use pricing::{DEFAULT_TARIFF, Pricing};
-pub use provider::{ConfiguredProvider, ProviderBuilder, REASONING_PROFILE_OPTION};
+pub use provider::{
+    ConfiguredProvider, ProviderBuilder, REASONING_PROFILE_OPTION, SESSION_ID_OPTION, USER_AGENT,
+    session_header,
+};
 pub use registry::{ModelRef, ProviderRegistry, ResolvedModel};
 pub use stream::StreamAccumulator;
 

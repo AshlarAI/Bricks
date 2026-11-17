@@ -177,7 +177,7 @@ pub(crate) fn resolve_extractor(
         if !provider_has_credentials(p) {
             continue;
         }
-        for m in &p.models {
+        for m in p.models.iter().filter(|m| m.enabled) {
             let sel = format!("{}/{}", p.id, m.id);
             let rank = lightweight_score(&m.id, &m.api_model).unwrap_or(100);
             candidates.push((rank, sel));

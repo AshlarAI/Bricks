@@ -78,18 +78,21 @@ impl ProviderRegistry {
         &self.origin
     }
 
-    /// Every model of every provider, in file order. No cap is applied.
+    /// Every enabled model of every provider, in file order. No cap is applied.
     pub fn models(&self) -> Vec<ModelRef> {
         self.config
             .providers
             .iter()
             .flat_map(|p| {
-                p.models.iter().map(move |m| ModelRef {
-                    provider_id: p.id.clone(),
-                    provider_name: p.name.clone(),
-                    model_id: m.id.clone(),
-                    model_name: m.name.clone(),
-                })
+                p.models
+                    .iter()
+                    .filter(|m| m.enabled)
+                    .map(move |m| ModelRef {
+                        provider_id: p.id.clone(),
+                        provider_name: p.name.clone(),
+                        model_id: m.id.clone(),
+                        model_name: m.name.clone(),
+                    })
             })
             .collect()
     }
@@ -327,6 +330,15 @@ mod tests {
 
     fn reg() -> ProviderRegistry {
         ProviderRegistry::from_toml_str(BASIC, "test.toml").unwrap()
+    }
+
+    #[test]
+    fn a_disabled_model_is_not_listed_but_still_resolves() {
+        let text = BASIC.replacen("id = \"flash\"", "id = \"flash\"\nenabled = false", 1);
+        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        assert!(r.models().iter().all(|m| m.model_id != "flash"));
+        assert!(r.models().iter().any(|m| m.model_id == "expert"));
+        assert!(r.resolve("custom/flash").is_ok());
     }
 
     #[test]

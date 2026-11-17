@@ -22,6 +22,7 @@ function providerWith(names: string[]): ProviderView {
 		has_credentials: false,
 		path: null,
 		header_names: [],
+		logo: null,
 		models: names.map((name, i) => ({
 			id: `m${i}`,
 			selection: `acme/m${i}`,
@@ -33,6 +34,7 @@ function providerWith(names: string[]): ProviderView {
 			output_modalities: [],
 			streaming: false,
 			async_tool_calls: false,
+			enabled: true,
 			max_input_tokens: 1,
 			max_output_tokens: 1,
 			profiles: [],

@@ -247,6 +247,7 @@ pub(crate) fn parse_usage(u: &Value) -> Usage {
         cache_read_input_tokens: cached,
         reasoning_tokens: n(&u["completion_tokens_details"]["reasoning_tokens"]),
         provider_usage: u.clone(),
+        billing: bricks_types::Billing::from_usage(u),
         ..Default::default()
     }
 }
@@ -1041,6 +1042,32 @@ mod tests {
             ),
             (7, 0, 0)
         );
+    }
+
+    #[test]
+    fn opencode_billing_is_read_from_usage() {
+        let u = parse_usage(&json!({
+            "prompt_tokens": 1000, "completion_tokens": 300, "cost": 0.0042,
+            "opencode": {"billing_source": "go", "list_cost": 0.0061, "allowance": 0.0042, "estimated": false}
+        }));
+        assert_eq!(
+            (u.input_tokens, u.output_tokens),
+            (1000, 300),
+            "billing leaves tokens alone"
+        );
+        let b = u.billing.expect("OpenCode billing");
+        assert_eq!(
+            (
+                b.source.as_str(),
+                b.charged_usd,
+                b.list_usd,
+                b.allowance_usd,
+                b.estimated
+            ),
+            ("go", 0.0042, Some(0.0061), Some(0.0042), false)
+        );
+        let plain = parse_usage(&json!({"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.5}));
+        assert!(plain.billing.is_none());
     }
 
     #[test]

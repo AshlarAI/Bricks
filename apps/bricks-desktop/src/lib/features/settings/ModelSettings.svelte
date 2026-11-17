@@ -1,11 +1,13 @@
 <script lang="ts">
-	// « Modèles » of the settings: the providers of the providers file, each with its models.
-	// Reads and writes the file through the IPC; every write carries the revision last read.
+	// « Modèles » of the settings: the providers of the providers file in two columns (the list,
+	// then the selected provider or « Ajouter un fournisseur »). Reads and writes the file through
+	// the IPC; every write carries the revision last read.
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Alert from '$lib/components/ui/alert';
 	import { app } from '$lib/state/app.svelte';
+	import { cn } from '$lib/utils';
 	import {
 		errorMessage,
 		modelCreate,
@@ -15,23 +17,29 @@
 		providerDelete,
 		providerUpdate,
 		providersConfig,
-		providersFillMissingPrices
+		providersFillMissingPrices,
+		providerCreateFromTemplate,
+		providerTemplates
 	} from '$lib/ipc/client';
 	import type { ModelPatch } from '$lib/ipc/bindings/ModelPatch';
 	import type { ModelView } from '$lib/ipc/bindings/ModelView';
 	import type { ProviderPatch } from '$lib/ipc/bindings/ProviderPatch';
 	import type { ProviderView } from '$lib/ipc/bindings/ProviderView';
 	import type { ProvidersFile } from '$lib/ipc/bindings/ProvidersFile';
+	import type { ProviderTemplate } from '$lib/ipc/bindings/ProviderTemplate';
 	import Plus from '@lucide/svelte/icons/plus';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-	import ProviderGroup from './ProviderGroup.svelte';
+	import ProviderDetail from './ProviderDetail.svelte';
+	import ProviderNav from './ProviderNav.svelte';
+	import ProviderTemplatePicker from './ProviderTemplatePicker.svelte';
 	import ProviderFormDialog from './ProviderFormDialog.svelte';
 	import ModelFormDialog from './ModelFormDialog.svelte';
 	import DeleteDialog from './DeleteDialog.svelte';
 	import {
 		CONFLICT_MESSAGE,
 		displayName,
+		enabledPatch,
 		providerDeletionDetail,
 		unpricedModels,
 		writeFailure,
@@ -58,6 +66,33 @@
 	let pageNotice = $state<string | null>(null);
 
 	const providers = $derived(file?.providers ?? []);
+	/** The provider shown on the right, or `add` for « Ajouter un fournisseur ». */
+	let selected = $state<string | null>(null);
+	const current = $derived(
+		selected === 'add' ? null : (providers.find((p) => p.id === selected) ?? providers[0] ?? null)
+	);
+	const adding = $derived(selected === 'add' || (file !== null && providers.length === 0));
+	let templates = $state<ProviderTemplate[] | null>(null);
+	let templatesError = $state<string | null>(null);
+
+	async function loadTemplates() {
+		try {
+			templates = await providerTemplates();
+			templatesError = null;
+		} catch (e) {
+			templatesError = errorMessage(e);
+		}
+	}
+
+	async function createFromTemplate(template: ProviderTemplate, apiKey: string): Promise<string | null> {
+		const before = new Set(providers.map((p) => p.id));
+		const outcome = await write((revision) =>
+			providerCreateFromTemplate(template.id, apiKey === '' ? null : apiKey, revision)
+		);
+		if (!outcome.ok) return outcome.message;
+		selected = file?.providers.find((p) => !before.has(p.id))?.id ?? null;
+		return null;
+	}
 	const unpriced = $derived(unpricedModels(providers));
 	let filling = $state(false);
 	let fillError = $state<string | null>(null);
@@ -87,6 +122,7 @@
 
 	onMount(() => {
 		void load();
+		void loadTemplates();
 	});
 
 	function openDialog(next: Dialog) {
@@ -102,7 +138,16 @@
 	 * Runs one write with the revision last read. The reply replaces the file and the catalogue of
 	 * the composer is reloaded. A stale revision goes through `reopenAfterConflict`.
 	 */
-	async function write(run: (revision: string) => Promise<ProvidersFile>): Promise<WriteOutcome> {
+	/** The writes run one after the other, each with the revision its predecessor left. */
+	let writes: Promise<unknown> = Promise.resolve();
+
+	function write(run: (revision: string) => Promise<ProvidersFile>): Promise<WriteOutcome> {
+		const next = writes.then(() => writeNow(run));
+		writes = next;
+		return next;
+	}
+
+	async function writeNow(run: (revision: string) => Promise<ProvidersFile>): Promise<WriteOutcome> {
 		const current = file;
 		if (!current) return { ok: false, message: t('settings.theProvidersFileHasntBeenRead'), conflict: false };
 		try {
@@ -161,16 +206,20 @@
 		return write((revision) => modelUpdate(provider.id, model.id, patch, revision));
 	}
 
-	function createProvider(id: string, patch: ProviderPatch): Promise<WriteOutcome> {
-		return write((revision) => providerCreate(id, patch, revision));
+	async function createProvider(id: string, patch: ProviderPatch): Promise<WriteOutcome> {
+		const outcome = await write((revision) => providerCreate(id, patch, revision));
+		if (outcome.ok) selected = id;
+		return outcome;
 	}
 
 	function createModel(provider: ProviderView, id: string, patch: ModelPatch): Promise<WriteOutcome> {
 		return write((revision) => modelCreate(provider.id, id, patch, revision));
 	}
 
-	function removeProvider(provider: ProviderView): Promise<WriteOutcome> {
-		return write((revision) => providerDelete(provider.id, revision));
+	async function removeProvider(provider: ProviderView): Promise<WriteOutcome> {
+		const outcome = await write((revision) => providerDelete(provider.id, revision));
+		if (outcome.ok && selected === provider.id) selected = null;
+		return outcome;
 	}
 
 	function removeModel(provider: ProviderView, model: ModelView): Promise<WriteOutcome> {
@@ -178,15 +227,32 @@
 	}
 </script>
 
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-4">
 	<section class="flex flex-col gap-3" aria-labelledby="models-providers-title">
 		<div class="flex items-center justify-between gap-2">
 			<h3 id="models-providers-title" class="text-ui font-semibold text-foreground">{t('settings.providersAndModels')}</h3>
 			{#if file}
-				<Button variant="outline" size="sm" onclick={() => openDialog({ kind: 'create-provider' })}>
-					<Plus aria-hidden="true" />
-					{t('settings.addAProvider')}
-				</Button>
+				<div class="flex items-center gap-1.5">
+					<Button
+						variant="outline"
+						size="icon-sm"
+						aria-label={t('common.refresh')}
+						onclick={load}
+						disabled={loading}
+					>
+						<RefreshCw class={cn(loading && 'animate-spin')} />
+					</Button>
+					<Button
+						size="sm"
+						onclick={() => {
+							selected = 'add';
+							if (!templates) void loadTemplates();
+						}}
+					>
+						<Plus data-icon="inline-start" />
+						{t('settings.addAProvider')}
+					</Button>
+				</div>
 			{/if}
 		</div>
 
@@ -242,26 +308,45 @@
 				</Alert.Root>
 			{/if}
 
-			{#if providers.length === 0}
-				{#if !file.error}
-					<p class="text-ui text-muted-foreground">{t('common.noProviderConfigured')}</p>
-				{/if}
-			{:else}
-				<ul class="flex flex-col gap-3" aria-label={t('settings.providers')}>
-					{#each providers as provider (provider.id)}
-						<li>
-							<ProviderGroup
+			<div class="overflow-clip rounded-xl border border-border bg-card">
+				<div class="grid min-h-[32rem] grid-cols-[3rem_minmax(0,1fr)] md:grid-cols-[13rem_minmax(0,1fr)]">
+					<div class="min-w-0 border-r border-border">
+						{#if providers.length > 0}
+							<ProviderNav
+								{providers}
+								selected={adding ? null : (current?.id ?? null)}
+								onSelect={(id) => (selected = id)}
+							/>
+						{/if}
+					</div>
+					<div class="min-w-0 p-4 sm:p-6">
+						{#if adding}
+							<ProviderTemplatePicker
+								{templates}
+								loadError={templatesError}
+								canGoBack={providers.length > 0}
+								onBack={() => (selected = null)}
+								onCustom={() => openDialog({ kind: 'create-provider' })}
+								onCreate={createFromTemplate}
+							/>
+						{:else if current}
+							{@const provider = current}
+							{#key provider.id}
+							<ProviderDetail
 								{provider}
+								onSave={(patch) => saveProvider(provider, patch)}
+								onToggleModel={(model, enabled) => saveModel(provider, model, enabledPatch(enabled))}
 								onEditProvider={() => openDialog({ kind: 'edit-provider', provider })}
 								onDeleteProvider={() => openDialog({ kind: 'delete-provider', provider })}
 								onEditModel={(model) => openDialog({ kind: 'edit-model', provider, model })}
 								onDeleteModel={(model) => openDialog({ kind: 'delete-model', provider, model })}
 								onAddModel={() => openDialog({ kind: 'create-model', provider })}
 							/>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+							{/key}
+						{/if}
+					</div>
+				</div>
+			</div>
 		{/if}
 	</section>
 
