@@ -4,7 +4,7 @@
 
 **A desktop coding agent built in Rust.**
 
-![Version](https://img.shields.io/badge/version-26.11.15-blue)
+![Version](https://img.shields.io/badge/version-2026.11.15-blue)
 ![Rust](https://img.shields.io/badge/built_with-Rust-orange)
 
 [Features](#features) · [Getting started](#getting-started) · [Settings](#settings) · [CLI](#cli) · [Rust SDK](#rust-sdk) · [Development](#development) · [Documentation](#documentation) · [License](#license)
@@ -17,7 +17,7 @@ Bricks is a lightweight desktop coding agent built natively in Rust. Explore you
 
 The desktop application, command-line interface and Rust SDK share the same engine: model connections, tool execution, permissions, context management and sessions. Because it runs natively without Electron, Bricks starts fast and stays light on memory and disk, with public performance benchmarks coming soon.
 
-**Status:** Bricks **26.11.15** (CalVer). Official installers and portable `.zip` archives are built for **macOS Apple Silicon** and **Windows x64** via GitHub Releases, with an in-app auto-updater. Linux is not yet covered by automated release builds.
+**Status:** Bricks **2026.11.15** (CalVer). Official installers and portable `.zip` archives are built for **macOS Apple Silicon** and **Windows x64** via GitHub Releases, with an in-app auto-updater. Linux is not yet covered by automated release builds.
 
 ## Features
 

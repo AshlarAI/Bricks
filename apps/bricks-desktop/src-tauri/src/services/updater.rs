@@ -499,17 +499,17 @@ mod tests {
 
     #[test]
     fn background_checks_respect_skipped_version_and_manual_checks_bypass_it() {
-        assert!(should_skip_version(Some("26.11.15"), "26.11.15", false));
-        assert!(!should_skip_version(Some("26.11.15"), "26.11.16", false));
-        assert!(!should_skip_version(Some("26.11.15"), "26.11.15", true));
-        assert!(!should_skip_version(None, "26.11.15", false));
+        assert!(should_skip_version(Some("2026.11.15"), "2026.11.15", false));
+        assert!(!should_skip_version(Some("2026.11.15"), "2026.11.16", false));
+        assert!(!should_skip_version(Some("2026.11.15"), "2026.11.15", true));
+        assert!(!should_skip_version(None, "2026.11.15", false));
     }
 
     #[test]
     fn background_poll_skips_active_download_or_ready_states() {
         let info = UpdateMetadata {
-            current_version: "26.11.14".into(),
-            version: "26.11.15".into(),
+            current_version: "2026.11.14".into(),
+            version: "2026.11.15".into(),
             pub_date: None,
             notes: None,
         };

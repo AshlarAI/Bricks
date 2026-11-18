@@ -169,8 +169,8 @@ describe('the version label', () => {
 	it('names a pre-release by its stage, and a release by its minor or CalVer version', () => {
 		expect(versionLabel('1.0.0-alpha.1')).toBe('Bricks 1.0 Alpha');
 		expect(versionLabel('1.2.3')).toBe('Bricks 1.2');
-		expect(versionLabel('26.11.14')).toBe('Bricks 26.11.14');
-		expect(versionLabel('26.11.14-nightly.0200')).toBe('Bricks 26.11.14 Nightly');
+		expect(versionLabel('2026.11.14')).toBe('Bricks 2026.11.14');
+		expect(versionLabel('2026.11.14-nightly.0200')).toBe('Bricks 2026.11.14 Nightly');
 	});
 });
 

@@ -66,10 +66,10 @@ class ReleaseNotesTests(unittest.TestCase):
             title="Bricks Nightly 2026.11.14-0200",
             tag="nightly-2026.11.14-0200",
             date_utc="2026-11-14 02:00 UTC",
-            version="26.11.14",
+            version="2026.11.14",
             commit_sha="04699ce1234567890abcdef1234567890abcdef1",
             tests_status="passed",
-            vt_summary="  - `Bricks_26.11.14_macos-arm64.dmg`: `0/70` ([Report](https://www.virustotal.com/gui/file/abc))\n",
+            vt_summary="  - `Bricks_2026.11.14_macos-arm64.dmg`: `0/70` ([Report](https://www.virustotal.com/gui/file/abc))\n",
         )
         self.assertNotIn("\u2014", body)
         self.assertIn("I do not pay", body)
@@ -87,7 +87,7 @@ class ReleaseNotesTests(unittest.TestCase):
             title="Bricks On-Demand 2026.11.14-1735",
             tag="odr-2026.11.14-1735",
             date_utc="2026-11-14 17:35 UTC",
-            version="26.11.14",
+            version="2026.11.14",
             commit_sha="04699ce1234567890abcdef1234567890abcdef1",
             tests_status="skipped",
             vt_summary="  - `a.zip`: `0/70` ([Report](https://www.virustotal.com/gui/file/def))\n",
@@ -103,9 +103,9 @@ class UpdaterManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             assets = pathlib.Path(tmp)
             names = [
-                "Bricks_26.11.14_macos-arm64.app.tar.gz",
-                "Bricks_26.11.14_windows-x64-setup.exe",
-                "Bricks_26.11.14_windows-x64.msi",
+                "Bricks_2026.11.14_macos-arm64.app.tar.gz",
+                "Bricks_2026.11.14_windows-x64-setup.exe",
+                "Bricks_2026.11.14_windows-x64.msi",
             ]
             for idx, name in enumerate(names):
                 (assets / name).write_bytes(b"binary")
@@ -113,13 +113,13 @@ class UpdaterManifestTests(unittest.TestCase):
 
             manifest = build_updater_manifest.build_manifest(
                 assets_dir=assets,
-                version="v26.11.14",
-                tag="v26.11.14",
+                version="v2026.11.14",
+                tag="v2026.11.14",
                 repo="AshlarAI/Bricks",
                 pub_date="2026-11-14T20:00:00Z",
                 notes="First CalVer release",
             )
-            self.assertEqual(manifest["version"], "26.11.14")
+            self.assertEqual(manifest["version"], "2026.11.14")
             self.assertEqual(manifest["pub_date"], "2026-11-14T20:00:00Z")
             self.assertEqual(manifest["notes"], "First CalVer release")
             platforms = manifest["platforms"]
@@ -127,7 +127,7 @@ class UpdaterManifestTests(unittest.TestCase):
                 platforms["darwin-aarch64"],
                 {
                     "signature": "sig-0",
-                    "url": "https://github.com/AshlarAI/Bricks/releases/download/v26.11.14/Bricks_26.11.14_macos-arm64.app.tar.gz",
+                    "url": "https://github.com/AshlarAI/Bricks/releases/download/v2026.11.14/Bricks_2026.11.14_macos-arm64.app.tar.gz",
                 },
             )
             self.assertEqual(platforms["windows-x86_64-nsis"]["signature"], "sig-1")
@@ -137,12 +137,12 @@ class UpdaterManifestTests(unittest.TestCase):
     def test_missing_signature_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             assets = pathlib.Path(tmp)
-            (assets / "Bricks_26.11.14_macos-arm64.app.tar.gz").write_bytes(b"binary")
+            (assets / "Bricks_2026.11.14_macos-arm64.app.tar.gz").write_bytes(b"binary")
             with self.assertRaises(FileNotFoundError):
                 build_updater_manifest.build_manifest(
                     assets_dir=assets,
-                    version="26.11.14",
-                    tag="v26.11.14",
+                    version="2026.11.14",
+                    tag="v2026.11.14",
                     repo="AshlarAI/Bricks",
                     pub_date="2026-11-14T20:00:00Z",
                 )

@@ -14,8 +14,8 @@ import {
 } from '$lib/features/updates/updates'
 
 const META: UpdateMetadata = {
-  current_version: '26.11.14',
-  version: '26.11.15',
+  current_version: '2026.11.14',
+  version: '2026.11.15',
   pub_date: '2026-11-15T12:00:00Z',
   notes: 'Bug fixes',
 }
@@ -62,7 +62,7 @@ describe('updates helpers', () => {
 
   it('formats tooltip labels in English and French', () => {
     const ready: UpdateStatus = { phase: 'ready', info: META }
-    expect(updateTooltipLabel(ready)).toContain('26.11.15')
+    expect(updateTooltipLabel(ready)).toContain('2026.11.15')
     setLanguage('fr')
     expect(updateTooltipLabel(ready)).toContain('redémarrer')
   })

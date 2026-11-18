@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Commit 218 (2026/11/18)
+
+- Switch CalVer package versions, release workflow metadata, and tests from 2-digit years (`26.11.15`) to 4-digit years (`2026.11.15`, `YYYY.M.D` without leading zeroes for SemVer). Add `AGENTS.md` with Bricks engineering, UI, commit, and changelog rules.
+
+### Added: OpenCode providers, Settings › Models and Settings › Usage
+
+- I added two OpenCode gateways, OpenCode Go and OpenCode Zen. « Add a provider » offers six one-step templates, each gateway through Chat Completions, Responses or Anthropic Messages. I paste a key, and Bricks writes the provider with its current models, read from models.dev. Models the gateway no longer lists, and deprecated ones, are left out. « Create a custom provider » opens the previous form.
+- Settings › Models is now two columns: the providers on the left, with a status dot, and the selected provider on the right.
+- I added Settings › Usage. Every model response is written to `<BRICKS_HOME>/desktop/usage.jsonl`. The page filters by provider and shows the totals, the cost (with the list price and, for OpenCode Go, the plan usage), a one-year activity grid, and the tokens per model. For OpenCode Go with a key, it also shows the 5-hour, weekly and monthly limits.
+
+### Added: OpenCode request headers and gateway billing
+
+- Every model request now sends `User-Agent: Bricks/<version>`. A `User-Agent` set in a provider's or model's `headers` still wins.
+- Requests to `opencode.ai` (and its subdomains) send `x-opencode-session`, a conversation id that stays the same for the sub-agents, the compaction summary and the title. OpenCode Go requires it. Library users pass it with `SESSION_ID_OPTION` (`"session_id"`).
+- `Usage` has a new optional `billing` field, read from OpenCode's usage in all three protocols. When it is present, `cost_usd` is what the gateway charged, not an estimate from the configured prices. Session totals add the billings and join different sources with `+`. The JSONL `usage` and `run_usage` events may carry `billing`. This is additive, and the schema version does not change.
+
 ### Changed: structured memory only
 
 - Remove the unused memory modules `claudemd`, `embedding_memory`, `graph`, `manager` and `memdir`. Structured memory (`crates/bricks-memory/src/structured`) is the only long-term memory.

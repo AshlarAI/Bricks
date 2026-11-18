@@ -87,10 +87,10 @@ jobs:
             KIND="$INPUT_TYPE"
           fi
 
-          YEAR2="$(date -u +%y)"
+          YEAR4="$(date -u +%Y)"
           MONTH="$(date -u +%-m)"
           DAY="$(date -u +%-d)"
-          CALVER="${YEAR2}.${MONTH}.${DAY}"
+          CALVER="${YEAR4}.${MONTH}.${DAY}"
           STAMP="$(date -u +%Y.%m.%d-%H%M)"
           DATE_UTC="$(date -u '+%Y-%m-%d %H:%M UTC')"
 
