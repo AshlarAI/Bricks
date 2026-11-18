@@ -74,10 +74,15 @@ function libFiles(dir: string = fileURLToPath(new URL('../../src/lib', import.me
 	});
 }
 
-describe('neutral surfaces carry no hue', () => {
-	it.each(MODES)('every neutral token has chroma 0 in %s mode', (mode) => {
-		const hued = NEUTRAL_TOKENS.filter((name) => token(mode, name)[1] !== 0);
+describe('neutral surfaces stay neutral or subtly cool-slate', () => {
+	it('every neutral token has chroma 0 in light mode', () => {
+		const hued = NEUTRAL_TOKENS.filter((name) => token('light', name)[1] !== 0);
 		expect(hued).toEqual([]);
+	});
+
+	it('dark neutral tokens stay within a subtle cool-slate chroma (<= 0.015)', () => {
+		const saturated = NEUTRAL_TOKENS.filter((name) => token('dark', name)[1] > 0.015);
+		expect(saturated).toEqual([]);
 	});
 });
 

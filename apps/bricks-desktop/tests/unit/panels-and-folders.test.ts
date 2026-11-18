@@ -9,26 +9,27 @@ import { bound, call } from './french-keys';
 
 const source = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-describe('theme: a frame around one inset surface', () => {
-	// One step darker than the surface: neutral-50 over neutral-100 in light (0.015), neutral-900
-	// over neutral-950 in dark (0.06). The ceiling of 0.08 stops short of neutral-800 over
-	// neutral-950 (0.124), the next step of the scale.
-	it.each(['light', 'dark'] as const)('the %s frame (top bar and left panel) is darker than the surface', (mode) => {
-		const [frame] = tokens.colors[mode].sidebar as number[];
-		const [surface] = tokens.colors[mode].background as number[];
+describe('theme: light and dark surface hierarchy', () => {
+	// Light mode frames a pure white chat (#ffffff) with a soft #fafafa sidebar and top bar.
+	it('the light frame (top bar and left panel) is one step darker than the pure-white surface', () => {
+		const [frame] = tokens.colors.light.sidebar as number[];
+		const [surface] = tokens.colors.light.background as number[];
+		expect(surface).toBe(1);
 		expect(surface - frame).toBeGreaterThanOrEqual(0.015);
 		expect(surface - frame).toBeLessThanOrEqual(0.08);
 	});
 
-	// neutral-900 (0.205) sits between neutral-950 (0.145) and neutral-800 (0.269): the
-	// midpoints of those steps bound it. neutral-200 text (0.922) is a lightness step of
-	// 0.717 above it, about 14:1 in contrast, so light text on dark still reads well.
-	it('the dark background is a neutral charcoal (neutral-900), not black, under a light text', () => {
+	// Dark mode sets the deep obsidian chat (#070708) below the raised sidebar (#111114) and
+	// composer (#15151a), keeping high contrast under light text.
+	it('the dark chat background sits below the sidebar and composer under light text', () => {
+		const [frame] = tokens.colors.dark.sidebar as number[];
 		const [background] = tokens.colors.dark.background as number[];
+		const [card] = tokens.colors.dark.card as number[];
 		const [foreground] = tokens.colors.dark.foreground as number[];
-		expect(background).toBeGreaterThan(0.175);
-		expect(background).toBeLessThan(0.237);
-		expect(foreground - background).toBeGreaterThanOrEqual(0.7);
+		expect(background).toBeLessThan(0.15);
+		expect(frame - background).toBeGreaterThanOrEqual(0.03);
+		expect(card).toBeGreaterThan(frame);
+		expect(foreground - background).toBeGreaterThanOrEqual(0.75);
 	});
 });
 

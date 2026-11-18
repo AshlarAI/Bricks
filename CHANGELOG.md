@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 219 (2026/11/18)
+
+- Align Bricks Desktop light and dark surface tokens (`tokens.json`, `tokens.generated.css`) with the Antigravity palette (`#ffffff` / `#fafafa` in light mode, `#070708` / `#111114` / `#15151a` in dark mode) and update theme unit tests.
+
 ### Commit 218 (2026/11/18)
 
 - Switch CalVer package versions, release workflow metadata, and tests from 2-digit years (`26.11.15`) to 4-digit years (`2026.11.15`, `YYYY.M.D` without leading zeroes for SemVer). Add `AGENTS.md` with Bricks engineering, UI, commit, and changelog rules.
