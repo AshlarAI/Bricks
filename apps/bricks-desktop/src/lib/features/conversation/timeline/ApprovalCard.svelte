@@ -128,7 +128,7 @@
                     {#if file.diff}
                       <CollapsibleTrigger
                         aria-label={t('conversation.viewTheDiffOf', { path: file.path })}
-                        class="rounded-sm px-1 text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        class="rounded-sm px-1 text-brand underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {t('conversation.viewTheDiff')}
                       </CollapsibleTrigger>

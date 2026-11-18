@@ -1,6 +1,7 @@
 // The side panels share the main area's background in both themes, the dark
-// theme sits on a deep black, a folder lists three conversations before
-// « Afficher plus », and a folder without Git says so without a final period.
+// theme sits on a neutral charcoal (ZCode neutral-900, not black), a folder
+// lists three conversations before « Afficher plus », and a folder without Git
+// says so without a final period.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import tokens from '../../src/lib/theme/tokens.json';
@@ -9,18 +10,25 @@ import { bound, call } from './french-keys';
 const source = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
 describe('theme: a frame around one inset surface', () => {
+	// One step darker than the surface: neutral-50 over neutral-100 in light (0.015), neutral-900
+	// over neutral-950 in dark (0.06). The ceiling of 0.08 stops short of neutral-800 over
+	// neutral-950 (0.124), the next step of the scale.
 	it.each(['light', 'dark'] as const)('the %s frame (top bar and left panel) is darker than the surface', (mode) => {
 		const [frame] = tokens.colors[mode].sidebar as number[];
 		const [surface] = tokens.colors[mode].background as number[];
 		expect(surface - frame).toBeGreaterThanOrEqual(0.015);
-		expect(surface - frame).toBeLessThanOrEqual(0.04);
+		expect(surface - frame).toBeLessThanOrEqual(0.08);
 	});
 
-	it('the dark background is a deep black under a light text', () => {
+	// neutral-900 (0.205) sits between neutral-950 (0.145) and neutral-800 (0.269): the
+	// midpoints of those steps bound it. neutral-200 text (0.922) is a lightness step of
+	// 0.717 above it, about 14:1 in contrast, so light text on dark still reads well.
+	it('the dark background is a neutral charcoal (neutral-900), not black, under a light text', () => {
 		const [background] = tokens.colors.dark.background as number[];
 		const [foreground] = tokens.colors.dark.foreground as number[];
-		expect(background).toBeLessThanOrEqual(0.15);
-		expect(foreground - background).toBeGreaterThanOrEqual(0.8);
+		expect(background).toBeGreaterThan(0.175);
+		expect(background).toBeLessThan(0.237);
+		expect(foreground - background).toBeGreaterThanOrEqual(0.7);
 	});
 });
 

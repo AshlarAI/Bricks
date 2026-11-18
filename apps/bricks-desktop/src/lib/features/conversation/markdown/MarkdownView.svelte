@@ -13,6 +13,8 @@
   import MermaidBlock from './MermaidBlock.svelte'
   import SvgBlock from './SvgBlock.svelte'
   import VegaBlock from './VegaBlock.svelte'
+  import CitationCard from './CitationCard.svelte'
+  import type { CitationSource } from './citations'
 
   interface Props {
     source: string
@@ -24,6 +26,8 @@
     onLinkResult?: (error: string | null) => void
     /** The headings of the text, for a table of contents. */
     headings?: MarkdownHeading[]
+    /** Pages the conversation's web searches returned: the cards of its links show them. */
+    sources?: ReadonlyMap<string, CitationSource>
     class?: string
   }
 
@@ -34,8 +38,12 @@
     onFile,
     onLinkResult,
     headings = $bindable([]),
+    sources,
     class: className = 'text-sm',
   }: Props = $props()
+
+  /** The card of the message's web links. */
+  let card = $state<CitationCard | null>(null)
 
   // svelte-ignore state_referenced_locally
   const doc = new MarkdownDocument({ idPrefix })
@@ -79,6 +87,7 @@
 </script>
 
 <div
+  {@attach (node) => card?.attach(node)}
   class={['md syntax-markdown leading-relaxed break-words text-foreground', className]}
   class:streaming
   use:markdownClicks={{
@@ -109,6 +118,8 @@
     {/if}
   {/each}
 </div>
+
+<CitationCard bind:this={card} {sources} {streaming} {onLinkResult} />
 
 <style>
   .md {
@@ -281,7 +292,7 @@
   }
   .md :global(.fn-ref a),
   .md :global(.footnotes a) {
-    color: var(--primary);
+    color: var(--brand);
     text-decoration: none;
   }
   .md :global(.footnotes) {
@@ -296,7 +307,7 @@
   }
   .md :global(.file-ref) {
     border-radius: 0.125rem;
-    color: var(--primary);
+    color: var(--brand);
     font-family: var(--code-font-family);
     font-size: 0.8125em;
     text-decoration: underline;

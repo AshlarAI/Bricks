@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ui } from '$lib/state/ui.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import type { Snippet } from 'svelte';
 	import { tick, untrack } from 'svelte';
@@ -95,6 +96,13 @@
 	let rightOverlay = $state(false);
 	$effect(() => {
 		if (mode) untrack(() => {
+			leftOverlay = false;
+			rightOverlay = false;
+		});
+	});
+	// The settings page covers the window: a Sheet left open would stay above it.
+	$effect(() => {
+		if (ui.settingsOpen) untrack(() => {
 			leftOverlay = false;
 			rightOverlay = false;
 		});

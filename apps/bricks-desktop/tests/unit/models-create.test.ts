@@ -6,10 +6,7 @@ import type { ModelView } from '../../src/lib/ipc/bindings/ModelView';
 import type { ProviderView } from '../../src/lib/ipc/bindings/ProviderView';
 import { formatPrice } from '../../src/lib/features/settings/format';
 import {
-	ID_DUPLICATE,
-	ID_ERROR,
 	PRICE_ERROR,
-	REQUIRED_MESSAGE,
 	buildModelCreatePatch,
 	buildModelPatch,
 	buildProviderCreatePatch,
@@ -21,7 +18,6 @@ import {
 	parsePrice,
 	unpricedModels,
 	validateModelForm,
-	validateNewId,
 	type ModelForm
 } from '../../src/lib/features/settings/models';
 
@@ -93,35 +89,6 @@ describe('parsePrice', () => {
 		expect(parsePrice('-1')).toBeNull();
 		expect(parsePrice('abc')).toBeNull();
 		expect(parsePrice('')).toBeNull();
-	});
-});
-
-describe('validateNewId', () => {
-	const taken = ['acme', 'fast'];
-
-	it('refuses an empty id', () => {
-		expect(validateNewId('', taken)).toBe(REQUIRED_MESSAGE());
-		expect(validateNewId('   ', taken)).toBe(REQUIRED_MESSAGE());
-	});
-
-	it('refuses characters outside letters, digits, dot, underscore and dash', () => {
-		expect(validateNewId('mon modèle', taken)).toBe(ID_ERROR());
-		expect(validateNewId('a/b', taken)).toBe(ID_ERROR());
-	});
-
-	it('refuses an id that starts with a dash or a dot', () => {
-		expect(validateNewId('-fast', taken)).toBe(ID_ERROR());
-		expect(validateNewId('.fast', taken)).toBe(ID_ERROR());
-	});
-
-	it('refuses an id already taken', () => {
-		expect(validateNewId('fast', taken)).toBe(ID_DUPLICATE());
-		expect(validateNewId(' acme ', taken)).toBe(ID_DUPLICATE());
-	});
-
-	it('accepts a free id', () => {
-		expect(validateNewId('fast-2.v1_beta', taken)).toBeUndefined();
-		expect(validateNewId('2fast', taken)).toBeUndefined();
 	});
 });
 

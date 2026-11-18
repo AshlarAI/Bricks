@@ -155,11 +155,11 @@
 				<DropdownMenu.Group>
 					<DropdownMenu.Item onSelect={onEditProvider}>
 						<Pencil />
-						{t('settings.editTheProvider')}
+						{t('common.edit')}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item variant="destructive" onSelect={onDeleteProvider}>
 						<Trash />
-						{t('settings.deleteTheProvider')}
+						{t('common.delete')}
 					</DropdownMenu.Item>
 				</DropdownMenu.Group>
 			</DropdownMenu.Content>

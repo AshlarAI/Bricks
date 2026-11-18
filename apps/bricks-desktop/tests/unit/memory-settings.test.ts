@@ -10,17 +10,22 @@ import { bound, call, tkey } from './french-keys';
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
 const SETTINGS = 'lib/features/settings/MemorySettings.svelte';
-const DIALOG = 'lib/features/settings/SettingsDialog.svelte';
+const PAGE = 'lib/features/settings/SettingsPage.svelte';
 
 const KEPT = 'L’historique des conversations est conservé.';
 
 describe('the settings section', () => {
-	const dialog = src(DIALOG);
+	const page = src(PAGE);
+	const agentGroup = page.slice(page.indexOf("t('settings.groupAgent')"), page.indexOf("t('settings.groupData')"));
 
 	it('is one section of the settings, named Mémoire, showing MemorySettings', () => {
-		expect(dialog).toContain(`{ id: 'memory', get label() { return ${call('Mémoire')} }, icon: Brain }`);
-		expect(dialog).toContain('<Tabs.Content value="memory"');
-		expect(dialog).toMatch(/MemorySettings/);
+		expect(page).toContain(`{ id: 'memory', get label() { return ${call('Mémoire')} }, icon: Brain, content: MemorySettings }`);
+		expect(page).toContain("import MemorySettings from './MemorySettings.svelte'");
+	});
+
+	it('sits in the agent group, before Skills', () => {
+		expect(agentGroup).toContain("id: 'memory'");
+		expect(agentGroup.indexOf("id: 'memory'")).toBeLessThan(agentGroup.indexOf("id: 'skills'"));
 	});
 
 	it('loads the overview for the open project, or for no project', () => {

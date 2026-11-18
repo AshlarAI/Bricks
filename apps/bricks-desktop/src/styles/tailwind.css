@@ -58,6 +58,7 @@
 	   so they follow light, dark and the custom colours. */
 	--color-element-hover: var(--element-hover);
 	--color-surface: var(--surface);
+	--color-brand: var(--brand);
 	--color-element-selected: var(--element-selected);
 	--color-element-active: var(--element-active);
 	--color-border-subtle: var(--border-subtle);
@@ -72,6 +73,12 @@
 	--radius-composer: 23px;
 	/* Floating surfaces (cards of the right panel, the selected row): one shadow, per theme. */
 	--shadow-float: var(--elevation-float);
+	/* The elevation scale (base.css): Tailwind's shadow-xs to shadow-lg follow the theme. */
+	--shadow-xs: var(--elevation-xs);
+	--shadow-sm: var(--elevation-sm);
+	--shadow-md: var(--elevation-md);
+	--shadow-lg: var(--elevation-lg);
+	--shadow-composer: var(--elevation-composer);
 
 	--radius-sm: calc(var(--radius) * 0.6);
 	--radius-md: calc(var(--radius) * 0.8);

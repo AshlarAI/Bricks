@@ -2,7 +2,7 @@
 
 use super::paths::{desktop_dir, write_atomic};
 use super::{error, io_error};
-use crate::contract::{ColorSet, IpcErrorCode, IpcResult, Preferences, ThemeColors};
+use crate::contract::{IpcErrorCode, IpcResult, Preferences};
 use crate::i18n::{msg, tr};
 use std::path::PathBuf;
 
@@ -113,10 +113,6 @@ fn sanitize(mut p: Preferences) -> Preferences {
         .clamp(*TERMINAL_HEIGHT.start(), *TERMINAL_HEIGHT.end());
     // A custom duration stays within what the engine accepts.
     p.ask_timer.seconds = p.ask_timer.seconds.clamp(30, 3_600);
-    p.colors = ThemeColors {
-        light: sanitize_colors(p.colors.light),
-        dark: sanitize_colors(p.colors.dark),
-    };
     p.terminal_ratio = p
         .terminal_ratio
         .filter(|r| r.is_finite())
@@ -135,24 +131,6 @@ fn sanitize(mut p: Preferences) -> Preferences {
 
 /// How many conversations can be pinned.
 const PINNED_MAX: usize = 50;
-
-fn sanitize_colors(c: ColorSet) -> ColorSet {
-    ColorSet {
-        accent: c.accent.filter(|v| is_colour(v)),
-        background: c.background.filter(|v| is_colour(v)),
-        panel: c.panel.filter(|v| is_colour(v)),
-    }
-}
-
-/// `#rrggbb`, lower-case hexadecimal digits only.
-fn is_colour(value: &str) -> bool {
-    let b = value.as_bytes();
-    b.len() == 7
-        && b[0] == b'#'
-        && b[1..]
-            .iter()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c))
-}
 
 #[cfg(test)]
 mod tests {
@@ -233,45 +211,31 @@ mod tests {
     }
 
     #[test]
-    fn colours_and_the_terminal_ratio_round_trip() {
+    fn the_terminal_ratio_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let store = PrefsStore::at(dir.path().join("preferences.json"));
-        let mut p = Preferences::default();
-        p.colors.dark.accent = Some("#3366ff".into());
-        p.colors.light.background = Some("#fafafa".into());
-        p.terminal_ratio = Some(0.35);
+        let p = Preferences {
+            terminal_ratio: Some(0.35),
+            ..Preferences::default()
+        };
         store.set(p).unwrap();
-        let back = store.get();
-        assert_eq!(back.colors.dark.accent.as_deref(), Some("#3366ff"));
-        assert_eq!(back.colors.dark.panel, None, "unset stays a theme token");
-        assert_eq!(back.colors.light.background.as_deref(), Some("#fafafa"));
-        assert_eq!(back.terminal_ratio, Some(0.35));
+        assert_eq!(store.get().terminal_ratio, Some(0.35));
     }
 
     #[test]
-    fn an_invalid_colour_becomes_null_and_the_others_are_kept() {
+    fn former_custom_colours_are_ignored_and_dropped_at_the_next_save() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("preferences.json");
         std::fs::write(
             &file,
-            r##"{"colors":{
-                "light":{"accent":"#A1B2C3","background":"#ffffff","panel":"red"},
-                "dark":{"accent":"#0a0a0a","background":"#12345","panel":"#ggg000"}}}"##,
+            r##"{"theme":"dark","colors":{"light":{"accent":"#a1b2c3"},"dark":{"panel":"#0a0a0a"}}}"##,
         )
         .unwrap();
-        let c = PrefsStore::at(file.clone()).get().colors;
-        assert_eq!(c.light.accent, None, "upper case is not the stored form");
-        assert_eq!(c.light.background.as_deref(), Some("#ffffff"), "kept");
-        assert_eq!(c.light.panel, None, "a colour name is refused");
-        assert_eq!(c.dark.accent.as_deref(), Some("#0a0a0a"), "kept");
-        assert_eq!(c.dark.background, None, "five digits");
-        assert_eq!(c.dark.panel, None, "not hexadecimal");
-
-        // Saving applies the same rule, so the file holds only valid values.
         let p = PrefsStore::at(file.clone()).get();
+        assert!(matches!(p.theme, crate::contract::Theme::Dark));
         PrefsStore::at(file.clone()).set(p).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
-        assert!(!text.contains("#A1B2C3") && !text.contains("red"), "{text}");
+        assert!(!text.contains("colors"), "{text}");
     }
 
     #[test]
@@ -327,7 +291,6 @@ mod tests {
         assert!(matches!(p.theme, crate::contract::Theme::Dark));
         assert_eq!(p.left_width, 300);
         assert_eq!(p.last_session_id.as_deref(), Some("s_9"));
-        assert_eq!(p.colors, ThemeColors::default());
         assert_eq!(p.terminal_ratio, None);
         // Saving it adds the fields with their defaults, nothing else changes.
         PrefsStore::at(file.clone()).set(p).unwrap();
@@ -335,7 +298,6 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
         assert_eq!(saved["left_width"], 300);
         assert_eq!(saved["terminal_ratio"], serde_json::Value::Null);
-        assert_eq!(saved["colors"]["light"]["accent"], serde_json::Value::Null);
     }
     #[test]
     fn diagrams_default_to_the_requested_sandbox_configuration() {

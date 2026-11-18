@@ -9,7 +9,7 @@
 .hljs.syntax-reader .hljs-built_in,
 .hljs.syntax-reader .hljs-type,
 .hljs.syntax-reader .hljs-title.class_ {
-	color: var(--primary);
+	color: var(--brand);
 }
 
 .syntax-markdown.md .hljs-string,

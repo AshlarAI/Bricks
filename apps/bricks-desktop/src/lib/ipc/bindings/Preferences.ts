@@ -4,17 +4,12 @@ import type { AskTimerPrefs } from "./AskTimerPrefs";
 import type { DiagramSettings } from "./DiagramSettings";
 import type { Language } from "./Language";
 import type { Theme } from "./Theme";
-import type { ThemeColors } from "./ThemeColors";
 
 export type Preferences = { theme: Theme, 
 /**
  * User's explicit choices (not the size-forced visibility).
  */
 left_open: boolean, right_open: boolean, left_width: number, right_width: number, terminal_open: boolean, terminal_height: number, last_project_id: string | null, last_session_id: string | null, 
-/**
- * Custom colours per resolved mode. Empty = theme tokens.
- */
-colors: ThemeColors, 
 /**
  * Terminal pane share of the centre column, 0.1–0.8.
  * `None`: not set yet — derived once from the legacy `terminal_height`.

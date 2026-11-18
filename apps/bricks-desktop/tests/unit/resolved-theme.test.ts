@@ -6,15 +6,15 @@ import { readThemeTokens } from '../../src/lib/theme/resolved-theme'
 afterEach(() => document.documentElement.removeAttribute('style'))
 
 describe('library themes use the effective CSS variables', () => {
-  it('reads custom colours afresh, including a reset to the next theme', () => {
+  it('reads the theme afresh: the cursor follows the text colour, the background the code one', () => {
     const root = document.documentElement
-    root.style.setProperty('--primary', '#a4512c')
-    root.style.setProperty('--code-bg', '#fbfaf7')
-    expect(terminalTheme()).toMatchObject({ cursor: '#a4512c', background: '#fbfaf7' })
-    root.style.setProperty('--primary', '#e0936b')
-    root.style.setProperty('--code-bg', '#14171c')
-    expect(terminalTheme()).toMatchObject({ cursor: '#e0936b', background: '#14171c' })
-    root.style.removeProperty('--primary')
+    root.style.setProperty('--foreground', '#1d1d1d')
+    root.style.setProperty('--code-bg', '#f5f5f5')
+    expect(terminalTheme()).toMatchObject({ cursor: '#1d1d1d', background: '#f5f5f5' })
+    root.style.setProperty('--foreground', '#ebebeb')
+    root.style.setProperty('--code-bg', '#0a0a0a')
+    expect(terminalTheme()).toMatchObject({ cursor: '#ebebeb', background: '#0a0a0a' })
+    root.style.removeProperty('--foreground')
     expect(terminalTheme()).not.toHaveProperty('cursor')
   })
 

@@ -31,7 +31,7 @@
   import { conversationHistory } from '$lib/state/history.svelte'
   import SearchDialog from '$lib/features/navigation/SearchDialog.svelte'
   import TerminalPanel from '$lib/features/terminal/TerminalPanel.svelte'
-  import SettingsDialog from '$lib/features/settings/SettingsDialog.svelte'
+  import SettingsPage from '$lib/features/settings/SettingsPage.svelte'
   import UpdateDialog from '$lib/features/updates/UpdateDialog.svelte'
   import FolderMissingDialog from '$lib/features/navigation/FolderMissingDialog.svelte'
   import InspectorHost from '$lib/features/commands/InspectorHost.svelte'
@@ -204,6 +204,8 @@
       <EmptyState title={t('app.bricksCouldNotStart')} description={app.startError} />
     </div>
   {:else}
+    <!-- Under the settings page the workspace stays mounted, out of reach. -->
+    <div class="contents" inert={ui.settingsOpen}>
     <AppShell
       bind:leftOpen
       bind:rightOpen
@@ -287,8 +289,12 @@
         <TerminalPanel onHide={hide} />
       {/snippet}
     </AppShell>
+    </div>
   {/if}
-  <SettingsDialog bind:open={ui.settingsOpen} />
+  <!-- Reachable whatever the state of the app, a failed start included. -->
+  {#if ui.settingsOpen}
+    <SettingsPage {systemButtons} />
+  {/if}
   <UpdateDialog bind:open={ui.updateDialogOpen} />
   <FolderMissingDialog />
   <InspectorHost />

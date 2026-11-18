@@ -27,7 +27,6 @@
 		newProviderForm,
 		protocolLabel,
 		providerForm,
-		validateNewId,
 		validateProviderForm,
 		type ProviderForm,
 		type WriteOutcome
@@ -35,7 +34,6 @@
 
 	let {
 		provider,
-		takenIds = [],
 		notice = null,
 		onSave,
 		onClose
@@ -43,7 +41,6 @@
 		/** `null`: a new provider. */
 		provider: ProviderView | null;
 		/** Ids already in the file (a new provider needs its own). */
-		takenIds?: readonly string[];
 		/** Set when the dialog was reopened after the file changed elsewhere. */
 		notice?: string | null;
 		/** Writes the patch: every field for a new provider, else only the changed ones. */
@@ -55,7 +52,6 @@
 	const uid = $props.id();
 	const original = untrack(() => provider);
 	let form = $state<ProviderForm>(original ? providerForm(original) : newProviderForm());
-	let id = $state('');
 	let attempted = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -65,7 +61,6 @@
 	const needsKey = $derived(form.auth !== 'none');
 
 	const errors = $derived(validateProviderForm(form));
-	const idError = $derived(original ? undefined : validateNewId(id, takenIds));
 	/** Field messages show once the user tried to save. */
 	const shown = $derived(attempted ? errors : {});
 
@@ -73,7 +68,7 @@
 		event.preventDefault();
 		if (saving) return;
 		attempted = true;
-		if (hasFormErrors(errors) || idError) return;
+		if (hasFormErrors(errors)) return;
 		const patch = original ? buildProviderPatch(original, form) : buildProviderCreatePatch(form);
 		if (original && isEmptyProviderPatch(patch)) {
 			onClose();
@@ -81,7 +76,7 @@
 		}
 		saving = true;
 		error = null;
-		const outcome = await onSave(patch, original ? original.id : id.trim());
+		const outcome = await onSave(patch, original ? original.id : '');
 		saving = false;
 		if (outcome.ok) onClose();
 		else error = outcome.message;
@@ -100,25 +95,6 @@
 	
 				{#if notice}
 					<p role="alert" class="text-sm text-pretty text-destructive">{notice}</p>
-				{/if}
-	
-				{#if !original}
-					<Field.Field data-invalid={attempted && idError ? 'true' : undefined}>
-						<Field.Label for={`${uid}-id`}>{t('common.identifier')}</Field.Label>
-						<Input
-							id={`${uid}-id`}
-							bind:value={id}
-							maxlength={64}
-							autocomplete="off"
-							spellcheck={false}
-							class="font-mono text-sm"
-							aria-invalid={attempted && idError ? 'true' : undefined}
-							aria-describedby={attempted && idError ? `${uid}-id-error` : undefined}
-						/>
-						{#if attempted && idError}
-							<Field.Error id={`${uid}-id-error`}>{idError}</Field.Error>
-						{/if}
-					</Field.Field>
 				{/if}
 	
 				<Field.Field data-invalid={shown.name ? 'true' : undefined}>

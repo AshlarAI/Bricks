@@ -28,7 +28,7 @@
 		shares && gauge.used !== null && gauge.total !== null ? Math.max(0, gauge.total - gauge.used) : null
 	);
 
-	// The accent for the messages, then the theme's chart hues: they follow light, dark and custom colours.
+	// The primary colour for the messages, then the theme's chart hues: they follow light and dark.
 	const COLOR: Record<ContextSource, string> = {
 		conversation: 'bg-primary',
 		tool_results: 'bg-chart-1',

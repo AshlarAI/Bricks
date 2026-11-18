@@ -2,7 +2,6 @@
   // The welcome screen's backdrop: a slow field of characters in the text colour, hollow in
   // the middle. Decorative only (hidden from assistive technology, no pointer events). It
   // pauses while hidden or off screen, and draws a single still frame with reduced motion.
-  import { app } from '$lib/state/app.svelte'
   import { theme } from '$lib/theme/theme.svelte'
   import { cssColorToHex, readThemeToken } from '$lib/theme/resolved-theme'
   import { FRAME_MS, drawField } from './dither'
@@ -16,9 +15,8 @@
 
   /** Runs the field on its canvas; Svelte runs it again when the theme it reads changes. */
   function field(element: HTMLCanvasElement) {
-    // Read again when the mode or the custom colours change.
+    // Read again when the mode changes.
     void theme.resolved
-    void app.prefs.colors
     const context = element.getContext('2d')
     if (!context) return
     const ctx: CanvasRenderingContext2D = context

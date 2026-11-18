@@ -15,6 +15,7 @@
 	import * as Empty from '$lib/components/ui/empty';
 	import { Progress } from '$lib/components/ui/progress';
 	import * as Select from '$lib/components/ui/select';
+	import { Separator } from '$lib/components/ui/separator';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { errorMessage, providersConfig, usageGoQuota, usageStats } from '$lib/ipc/client';
 	import type { GoQuota } from '$lib/ipc/bindings/GoQuota';
@@ -135,14 +136,26 @@
 		});
 	});
 	const percent = $derived(numberFormat({ style: 'percent', maximumFractionDigits: 0 }));
+	const share = $derived(numberFormat({ style: 'percent', maximumFractionDigits: 1 }));
+	/** The figures row, left to right. */
+	const figures = $derived([
+		{ label: t('usage.totalTokens'), value: count(sums.tokens), title: undefined },
+		{ label: t('usage.peakDay'), value: count(sums.peakTokens), title: sums.peakDay ? dayLabel(sums.peakDay) : undefined },
+		{
+			label: t('usage.cost'),
+			value: `${formatUsd(sums.costUsd)}${sums.unpriced > 0 ? '+' : ''}`,
+			title: sums.unpriced > 0 ? t('usage.unpriced', { count: sums.unpriced }) : undefined
+		},
+		{ label: t('usage.currentStreak'), value: t('usage.days', { count: sums.currentStreak }), title: undefined },
+		{ label: t('usage.longestStreak'), value: t('usage.days', { count: sums.longestStreak }), title: undefined }
+	]);
 	const LEVELS = ['bg-muted-foreground/10', 'bg-chart-1/25', 'bg-chart-1/50', 'bg-chart-1/75', 'bg-chart-1'];
 	const resets = (iso: string | null) =>
 		iso ? dateTimeFormat({ weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : null;
 </script>
 
 <div class="flex w-full min-w-0 flex-col gap-4">
-	<div class="flex flex-wrap items-center justify-between gap-2">
-		<h3 class="text-ui font-semibold text-foreground">{t('common.usage')}</h3>
+	<div class="flex flex-wrap items-center justify-end gap-2">
 		<div class="flex items-center gap-1.5">
 			<Select.Root type="single" bind:value={provider} onValueChange={(id) => void pick(id)}>
 				<Select.Trigger size="sm" class="min-w-44">
@@ -177,33 +190,17 @@
 	{/if}
 
 	{#if rows}
-		<dl class="grid grid-cols-2 gap-y-3 rounded-xl bg-muted/50 py-4 sm:grid-cols-5 sm:divide-x sm:divide-border">
-			<div class="flex flex-col items-center gap-1 px-2">
-				<dd class="text-lg font-semibold text-foreground tabular-nums">{count(sums.tokens)}</dd>
-				<dt class="text-xs text-muted-foreground">{t('usage.totalTokens')}</dt>
-			</div>
-			<div class="flex flex-col items-center gap-1 px-2" title={sums.peakDay ? dayLabel(sums.peakDay) : undefined}>
-				<dd class="text-lg font-semibold text-foreground tabular-nums">{count(sums.peakTokens)}</dd>
-				<dt class="text-xs text-muted-foreground">{t('usage.peakDay')}</dt>
-			</div>
-			<div
-				class="flex flex-col items-center gap-1 px-2"
-				title={sums.unpriced > 0 ? t('usage.unpriced', { count: sums.unpriced }) : undefined}
-			>
-				<dd class="text-lg font-semibold text-foreground tabular-nums">
-					{formatUsd(sums.costUsd)}{sums.unpriced > 0 ? '+' : ''}
-				</dd>
-				<dt class="text-xs text-muted-foreground">{t('usage.cost')}</dt>
-			</div>
-			<div class="flex flex-col items-center gap-1 px-2">
-				<dd class="text-lg font-semibold text-foreground tabular-nums">{t('usage.days', { count: sums.currentStreak })}</dd>
-				<dt class="text-xs text-muted-foreground">{t('usage.currentStreak')}</dt>
-			</div>
-			<div class="flex flex-col items-center gap-1 px-2">
-				<dd class="text-lg font-semibold text-foreground tabular-nums">{t('usage.days', { count: sums.longestStreak })}</dd>
-				<dt class="text-xs text-muted-foreground">{t('usage.longestStreak')}</dt>
-			</div>
-		</dl>
+		<div class="flex rounded-xl bg-muted/50 py-4">
+			{#each figures as figure, index (figure.label)}
+				{#if index > 0}
+					<Separator orientation="vertical" class="h-auto self-stretch" />
+				{/if}
+				<div class="flex min-w-0 flex-1 flex-col items-center gap-1 px-2 text-center" title={figure.title}>
+					<span class="text-lg font-semibold text-foreground tabular-nums">{figure.value}</span>
+					<span class="text-xs text-muted-foreground">{figure.label}</span>
+				</div>
+			{/each}
+		</div>
 
 		{#if isGo && quota}
 			<Card.Root class="gap-3 py-4">
@@ -331,6 +328,14 @@
 										textAnchor="middle"
 										verticalAnchor="middle"
 										class="fill-foreground text-lg! font-semibold"
+										dy={-6}
+									/>
+									<Text
+										value={t('usage.tokensUnit')}
+										textAnchor="middle"
+										verticalAnchor="middle"
+										class="fill-muted-foreground! text-xs!"
+										dy={14}
 									/>
 								{/snippet}
 								{#snippet tooltip()}
@@ -338,17 +343,21 @@
 								{/snippet}
 							</PieChart>
 						</Chart.Container>
-						<ul class="flex flex-col gap-2 text-ui">
-							{#each series as s (s.key)}
-								<li class="flex items-center gap-2">
-									<span class="size-2.5 shrink-0 rounded-[3px]" style:background-color={s.color} aria-hidden="true"></span>
-									<span class="min-w-0 flex-1 truncate text-foreground" title={s.share.key === OTHER ? undefined : s.share.key}>{s.label}</span>
-									<span class="text-xs text-muted-foreground tabular-nums">{t('usage.requests', { count: s.share.requests })}</span>
-									<span class="w-14 text-right text-xs text-foreground tabular-nums">{count(s.share.tokens)}</span>
-									<span class="w-16 text-right text-xs text-muted-foreground tabular-nums">{formatUsd(s.share.costUsd)}</span>
-								</li>
+						<div class="flex flex-col">
+							{#each series as s, index (s.key)}
+								{#if index > 0}
+									<Separator />
+								{/if}
+								<div class="flex flex-col gap-1 py-3" title={t('usage.requests', { count: s.share.requests })}>
+									<div class="flex items-center gap-2.5">
+										<span class="size-2.5 shrink-0 rounded-full" style:background-color={s.color} aria-hidden="true"></span>
+										<span class="min-w-0 flex-1 truncate font-mono text-ui text-foreground">{s.label}</span>
+										<span class="font-mono text-xs text-muted-foreground tabular-nums">{share.format(s.share.tokens / rangeTokens)}</span>
+									</div>
+									<span class="pl-5 text-xs text-muted-foreground tabular-nums">{t('usage.tokensCount', { amount: count(s.share.tokens) })}</span>
+								</div>
 							{/each}
-						</ul>
+						</div>
 					</div>
 				{/if}
 			</Card.Content>

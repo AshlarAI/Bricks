@@ -1,83 +1,69 @@
-// Appearance: the palette's CSS variables exist as theme tokens in both
-// modes of src/app.css, and the accent presets keep their text readable. The rules themselves are
-// unit-tested in theme-palette.test.ts and appearance-colors.test.ts; this file checks the wiring
-// between the palette and the stylesheet. Validation, Haiku V.
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { COLOR_ROLES, PALETTE_VARIABLES, PRESETS, colorChecks, type ResolvedMode } from '../../src/lib/theme/palette';
+// Appearance: the settings page shows two groups, the theme mode and the app icon, and no colour
+// choice. The component is rendered as the app renders it, so the test reads the markup the user gets.
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from 'svelte/server';
+import AppearanceSettings from '../../src/lib/features/settings/AppearanceSettings.svelte';
+import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app.svelte';
 
-const css = readFileSync(new URL('../../src/styles/tokens.generated.css', import.meta.url), 'utf8');
+const ipc = vi.hoisted(() => ({
+	prefsSet: vi.fn(),
+	sessionDelete: vi.fn(),
+	errorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
+vi.mock('$lib/ipc/client', () => ipc);
 
-/** The declarations inside the first block that starts with `selector {`. */
-function blockOf(selector: string): string {
-	const start = css.indexOf(`${selector} {`);
-	if (start < 0) throw new Error(`no block ${selector} in tokens.generated.css`);
-	const open = css.indexOf('{', start);
-	let depth = 0;
-	for (let i = open; i < css.length; i++) {
-		if (css[i] === '{') depth += 1;
-		else if (css[i] === '}') {
-			depth -= 1;
-			if (depth === 0) return css.slice(open + 1, i);
-		}
-	}
-	throw new Error(`unclosed block ${selector}`);
+function page(): string {
+	return render(AppearanceSettings).body;
 }
 
-const LIGHT = blockOf(':root');
-const DARK = blockOf('.dark');
-
-function declares(block: string, name: string): boolean {
-	return new RegExp(`(^|[;\\s{])${name.replace(/[-]/g, '\\-')}\\s*:`, 'm').test(block);
+/** The radio buttons of the page, as [group name, value, checked], in the order they are shown. */
+function radios(html: string): [string, string, boolean][] {
+	return (html.match(/<input\b[^>]*>/g) ?? []).map((tag) => {
+		const name = /\bname="([^"]*)"/.exec(tag)?.[1] ?? '';
+		const value = /\bvalue="([^"]*)"/.exec(tag)?.[1] ?? '';
+		// The class names mention « :checked », so only the checked attribute itself is read.
+		const checked = /\bchecked\b/.test(tag.replace(/\bclass="[^"]*"/, ''));
+		return [name, value, checked];
+	});
 }
 
-describe('palette variables are theme tokens in both modes', () => {
-	it('every variable the palette can set is declared in :root (light) and .dark', () => {
-		const missingLight = PALETTE_VARIABLES.filter((name) => !declares(LIGHT, name));
-		const missingDark = PALETTE_VARIABLES.filter((name) => !declares(DARK, name));
-		expect(missingLight).toEqual([]);
-		expect(missingDark).toEqual([]);
-	});
+/** The values of one radio group, in the order they are shown. */
+function values(group: string, html: string): string[] {
+	return radios(html)
+		.filter(([name]) => name === group)
+		.map(([, value]) => value);
+}
 
-	it('the three roles each drive a non-empty set of variables', () => {
-		expect(COLOR_ROLES).toEqual(['accent', 'background', 'panel']);
-	});
+beforeEach(() => {
+	app.prefs = { ...DEFAULT_PREFERENCES };
 });
 
-describe('accent presets keep the text on them readable', () => {
-	// The text colour on a customised accent is the more readable of the two theme text colours.
-	// WCAG AA for normal text is 4.5:1: a preset below it would show a warning in the settings.
-	const modes: ResolvedMode[] = ['light', 'dark'];
-	for (const mode of modes) {
-		it(`every accent preset reaches 4.5:1 for its text in ${mode} mode`, () => {
-			const below = PRESETS.accent
-				.map((swatch) => ({
-					label: swatch.label,
-					ratio: colorChecks({ accent: swatch.hex, background: null, panel: null }, mode, 'accent')
-						.find((c) => c.label === 'Texte sur l’accent')?.ratio ?? 0
-				}))
-				.filter((row) => row.ratio < 4.5);
-			expect(below).toEqual([]);
-		});
-	}
+describe('appearance settings', () => {
+	it('shows two groups, the theme mode and the app icon, and no other section', () => {
+		const html = page();
+		expect(html.match(/<section\b/g)).toHaveLength(2);
+		expect(html.match(/<fieldset\b/g)).toHaveLength(2);
+	});
 
-	it('every background and panel preset keeps its text at 4.5:1 or more in both modes', () => {
-		for (const mode of modes) {
-			for (const role of ['background', 'panel'] as const) {
-				const below = PRESETS[role]
-					.map((swatch) => ({
-						label: swatch.label,
-						ratio: colorChecks(
-							role === 'background'
-								? { accent: null, background: swatch.hex, panel: null }
-								: { accent: null, background: null, panel: swatch.hex },
-							mode,
-							role
-						)[0].ratio
-					}))
-					.filter((row) => row.ratio < 4.5);
-				expect(below, `${role} presets in ${mode}`).toEqual([]);
-			}
-		}
+	it('offers the light, dark and system theme modes', () => {
+		expect(values('theme-mode', page())).toEqual(['light', 'dark', 'system']);
+	});
+
+	it('offers the light, dark and aligned app icons', () => {
+		expect(values('app-icon', page())).toEqual(['light', 'dark', 'aligned']);
+	});
+
+	it('has no other control: six radio buttons and no colour picker', () => {
+		const inputs = page().match(/<input\b[^>]*>/g) ?? [];
+		expect(inputs).toHaveLength(6);
+		expect(inputs.every((tag) => tag.includes('type="radio"'))).toBe(true);
+	});
+
+	it('marks the saved theme mode and app icon as checked', () => {
+		app.prefs = { ...DEFAULT_PREFERENCES, theme: 'dark', app_icon: 'light' };
+		const checked = radios(page())
+			.filter(([, , isChecked]) => isChecked)
+			.map(([name, value]) => `${name}=${value}`);
+		expect(checked).toEqual(['theme-mode=dark', 'app-icon=light']);
 	});
 });

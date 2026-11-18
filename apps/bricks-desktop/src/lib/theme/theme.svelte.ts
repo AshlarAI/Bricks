@@ -10,18 +10,11 @@
  * a mode, then save it. Until then, the theme last shown (`last-theme.ts`, a
  * display copy) is used, so a dark setup does not start light.
  *
- * Custom colours come from `app.prefs.colors` for the resolved
- * mode. A module-level effect applies them as soon as preferences load, when
- * the mode changes and when the user edits a colour, so no caller has to
- * remember to apply them at start-up.
- *
  * `fontsReady` resolves once the bundled Google Sans faces are loaded (the terminal
  * refits after it).
  */
 
 import { flushSync } from 'svelte';
-import { app } from '$lib/state/app.svelte';
-import { applyPaletteVariables, paletteVariables } from './palette';
 import tokens from './tokens.json';
 import { readLastTheme, rememberTheme } from './last-theme';
 
@@ -88,15 +81,6 @@ function applyToDocument(resolved: ResolvedTheme): void {
 // The theme last shown, from the first paint on (the preferences load later).
 applyToDocument(state.resolved);
 
-// Custom colours of the resolved mode. Runs in its own root: it lives as long as the app.
-if (typeof document !== 'undefined') {
-	$effect.root(() => {
-		$effect(() => {
-			applyPaletteVariables(document.documentElement, paletteVariables(app.prefs.colors?.[state.resolved]));
-		});
-	});
-}
-
 /** Resolves once the bundled Google Sans faces (UI and mono) are loaded. Never rejects: the fallback fonts stay if a face fails. */
 export const fontsReady: Promise<void> = loadBundledFonts();
 
@@ -117,7 +101,7 @@ async function loadBundledFonts(): Promise<void> {
 /**
  * Runs `change` as a short cross-fade between the old and the new look. Falls back to an
  * instant change without the View Transitions API, with reduced motion, or while hidden.
- * `flushSync` lets the custom colours (an effect) land before the new look is captured.
+ * `flushSync` lets the new mode land before the new look is captured.
  */
 function fade(change: () => void): void {
 	const reduced =

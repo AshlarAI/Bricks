@@ -687,8 +687,6 @@ pub struct Preferences {
     pub terminal_height: u32,
     pub last_project_id: Option<String>,
     pub last_session_id: Option<String>,
-    /// Custom colours per resolved mode. Empty = theme tokens.
-    pub colors: ThemeColors,
     /// Terminal pane share of the centre column, 0.1–0.8.
     /// `None`: not set yet — derived once from the legacy `terminal_height`.
     pub terminal_ratio: Option<f32>,
@@ -725,7 +723,6 @@ impl Default for Preferences {
             terminal_height: 240,
             last_project_id: None,
             last_session_id: None,
-            colors: ThemeColors::default(),
             terminal_ratio: None,
             diagrams: DiagramSettings::default(),
             app_icon: AppIcon::Aligned,
@@ -1193,26 +1190,7 @@ pub struct ModelPatch {
     pub enabled: Option<bool>,
 }
 
-// ─── colours, reasoning profiles, skills catalogue ─────────────
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
-#[serde(default)]
-pub struct ThemeColors {
-    pub light: ColorSet,
-    pub dark: ColorSet,
-}
-
-/// `#rrggbb` values; `None` keeps the theme's token.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
-#[serde(default)]
-pub struct ColorSet {
-    /// Actions, selections, focus ring.
-    pub accent: Option<String>,
-    /// Central surface.
-    pub background: Option<String>,
-    /// Navigation and side panels.
-    pub panel: Option<String>,
-}
+// ─── reasoning profiles, skills catalogue ─────────────
 
 /// A reasoning profile as edited by the desktop (engine `ReasoningProfile`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

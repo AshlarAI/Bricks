@@ -34,12 +34,12 @@
       {t('welcome.title')}
     </h2>
     <TypedLine {paused} />
-    <div role="group" aria-label={t('welcome.suggestions')} class="mt-7 grid w-full grid-cols-2 gap-2.5">
+    <div role="group" aria-label={t('welcome.suggestions')} class="mt-7 grid w-full grid-cols-2 gap-2.5 perspective-midrange">
       {#each STARTERS as starter (starter.id)}
         {@const Icon = starter.icon}
         <button
           type="button"
-          class="group relative flex cursor-pointer flex-col gap-2.5 rounded-[12px] border border-border bg-card p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:bg-muted hover:shadow-[0_8px_24px_-12px_rgb(0_0_0/0.45)] active:translate-y-0"
+          class="group relative flex cursor-pointer flex-col gap-2.5 rounded-[12px] border border-border bg-card p-3 text-left shadow-xs transition-all duration-200 ease-out transform-3d hover:border-border-strong hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-safe:hover:rotate-x-6 active:translate-y-0 active:rotate-x-0"
           onclick={() => onPick(starterText(starter))}
         >
           <span

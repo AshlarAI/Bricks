@@ -32,8 +32,6 @@ export const CONFLICT_MESSAGE = (): string =>
 
 export const COUNT_ERROR = (): string => t('settings.typeAWholeNumberAbove0');
 export const PRICE_ERROR = (): string => t('settings.typeAPositiveNumberOrZero');
-export const ID_ERROR = (): string => t('settings.lettersDigitsAndStartingWithA');
-export const ID_DUPLICATE = (): string => t('settings.thisIdentifierAlreadyExists');
 export const MODALITY_REQUIRED = (): string => t('settings.tickAtLeastOneInput');
 export const REQUIRED_MESSAGE = (): string => t('settings.thisFieldIsRequired');
 
@@ -247,15 +245,6 @@ export function parseCount(text: string): number | null {
 export function parsePrice(text: string): string | null {
 	const value = text.replace(/[\s  ]/g, '').replace(',', '.');
 	return /^\d+(\.\d+)?$/.test(value) ? value : null;
-}
-
-/** A new id: letters, digits, `.`, `_` and `-`, starting with a letter or a digit. */
-export function validateNewId(id: string, taken: readonly string[]): string | undefined {
-	const value = id.trim();
-	if (value === '') return REQUIRED_MESSAGE();
-	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) return ID_ERROR();
-	if (taken.includes(value)) return ID_DUPLICATE();
-	return undefined;
 }
 
 export interface ModelFormErrors {

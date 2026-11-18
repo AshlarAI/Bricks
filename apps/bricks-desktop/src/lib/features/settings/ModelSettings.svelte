@@ -206,9 +206,15 @@
 		return write((revision) => modelUpdate(provider.id, model.id, patch, revision));
 	}
 
+	/** The id is made by the backend from the name: the new provider is the one not there before. */
 	async function createProvider(id: string, patch: ProviderPatch): Promise<WriteOutcome> {
-		const outcome = await write((revision) => providerCreate(id, patch, revision));
-		if (outcome.ok) selected = id;
+		// Taken when the write runs (writes queue): only this creation is new after it.
+		let before = new Set<string>();
+		const outcome = await write((revision) => {
+			before = new Set(providers.map((p) => p.id));
+			return providerCreate(id, patch, revision);
+		});
+		if (outcome.ok) selected = file?.providers.find((p) => !before.has(p.id))?.id ?? null;
 		return outcome;
 	}
 
@@ -355,7 +361,6 @@
 		{#if dialog?.kind === 'create-provider'}
 			<ProviderFormDialog
 				provider={null}
-				takenIds={providers.map((p) => p.id)}
 				notice={dialog.notice}
 				onSave={(patch, id) => createProvider(id, patch)}
 				onClose={closeDialog}
@@ -365,7 +370,6 @@
 			<ModelFormDialog
 				model={null}
 				protocol={owner.protocol}
-				takenIds={(providers.find((p) => p.id === owner.id) ?? owner).models.map((m) => m.id)}
 				notice={dialog.notice}
 				onSave={(patch, id) => createModel(owner, id, patch)}
 				onClose={closeDialog}

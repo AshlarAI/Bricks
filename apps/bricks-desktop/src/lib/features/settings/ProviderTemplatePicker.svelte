@@ -151,9 +151,12 @@
 		{#each brands as group (group.brand)}
 			<div class="flex flex-col gap-2">
 				<h5 class="text-ui text-muted-foreground">{group.brand}</h5>
-				<Item.Group class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<Item.Group class="grid grid-cols-1 gap-2 perspective-midrange sm:grid-cols-2">
 					{#each group.templates as template (template.id)}
-						<Item.Root variant="outline" class="bg-card">
+						<Item.Root
+							variant="outline"
+							class="bg-card shadow-xs transition-[box-shadow,translate,rotate] duration-200 ease-out transform-3d hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-safe:hover:rotate-x-6"
+						>
 							{#snippet child({ props })}
 								<button {...props} type="button" class={cn(props.class as string | undefined, 'text-left')} onclick={() => choose(template)}>
 									<Item.Media>
@@ -175,8 +178,11 @@
 
 		<div class="flex flex-col gap-2">
 			<h5 class="text-ui text-muted-foreground">{t('settings.otherProviders')}</h5>
-			<Item.Group class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-				<Item.Root variant="outline" class="bg-card">
+			<Item.Group class="grid grid-cols-1 gap-2 perspective-midrange sm:grid-cols-2">
+				<Item.Root
+							variant="outline"
+							class="bg-card shadow-xs transition-[box-shadow,translate,rotate] duration-200 ease-out transform-3d hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-safe:hover:rotate-x-6"
+						>
 					{#snippet child({ props })}
 						<button {...props} type="button" class={cn(props.class as string | undefined, 'text-left')} onclick={onCustom}>
 							<Item.Media variant="icon" class="size-8 rounded-md bg-muted">

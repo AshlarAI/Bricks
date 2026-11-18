@@ -1,4 +1,4 @@
-// The effective CSS theme, including user colour overrides. Library adapters
+// The effective CSS theme (light or dark tokens). Library adapters
 // keep their own role mappings, but share the same DOM reads and conversion.
 
 export function readThemeToken(name: string): string {
@@ -29,6 +29,11 @@ export function cssColorToHex(color: string): string | null {
   }
   if (!colorContext || !color) return null
   colorContext.clearRect(0, 0, 1, 1)
+  // A translucent colour (the borders are 10 % of the text colour) is read as it shows: over the
+  // page background, so canvases (Mermaid, Vega, the terminal) get the colour seen on screen.
+  colorContext.fillStyle = '#fff'
+  colorContext.fillStyle = readThemeToken('--background') || '#fff'
+  colorContext.fillRect(0, 0, 1, 1)
   colorContext.fillStyle = '#000'
   colorContext.fillStyle = color
   colorContext.fillRect(0, 0, 1, 1)

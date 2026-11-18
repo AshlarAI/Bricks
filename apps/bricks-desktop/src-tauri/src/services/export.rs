@@ -117,8 +117,6 @@ fn export_bindings() {
         ModelProfileView,
         ProviderPatch,
         ModelPatch,
-        ThemeColors,
-        ColorSet,
         ReasoningProfileEdit,
         PricingView,
         PricingEdit,

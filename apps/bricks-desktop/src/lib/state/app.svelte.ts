@@ -42,7 +42,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminal_height: 240,
   last_project_id: null,
   last_session_id: null,
-  colors: { light: { accent: null, background: null, panel: null }, dark: { accent: null, background: null, panel: null } },
   terminal_ratio: null,
   diagrams: defaultDiagramSettings(),
   app_icon: 'aligned',

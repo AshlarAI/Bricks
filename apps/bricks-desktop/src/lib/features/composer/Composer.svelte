@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '$lib/i18n/i18n.svelte'
+  import { hintIndex } from './hints'
   import { onMount, tick, untrack } from 'svelte'
   import { getCurrentWebview } from '@tauri-apps/api/webview'
   import type { DragDropEvent } from '@tauri-apps/api/webview'
@@ -151,8 +152,8 @@
     if (!project) return t('composer.createAProjectToWrite')
     if (project.missing) return t('composer.theProjectFolderCantBeFound')
     if (!hasModels) return t('composer.noModelConfigured')
-    if (running) return t('composer.prepareTheNextMessage')
-    return t('composer.anythingToSay')
+    const hints = [t('composer.anythingToSay'), t('composer.eagerForYourMind'), t('composer.askBricksAnything')]
+    return hints[hintIndex(conversation?.sessionId ?? '', hints.length)]
   })
 
   // ─── Attachments ──────────────────────────────────────────────────────────
@@ -1154,7 +1155,7 @@
 
     <div
       class={[
-        'relative z-10 mx-1 mt-1 flex flex-col rounded-xl border border-border bg-background shadow-sm transition-[border-color,box-shadow] duration-200 focus-within:border-border-strong',
+        'relative z-10 mx-1 mt-1 flex flex-col rounded-xl border border-border bg-card shadow-composer transition-[border-color,box-shadow] duration-200 focus-within:border-border-strong focus-within:shadow-md',
         dragging && 'border-ring bg-element-hover',
       ]}
     >

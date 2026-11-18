@@ -1,6 +1,6 @@
 // The shell redesign: pinned conversations in the app store (order, removal, missing ids, the
 // debounced save, a deleted conversation unpinned), the navigation and title markup, the streaming
-// caret removed, the contrast notice, the message rail's grains, and the theme cross-fade (only
+// caret removed, the message rail's grains, and the theme cross-fade (only
 // when the look changes and reduced motion is not asked for).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -146,12 +146,6 @@ describe('the streaming caret is gone', () => {
 
 	it('the assistant message has no pulsing bar', () => {
 		expect(source('lib/features/conversation/timeline/AssistantMessage.svelte')).not.toContain('animate-pulse');
-	});
-});
-
-describe('colour choices', () => {
-	it('a colour row shows its name only, with no theme-colour caption', () => {
-		expect(source('lib/features/settings/ColorChoice.svelte')).not.toContain('settings.themeColor');
 	});
 });
 

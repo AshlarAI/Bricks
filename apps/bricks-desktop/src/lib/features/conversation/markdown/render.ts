@@ -5,6 +5,8 @@ import { t } from '$lib/i18n/i18n.svelte'
 import hljs from 'highlight.js/lib/common'
 import { Lexer, Marked, Renderer, type Parser, type Token, type Tokens } from 'marked'
 import { isOpenableUrl } from '../links'
+import { buttonVariants } from '$lib/components/ui/button'
+import { citationHost, isCitable } from './citations'
 import { parseFileReference, safeDecode } from './fileref-parse'
 import {
   alertBlockquote,
@@ -68,8 +70,11 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** A cited site: the official secondary extra-small button. */
+const CITATION_CLASS = `${buttonVariants({ variant: 'secondary', size: 'xs' })} no-underline align-baseline`
+
 const LINK_CLASS =
-  'rounded-sm text-primary underline underline-offset-2 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+  'rounded-sm text-brand underline underline-offset-2 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 
 const ALERT_TITLES: Record<string, string> = {
   get note() { return t('common.note') },
@@ -206,12 +211,18 @@ const renderer = {
     if (file) return fileButton(file, label)
     if (!isOpenableUrl(href)) return label
     const address = escapeHtml(href)
-    // The address is shown when the link text differs, so the destination is visible.
-    const shownAddress = text && text !== href ? ` <span class="text-muted-foreground">(${address})</span>` : ''
-    return (
-      `<a href="${address}" rel="noopener noreferrer nofollow" title="${address}" class="${LINK_CLASS}">` +
-      `${label}</a>${shownAddress}`
-    )
+    if (!isCitable(href)) {
+      return `<a href="${address}" rel="noopener noreferrer nofollow" title="${address}" class="${LINK_CLASS}">${label}</a>`
+    }
+    // A web page: its card (title, summary, site) shows on hover. A bare address becomes its
+    // site's name, as a citation.
+    if (!text || text === href) {
+      return (
+        `<a href="${address}" rel="noopener noreferrer nofollow" title="${address}" data-citation ` +
+        `class="${CITATION_CLASS}">${escapeHtml(citationHost(href))}</a>`
+      )
+    }
+    return `<a href="${address}" rel="noopener noreferrer nofollow" title="${address}" data-citation class="${LINK_CLASS}">${label}</a>`
   },
   image({ text, href }: Tokens.Image) {
     return `<span class="text-muted-foreground">[image : ${escapeHtml(text || href || t('conversation.untitled'))}]</span>`

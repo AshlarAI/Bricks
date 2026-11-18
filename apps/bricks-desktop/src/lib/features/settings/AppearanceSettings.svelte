@@ -1,24 +1,11 @@
 <script lang="ts">
-	// « Apparence » of the settings: the light, dark or system mode, three colours per mode
-	// (accent, central background, panels), saved per resolved mode, and the app's icon.
+	// « Apparence » of the settings: the light, dark or system mode, and the app's icon. The
+	// colours are the theme's own (neutral surfaces, one brand blue for links).
 	import { t } from '$lib/i18n/i18n.svelte';
 	import type { AppIcon } from '$lib/ipc/client';
 	import { app } from '$lib/state/app.svelte';
-	import { setTheme, theme, type ThemeMode } from '$lib/theme/theme.svelte';
-	import {
-		COLOR_ROLES,
-		COLOR_ROLE_LABELS,
-		PRESETS,
-		colorChecks,
-		isCustomRole,
-		roleColor,
-		roleForeground,
-		type ColorRole,
-		type Hex,
-		type ResolvedMode
-	} from '$lib/theme/palette';
+	import { setTheme, type ThemeMode } from '$lib/theme/theme.svelte';
 	import SettingsGroup from './SettingsGroup.svelte';
-	import ColorChoice from './ColorChoice.svelte';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Monitor from '@lucide/svelte/icons/monitor';
@@ -46,29 +33,11 @@
 		{ value: 'aligned', get label() { return t('settings.aligned') }, icon: SunMoon }
 	];
 
-	/** What each colour changes, shown as a sample on its preview. */
-	const SAMPLES: Record<ColorRole, string> = {
-		get accent() { return t('settings.primaryAction') },
-		get background() { return t('settings.mainBackgroundText') },
-		get panel() { return t('settings.panelText') }
-	};
-
 	const current = $derived(app.prefs.theme);
-	/** The mode whose colours are being edited: the one on screen (system resolves to light or dark). */
-	const mode = $derived<ResolvedMode>(theme.resolved);
-
 	/** Applies the mode at once and saves it with the other preferences. */
 	function choose(next: ThemeMode) {
 		setTheme(next);
 		app.setPrefs({ theme: next });
-	}
-
-	/** Stores one colour of the current mode (`null` = the theme token); the other mode is left as it is. */
-	function setColor(role: ColorRole, hex: Hex | null) {
-		const all = app.prefs.colors;
-		const colors = { light: { ...all.light }, dark: { ...all.dark } };
-		colors[mode][role] = hex;
-		app.setPrefs({ colors });
 	}
 </script>
 
@@ -96,22 +65,6 @@
 				{/each}
 			</div>
 		</fieldset>
-	</SettingsGroup>
-
-	<SettingsGroup title={t('settings.colors')}>
-		{#each COLOR_ROLES as role (role)}
-			<ColorChoice
-				label={COLOR_ROLE_LABELS[role]}
-				value={roleColor(app.prefs.colors[mode], mode, role)}
-				custom={isCustomRole(app.prefs.colors[mode], role)}
-				foreground={roleForeground(app.prefs.colors[mode], mode, role)}
-				sample={SAMPLES[role]}
-				presets={PRESETS[role]}
-				checks={colorChecks(app.prefs.colors[mode], mode, role)}
-				onChange={(hex) => setColor(role, hex)}
-				onReset={() => setColor(role, null)}
-			/>
-		{/each}
 	</SettingsGroup>
 
 	<SettingsGroup title={t('settings.appIcon')}>

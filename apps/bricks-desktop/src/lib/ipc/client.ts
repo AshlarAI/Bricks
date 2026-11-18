@@ -404,10 +404,8 @@ export const usageStats = () => call<UsageStats>('usage_stats')
 /** How much of OpenCode Go's limits the provider's key has used; null when unknown. */
 export const usageGoQuota = (providerId: string) => call<GoQuota | null>('usage_go_quota', { providerId })
 
-// ─── skills catalogue, colours, reasoning profiles ──────────────
+// ─── skills catalogue, reasoning profiles ──────────────
 
-export type * from './bindings/ThemeColors'
-export type * from './bindings/ColorSet'
 export type * from './bindings/ReasoningProfileEdit'
 export type * from './bindings/SkillsCatalog'
 export type * from './bindings/SkillSourceView'

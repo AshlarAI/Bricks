@@ -1,4 +1,4 @@
-// Terminal colours and font, read from the CSS tokens of src/app.css so the
+// Terminal colours and font, read from the CSS tokens (tokens.generated.css) so the
 // terminal follows light and dark mode. The ANSI palette maps onto the
 // semantic tokens: there is no hard-coded colour here.
 
@@ -9,7 +9,7 @@ import tokens from '$lib/theme/tokens.json'
 const COLOUR_TOKENS: Record<string, string> = {
   background: '--code-bg',
   foreground: '--code-foreground',
-  cursor: '--primary',
+  cursor: '--foreground',
   cursorAccent: '--code-bg',
   selectionBackground: '--muted',
   black: '--muted-foreground',
@@ -17,7 +17,7 @@ const COLOUR_TOKENS: Record<string, string> = {
   green: '--success',
   yellow: '--warning',
   blue: '--info',
-  magenta: '--primary',
+  magenta: '--brand',
   cyan: '--info',
   white: '--foreground',
   brightBlack: '--muted-foreground',
@@ -25,7 +25,7 @@ const COLOUR_TOKENS: Record<string, string> = {
   brightGreen: '--success',
   brightYellow: '--warning',
   brightBlue: '--info',
-  brightMagenta: '--primary',
+  brightMagenta: '--brand',
   brightCyan: '--info',
   brightWhite: '--card-foreground',
 }

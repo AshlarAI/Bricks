@@ -162,7 +162,7 @@
                   href={part.href}
                   rel="noopener noreferrer nofollow"
                   title={part.href}
-                  class="rounded-sm text-primary underline underline-offset-2 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  class="rounded-sm text-brand underline underline-offset-2 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   onclick={(event) => openLink(event, part.href)}
                   onauxclick={(event) => event.preventDefault()}>{part.text}</a
                 >{:else}{part.text}{/if}{/each}</Bubble.Content

@@ -3,7 +3,7 @@
 // replaced: the built-in row carries its badge and its switch; the switch saves the choice and tells
 // the app; each permission reads granted, missing or unknown, with « Ouvrir les Réglages » only for a
 // missing one; the switch is off while the driver is missing or unsupported; the state is read again
-// when the window comes back to the front. The section sits in the settings, between Skills and Application.
+// when the window comes back to the front. The section sits in the agent group of the settings, after Skills.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
@@ -231,14 +231,22 @@ describe('the grants read again when the window comes back', () => {
 });
 
 describe('the Extensions section of the settings', () => {
-	const dialog = src('lib/features/settings/SettingsDialog.svelte');
+	const page = src('lib/features/settings/SettingsPage.svelte');
+	const agentGroup = page.slice(page.indexOf("t('settings.groupAgent')"), page.indexOf("t('settings.groupData')"));
 
-	it('is a section named Extensions, between Skills and Application, showing ExtensionsSettings', () => {
-		expect(dialog).toContain(`{ id: 'extensions', get label() { return ${call('Extensions')} }, icon: Plug }`);
-		const sections = dialog.slice(dialog.indexOf('const SECTIONS'), dialog.indexOf('];', dialog.indexOf('const SECTIONS')));
-		expect(sections.indexOf("id: 'skills'")).toBeLessThan(sections.indexOf("id: 'extensions'"));
-		expect(sections.indexOf("id: 'extensions'")).toBeLessThan(sections.indexOf("id: 'application'"));
-		expect(dialog).toContain('<Tabs.Content value="extensions"');
-		expect(dialog).toContain('<ExtensionsSettings />');
+	it('is a section named Extensions, showing ExtensionsSettings', () => {
+		expect(page).toContain(
+			`{ id: 'extensions', get label() { return ${call('Extensions')} }, icon: Plug, content: ExtensionsSettings }`
+		);
+		expect(page).toContain("import ExtensionsSettings from './ExtensionsSettings.svelte'");
+	});
+
+	it('sits in the agent group, after Skills', () => {
+		expect(agentGroup).toContain("id: 'extensions'");
+		expect(agentGroup.indexOf("id: 'skills'")).toBeLessThan(agentGroup.indexOf("id: 'extensions'"));
+	});
+
+	it('comes after the basics group, so after Application', () => {
+		expect(page.indexOf("id: 'application'")).toBeLessThan(page.indexOf("id: 'extensions'"));
 	});
 });

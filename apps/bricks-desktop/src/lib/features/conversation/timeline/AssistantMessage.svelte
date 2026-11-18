@@ -5,6 +5,7 @@
   import * as Trace from '$lib/components/ui/trace'
   import { formatWorked } from '../runend'
   import type { AssistantItem, Conversation } from '$lib/state/conversation.svelte'
+  import { webSearchSources } from '../markdown/citations'
   import { ui } from '$lib/state/ui.svelte'
   import { throttledValue } from '../throttled.svelte'
   import type { FileReference, MarkdownHeading } from '../markdown/types'
@@ -21,6 +22,13 @@
     conversation,
     part = 'all',
   }: { item: AssistantItem; conversation?: Conversation; part?: Part } = $props()
+
+  /** What the conversation's web searches returned: the cards of the reply's links show it. */
+  const sources = $derived(
+    webSearchSources(
+      (conversation?.items ?? []).flatMap((i) => (i.kind === 'tool' && i.name === 'WebSearch' && i.output ? [i.output] : [])),
+    ),
+  )
 
   /** The person's own choice; until then the reasoning is open while it streams. */
   let reasoningOpen = $state<boolean | undefined>(undefined)
@@ -131,6 +139,7 @@
       {idPrefix}
       onFile={openFile}
       onLinkResult={(error) => (linkError = error)}
+      {sources}
       bind:headings
     />
     {#if linkError}

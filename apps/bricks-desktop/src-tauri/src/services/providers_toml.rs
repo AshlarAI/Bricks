@@ -33,12 +33,15 @@ pub enum Edit {
         provider_id: String,
         model_id: String,
     },
-    /// A new `[[providers]]` table, written after the existing ones.
+    /// A new `[[providers]]` table, written after the existing ones. An empty
+    /// id is made from the name (see [`slug`]), numbered when taken.
     ProviderCreate {
         provider_id: String,
         patch: ProviderPatch,
     },
     /// A new `[[providers.models]]` table of `provider_id`, with its `[limits]`.
+    /// An empty id is made from the API name (else the name), numbered when
+    /// taken.
     ModelCreate {
         provider_id: String,
         model_id: String,
@@ -159,13 +162,19 @@ pub fn apply(text: &str, edit: &Edit, origin: &str) -> IpcResult<String> {
             models.remove(index);
         }
         Edit::ProviderCreate { provider_id, patch } => {
-            let id = new_id(&tr!(msg::PROVIDER_IDENTIFIER), provider_id)?;
             let providers = providers_array_mut(&mut doc)?;
-            if provider_index(providers, id).is_ok() {
-                return Err(invalid(tr!(msg::A_PROVIDER_ALREADY_EXISTS, id = id)));
-            }
+            let id = if provider_id.is_empty() {
+                let base = slug(patch.name.as_deref().unwrap_or_default(), "provider");
+                free_id(&base, |id| provider_index(providers, id).is_ok())
+            } else {
+                let id = new_id(&tr!(msg::PROVIDER_IDENTIFIER), provider_id)?;
+                if provider_index(providers, id).is_ok() {
+                    return Err(invalid(tr!(msg::A_PROVIDER_ALREADY_EXISTS, id = id)));
+                }
+                id.to_string()
+            };
             let mut table = Table::new();
-            set_str(&mut table, "id", id);
+            set_str(&mut table, "id", &id);
             apply_provider_patch(&mut table, patch)?;
             providers.push(table);
             separate_last(providers);
@@ -175,18 +184,28 @@ pub fn apply(text: &str, edit: &Edit, origin: &str) -> IpcResult<String> {
             model_id,
             patch,
         } => {
-            let id = new_id(&tr!(msg::MODEL_IDENTIFIER), model_id)?;
             let providers = providers_mut(&mut doc)?;
             let index = provider_index(providers, provider_id)?;
             let provider = providers
                 .get_mut(index)
                 .ok_or_else(|| not_found(tr!(msg::UNKNOWN_PROVIDER)))?;
             let models = models_array_mut(provider)?;
-            if model_index(models, id).is_ok() {
-                return Err(invalid(tr!(msg::A_MODEL_ALREADY_EXISTS_IN_THIS, id = id)));
-            }
+            let id = if model_id.is_empty() {
+                let source = [patch.api_model.as_deref(), patch.name.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .find(|s| !s.trim().is_empty())
+                    .unwrap_or_default();
+                free_id(&slug(source, "model"), |id| model_index(models, id).is_ok())
+            } else {
+                let id = new_id(&tr!(msg::MODEL_IDENTIFIER), model_id)?;
+                if model_index(models, id).is_ok() {
+                    return Err(invalid(tr!(msg::A_MODEL_ALREADY_EXISTS_IN_THIS, id = id)));
+                }
+                id.to_string()
+            };
             let mut table = Table::new();
-            set_str(&mut table, "id", id);
+            set_str(&mut table, "id", &id);
             table.insert("limits", Item::Table(Table::new()));
             apply_model_patch(&mut table, patch)?;
             models.push(table);
@@ -306,6 +325,67 @@ fn separate_last(tables: &mut ArrayOfTables) {
     {
         table.decor_mut().set_prefix("\n");
     }
+}
+
+/// An id made from `text` (a name, an API name): lower case, accented Latin
+/// letters without their accent, each run of other characters than letters,
+/// digits, `.` and `_` turned into one `-`, at most 64 characters, with no
+/// `-`, `.` or `_` at either end; `fallback` when nothing is left.
+pub fn slug(text: &str, fallback: &str) -> String {
+    let mut out = String::new();
+    for c in text.trim().chars().flat_map(char::to_lowercase) {
+        let plain = unaccent(c);
+        if !plain.is_empty() {
+            out.push_str(plain);
+        } else if c.is_ascii_alphanumeric() || matches!(c, '.' | '_') {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let edge = |c: char| matches!(c, '-' | '.' | '_');
+    let out: String = out.trim_matches(edge).chars().take(64).collect();
+    let out = out.trim_matches(edge);
+    if out.is_empty() {
+        fallback.to_string()
+    } else {
+        out.to_string()
+    }
+}
+
+/// The plain letters of an accented Latin letter (lower case), or "".
+fn unaccent(c: char) -> &'static str {
+    match c {
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' => "a",
+        'æ' => "ae",
+        'ç' | 'ć' | 'č' => "c",
+        'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ę' | 'ě' => "e",
+        'ì' | 'í' | 'î' | 'ï' | 'ī' => "i",
+        'ñ' | 'ń' | 'ň' => "n",
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' => "o",
+        'œ' => "oe",
+        'ß' => "ss",
+        'ś' | 'š' => "s",
+        'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ů' => "u",
+        'ý' | 'ÿ' => "y",
+        'ź' | 'ż' | 'ž' => "z",
+        'ł' => "l",
+        'ř' => "r",
+        'ť' => "t",
+        'ď' => "d",
+        _ => "",
+    }
+}
+
+/// `base`, or the first of `base-2`, `base-3`… that `taken` does not hold.
+fn free_id(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    (1u32..)
+        .map(|n| match n {
+            1 => base.to_string(),
+            _ => format!("{base}-{n}"),
+        })
+        .find(|id| !taken(id))
+        .unwrap_or_else(|| base.to_string())
 }
 
 /// The id of a new provider or model: letters, digits, `.`, `_` and `-`,
@@ -1575,6 +1655,68 @@ mod tests {
     fn a_new_provider_in_a_file_without_providers() {
         let next = apply("schema_version = 1\n", &new_provider("seul"), "test").unwrap();
         assert_eq!(config(&next).providers.len(), 1);
+    }
+
+    #[test]
+    fn an_empty_id_is_made_from_the_name_or_the_api_name_and_numbered() {
+        assert_eq!(
+            slug("OpenCode Go (Responses)", "provider"),
+            "opencode-go-responses"
+        );
+        assert_eq!(
+            slug("IFM/K2-Horizon-375B-A23B", "model"),
+            "ifm-k2-horizon-375b-a23b"
+        );
+        assert_eq!(slug("  glm-5.3 ", "model"), "glm-5.3");
+        assert_eq!(slug("« ? »", "model"), "model");
+        assert_eq!(slug("Modèle Économique", "model"), "modele-economique");
+        assert_eq!(slug("_draft_", "model"), "draft");
+        assert_eq!(slug(&"a".repeat(100), "model").len(), 64);
+        let mut patch = ProviderPatch {
+            name: Some("Local".into()),
+            endpoint: Some("http://127.0.0.1:1234/v1".into()),
+            protocol: Some("chat_completions".into()),
+            auth: Some("none".into()),
+            ..Default::default()
+        };
+        let edit = Edit::ProviderCreate {
+            provider_id: String::new(),
+            patch: patch.clone(),
+        };
+        let once = apply(PROVIDERS, &edit, "t").unwrap();
+        let twice = apply(&once, &edit, "t").unwrap();
+        let ids: Vec<String> = config(&twice)
+            .providers
+            .iter()
+            .map(|p| p.id.clone())
+            .collect();
+        // The test file already has `local`.
+        assert!(
+            ids.ends_with(&["local-2".to_string(), "local-3".to_string()]),
+            "{ids:?}"
+        );
+        patch.name = Some(String::new());
+        let unnamed = Edit::ProviderCreate {
+            provider_id: String::new(),
+            patch,
+        };
+        assert!(
+            apply(PROVIDERS, &unnamed, "t").is_err(),
+            "a provider still needs a name"
+        );
+        let model = Edit::ModelCreate {
+            provider_id: "local".into(),
+            model_id: String::new(),
+            patch: ModelPatch {
+                api_model: Some("Org/Small Model".into()),
+                ..priced_model()
+            },
+        };
+        let with_model = apply(PROVIDERS, &model, "t").unwrap();
+        assert!(
+            with_model.contains("id = \"org-small-model\""),
+            "{with_model}"
+        );
     }
 
     #[test]

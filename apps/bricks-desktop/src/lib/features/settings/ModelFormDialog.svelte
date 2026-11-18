@@ -32,7 +32,6 @@
 		newModelForm,
 		profilesPatch,
 		validateModelForm,
-		validateNewId,
 		type ModelForm,
 		type WriteOutcome
 	} from './models';
@@ -40,7 +39,6 @@
 	let {
 		model,
 		protocol,
-		takenIds = [],
 		notice = null,
 		onSave,
 		onClose
@@ -50,7 +48,6 @@
 		/** The protocol the model speaks: a new level sends its effort in this protocol's field. */
 		protocol: string;
 		/** Ids of the provider's models (a new model needs its own). */
-		takenIds?: readonly string[];
 		/** Set when the dialog was reopened after the file changed elsewhere. */
 		notice?: string | null;
 		/** Writes the patch (every field for a new model, else only the changed ones). */
@@ -62,7 +59,6 @@
 	const uid = $props.id();
 	const original = untrack(() => model);
 	let form = $state<ModelForm>(original ? modelForm(original) : newModelForm());
-	let id = $state('');
 	let attempted = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -71,7 +67,6 @@
 	let levelError = $state<string | null>(null);
 
 	const errors = $derived(validateModelForm(form));
-	const idError = $derived(original ? undefined : validateNewId(id, takenIds));
 
 	/** Field errors show once the user tried to save. */
 	const shown = $derived(attempted ? errors : {});
@@ -105,7 +100,7 @@
 		attempted = true;
 		if (level.trim() !== '') addLevel();
 		if (levelError) return;
-		if (hasFormErrors(errors) || idError) return;
+		if (hasFormErrors(errors)) return;
 		const profiles = profilesPatch(original?.profiles ?? [], form.profiles);
 		if (!profiles.ok) {
 			error = profiles.message;
@@ -120,7 +115,7 @@
 		}
 		saving = true;
 		error = null;
-		const outcome = await onSave(patch, original ? original.id : id.trim());
+		const outcome = await onSave(patch, original ? original.id : '');
 		saving = false;
 		if (outcome.ok) onClose();
 		else error = outcome.message;
@@ -139,25 +134,6 @@
 	
 				{#if notice}
 					<p role="alert" class="text-sm text-pretty text-destructive">{notice}</p>
-				{/if}
-	
-				{#if !original}
-					<Field.Field data-invalid={attempted && idError ? 'true' : undefined}>
-						<Field.Label for={`${uid}-id`}>{t('common.identifier')}</Field.Label>
-						<Input
-							id={`${uid}-id`}
-							bind:value={id}
-							maxlength={64}
-							autocomplete="off"
-							spellcheck={false}
-							class="font-mono text-sm"
-							aria-invalid={attempted && idError ? 'true' : undefined}
-							aria-describedby={attempted && idError ? `${uid}-id-error` : undefined}
-						/>
-						{#if attempted && idError}
-							<Field.Error id={`${uid}-id-error`}>{idError}</Field.Error>
-						{/if}
-					</Field.Field>
 				{/if}
 	
 				<Field.Field data-invalid={shown.name ? 'true' : undefined}>
