@@ -500,7 +500,11 @@ mod tests {
     #[test]
     fn background_checks_respect_skipped_version_and_manual_checks_bypass_it() {
         assert!(should_skip_version(Some("2026.11.15"), "2026.11.15", false));
-        assert!(!should_skip_version(Some("2026.11.15"), "2026.11.16", false));
+        assert!(!should_skip_version(
+            Some("2026.11.15"),
+            "2026.11.16",
+            false
+        ));
         assert!(!should_skip_version(Some("2026.11.15"), "2026.11.15", true));
         assert!(!should_skip_version(None, "2026.11.15", false));
     }

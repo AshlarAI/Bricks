@@ -2,7 +2,9 @@
 //!
 //! Targets a user-configured (typically local or private) SearXNG instance.
 
-use super::{RawHit, SearchError, SearchOptions, TimeRange, excerpt, parse_retry_after_ms, scoped_query};
+use super::{
+    RawHit, SearchError, SearchOptions, TimeRange, excerpt, parse_retry_after_ms, scoped_query,
+};
 use crate::config::{ProviderConfig, ProviderKind};
 use serde_json::Value;
 

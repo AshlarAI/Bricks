@@ -128,8 +128,7 @@ impl Hook for ShellHook {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .no_window();
-        let output = match cmd.output()
-        {
+        let output = match cmd.output() {
             Ok(o) => o,
             Err(e) => {
                 tracing::warn!(command = %self.command, error = %e, "Shell hook failed to spawn");

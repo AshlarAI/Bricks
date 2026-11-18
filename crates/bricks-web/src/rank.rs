@@ -224,12 +224,8 @@ fn prepare_candidates(candidates: &[Candidate<'_>]) -> Vec<Prepared> {
                 format!("{}\n{}", c.passage.section.join(" "), c.passage.text)
             };
             let tokens: HashSet<String> = tokenize(&c.passage.text).into_iter().collect();
-            let section_tokens: HashSet<String> = c
-                .passage
-                .section
-                .iter()
-                .flat_map(|s| tokenize(s))
-                .collect();
+            let section_tokens: HashSet<String> =
+                c.passage.section.iter().flat_map(|s| tokenize(s)).collect();
             let facts = facts(&c.passage.text);
             Prepared {
                 indexed_text,
@@ -257,7 +253,11 @@ fn score_prepared(query: &str, candidates: &[Candidate<'_>], prep: &[Prepared]) 
         .enumerate()
         .map(|(i, (c, p))| {
             let raw = scorer.score(&i, &q_embed).unwrap_or(0.0);
-            let mut score = if raw.is_finite() && raw > 0.0 { raw } else { 0.0 };
+            let mut score = if raw.is_finite() && raw > 0.0 {
+                raw
+            } else {
+                0.0
+            };
             if score > 0.0 {
                 let sec_hit = q_terms.iter().any(|t| p.section_tokens.contains(t));
                 if sec_hit {
@@ -357,12 +357,14 @@ pub fn select(query: &str, pages: &[Vec<Passage>], cfg: &PassageConfig) -> Selec
                 .picked
                 .iter()
                 .map(|p| (p.scored.source, p.scored.passage))
-                .find(|(ks, kp)| match (cand_idx, index_of.get(&(*ks, *kp)).copied()) {
-                    (Some(ci), Some(ki)) => {
-                        near_duplicate_tokens(text(*ks, *kp), t, &prep[ki], &prep[ci])
-                    }
-                    _ => near_duplicate(text(*ks, *kp), t),
-                })
+                .find(
+                    |(ks, kp)| match (cand_idx, index_of.get(&(*ks, *kp)).copied()) {
+                        (Some(ci), Some(ki)) => {
+                            near_duplicate_tokens(text(*ks, *kp), t, &prep[ki], &prep[ci])
+                        }
+                        _ => near_duplicate(text(*ks, *kp), t),
+                    },
+                )
             {
                 sel.duplicates.push(((s.source, s.passage), kept));
                 taken.insert((s.source, s.passage));

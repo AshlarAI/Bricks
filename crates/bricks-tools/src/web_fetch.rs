@@ -407,14 +407,23 @@ fn toc(doc: &PageDoc, web: &bricks_web::WebContext) -> String {
         let _ = writeln!(out, "No Markdown headings found in this document.");
         return out;
     }
-    let _ = writeln!(out, "--- table of contents ({} headings) ---", headings.len());
+    let _ = writeln!(
+        out,
+        "--- table of contents ({} headings) ---",
+        headings.len()
+    );
     for (off, h) in headings {
         let _ = writeln!(out, "offset={off} · {h}");
     }
     out
 }
 
-fn grep_doc(doc: &PageDoc, pattern: &str, max_chars: usize, web: &bricks_web::WebContext) -> String {
+fn grep_doc(
+    doc: &PageDoc,
+    pattern: &str,
+    max_chars: usize,
+    web: &bricks_web::WebContext,
+) -> String {
     let mut out = header(doc, web);
     let matcher = regex::RegexBuilder::new(pattern)
         .case_insensitive(true)
@@ -468,8 +477,16 @@ fn grep_doc(doc: &PageDoc, pattern: &str, max_chars: usize, web: &bricks_web::We
         let mut block = format!("\n@ line {}, offset={}\n", start + 1, char_offsets[start]);
         for (i, l) in lines[start..end].iter().enumerate() {
             let lno = start + i + 1;
-            let mark = if matched.contains(&(start + i)) { ">" } else { " " };
-            let _ = writeln!(block, "{mark}{lno:>4}: {}", l.trim_end_matches(['\r', '\n']));
+            let mark = if matched.contains(&(start + i)) {
+                ">"
+            } else {
+                " "
+            };
+            let _ = writeln!(
+                block,
+                "{mark}{lno:>4}: {}",
+                l.trim_end_matches(['\r', '\n'])
+            );
         }
         let len = block.chars().count();
         if len > budget {

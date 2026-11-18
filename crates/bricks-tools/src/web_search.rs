@@ -403,9 +403,18 @@ mod tests {
     fn test_parse_time_range_validation() {
         assert_eq!(parse_time_range(None).unwrap(), None);
         assert_eq!(parse_time_range(Some("day")).unwrap(), Some(TimeRange::Day));
-        assert_eq!(parse_time_range(Some("week")).unwrap(), Some(TimeRange::Week));
-        assert_eq!(parse_time_range(Some("month")).unwrap(), Some(TimeRange::Month));
-        assert_eq!(parse_time_range(Some("year")).unwrap(), Some(TimeRange::Year));
+        assert_eq!(
+            parse_time_range(Some("week")).unwrap(),
+            Some(TimeRange::Week)
+        );
+        assert_eq!(
+            parse_time_range(Some("month")).unwrap(),
+            Some(TimeRange::Month)
+        );
+        assert_eq!(
+            parse_time_range(Some("year")).unwrap(),
+            Some(TimeRange::Year)
+        );
         assert!(parse_time_range(Some("hour")).is_err());
     }
 }

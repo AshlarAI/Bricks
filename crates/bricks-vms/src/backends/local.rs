@@ -315,7 +315,10 @@ impl Commands for LocalCommands {
             .unwrap_or_else(|| self.host_workdir.clone());
 
         let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(&req.command).current_dir(&cwd).no_window();
+        cmd.arg("-c")
+            .arg(&req.command)
+            .current_dir(&cwd)
+            .no_window();
         for (k, v) in &self.env {
             cmd.env(k, v);
         }
@@ -375,7 +378,10 @@ impl Commands for LocalCommands {
             .unwrap_or_else(|| self.host_workdir.clone());
 
         let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(&req.command).current_dir(&cwd).no_window();
+        cmd.arg("-c")
+            .arg(&req.command)
+            .current_dir(&cwd)
+            .no_window();
         for (k, v) in &self.env {
             cmd.env(k, v);
         }

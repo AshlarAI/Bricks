@@ -720,7 +720,8 @@ async fn an_image_block_keeps_its_data_for_the_caller_and_never_serializes_it() 
 #[tokio::test]
 async fn manager_instructions_returns_sorted_non_empty_server_instructions() {
     let legacy_with_instructions = |name: &str, instructions: Option<&'static str>| {
-        let mut cfg = McpServerConfig::stdio(name, "unused", &[]).with_protocol(ProtocolMode::Legacy);
+        let mut cfg =
+            McpServerConfig::stdio(name, "unused", &[]).with_protocol(ProtocolMode::Legacy);
         cfg = cfg.with_limits(McpLimits {
             connect_timeout_ms: 3000,
             request_timeout_ms: 1000,

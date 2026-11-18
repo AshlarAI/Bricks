@@ -211,7 +211,14 @@ impl Fetcher {
         let page_deadline = start + limit;
         match tokio::time::timeout(
             limit,
-            self.download(requested, host_key, host_permit, budget, start, page_deadline),
+            self.download(
+                requested,
+                host_key,
+                host_permit,
+                budget,
+                start,
+                page_deadline,
+            ),
         )
         .await
         {

@@ -166,9 +166,8 @@ impl WebContext {
             let end = (cursor + remaining_needed).min(search.hits.len());
             let batch = &search.hits[cursor..end];
             cursor = end;
-            let (mut batch_pages, bf_ms, be_ms) = self
-                .read_many(batch, &mut seen_final, fetch_deadline)
-                .await;
+            let (mut batch_pages, bf_ms, be_ms) =
+                self.read_many(batch, &mut seen_final, fetch_deadline).await;
             fetch_ms += bf_ms;
             extract_ms += be_ms;
             pages.append(&mut batch_pages);

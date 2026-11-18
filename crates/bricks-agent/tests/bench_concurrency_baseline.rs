@@ -318,11 +318,11 @@ fn realistic_text(bytes: usize) -> String {
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1_442_695_040_888_963_407);
             let r = (seed >> 33) as usize;
-            if r % 37 == 0 {
+            if r.is_multiple_of(37) {
                 out.push_str(&format!("{} ", r % 100_000));
             } else {
                 out.push_str(WORDS[r % WORDS.len()]);
-                if r % 7 == 0 {
+                if r.is_multiple_of(7) {
                     out.push(',');
                 }
                 out.push(' ');

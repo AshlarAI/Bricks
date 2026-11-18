@@ -337,7 +337,8 @@ fn to_project_path(path: &str, prefix: &str) -> Option<String> {
 }
 
 fn has_git_ancestor(dir: &Path) -> bool {
-    dir.ancestors().any(|ancestor| ancestor.join(".git").exists())
+    dir.ancestors()
+        .any(|ancestor| ancestor.join(".git").exists())
 }
 
 /// `Some(prefix)` when the folder is inside a work tree (the prefix is the

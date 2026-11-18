@@ -407,7 +407,11 @@ const NOISE: &str = "script, style, noscript, template, svg, canvas, iframe, obj
                      .navbar, .breadcrumb, .breadcrumbs, .toc, #toc, .cookie, .cookies";
 
 /// Find `<link rel="alternate" type="text/markdown" href="...">` in an HTML body.
-pub fn find_alternate_markdown(body: &[u8], content_type: Option<&str>, base_url: &Url) -> Option<Url> {
+pub fn find_alternate_markdown(
+    body: &[u8],
+    content_type: Option<&str>,
+    base_url: &Url,
+) -> Option<Url> {
     let (text, _, _) = decode(body, content_type, true).ok()?;
     let doc = dom_query::Document::from(text.as_str());
     alternate_markdown_from_doc(&doc, base_url)
@@ -418,7 +422,10 @@ fn alternate_markdown_from_doc(doc: &dom_query::Document, base_url: &Url) -> Opt
         let rel = node.attr("rel").unwrap_or_default().to_ascii_lowercase();
         let ty = node.attr("type").unwrap_or_default().to_ascii_lowercase();
         if rel.split_whitespace().any(|r| r == "alternate")
-            && matches!(ty.split(';').next().map(str::trim), Some("text/markdown" | "text/x-markdown"))
+            && matches!(
+                ty.split(';').next().map(str::trim),
+                Some("text/markdown" | "text/x-markdown")
+            )
             && let Some(href) = node.attr("href")
             && let Ok(u) = base_url.join(href.trim())
             && matches!(u.scheme(), "http" | "https")
@@ -572,7 +579,11 @@ fn count_html_elements(text: &str) -> usize {
                     i += 1 + end + 6;
                     continue;
                 }
-            } else if rest.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic()) {
+            } else if rest
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic())
+            {
                 count += 1;
             }
         }
@@ -589,7 +600,10 @@ fn extract_metadata_fallback(doc: &dom_query::Document) -> Option<String> {
             collect_ld_json_text(&v, &mut parts);
         }
     }
-    for sel in ["meta[name=description]", "meta[property=\"og:description\"]"] {
+    for sel in [
+        "meta[name=description]",
+        "meta[property=\"og:description\"]",
+    ] {
         if let Some(content) = doc.select(sel).attr("content") {
             let s = content.split_whitespace().collect::<Vec<_>>().join(" ");
             if !s.is_empty() && !parts.iter().any(|p| p == &s) {
@@ -982,7 +996,11 @@ mod tests {
         let res = run("text/html", html.as_bytes()).unwrap();
         assert!(res.markdown.contains("Announcing 2.12"), "{}", res.markdown);
         assert!(res.markdown.contains("Board Elections"), "{}", res.markdown);
-        assert!(res.markdown.contains("Security Advisory"), "{}", res.markdown);
+        assert!(
+            res.markdown.contains("Security Advisory"),
+            "{}",
+            res.markdown
+        );
         assert!(res.markdown.contains("Release Archive"), "{}", res.markdown);
     }
 }

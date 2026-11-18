@@ -245,17 +245,13 @@ impl Searcher {
                 requests_sent += 1;
                 let t = Instant::now();
                 let timeout = self.cfg.timeout.min(left);
-                let result = match tokio::time::timeout(
-                    timeout,
-                    self.ask(kind, query, count, opts),
-                )
-                .await
-                {
-                    Ok(r) => r,
-                    Err(_) => Err(SearchError::Timeout {
-                        ms: timeout.as_millis() as u64,
-                    }),
-                };
+                let result =
+                    match tokio::time::timeout(timeout, self.ask(kind, query, count, opts)).await {
+                        Ok(r) => r,
+                        Err(_) => Err(SearchError::Timeout {
+                            ms: timeout.as_millis() as u64,
+                        }),
+                    };
                 attempts.push(Attempt {
                     provider: kind,
                     outcome: result.as_ref().map(|h| h.len()).map_err(Clone::clone),
@@ -311,7 +307,10 @@ impl Searcher {
         let now = Instant::now();
         let mut cache = self.cache.lock();
         cache.retain(|c| c.expires_at > now);
-        cache.iter().find(|c| &c.key == key).map(|c| c.outcome.clone())
+        cache
+            .iter()
+            .find(|c| &c.key == key)
+            .map(|c| c.outcome.clone())
     }
 
     fn store_cache(&self, key: CacheKey, outcome: SearchOutcome) {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 221 (2026/11/18)
+
+- Repair the `release.yml` tag push glob (`v[0-9]*.[0-9]*.[0-9]*`) with strict 4-digit CalVer validation, enforce `cargo fmt --check` and `cargo clippy -D warnings` in `ci.yml`, apply `cargo fmt` across workspace Rust files, fix `clippy::manual_is_multiple_of` warnings, and remove the obsolete `repro_high_bugs.rs` scratch test file.
+
 ### Commit 220 (2026/11/18)
 
 - Replace the file icon catalog with theme-safe `vscode-symbols` SVGs, add inline icons and clean UI typography to chat file links, apply a cool slate tint to inline Markdown code, and support multi-path `file://` links across the parser, `project_file_read`, and the agent system prompt.

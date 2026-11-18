@@ -253,7 +253,9 @@ async fn lent_mcp_instructions_are_injected_into_the_system_prompt() {
     let reqs = script.requests();
     let sys1 = reqs[0].1.system.as_deref().expect("system prompt on run 1");
     assert!(sys1.contains("<mcp_instructions>"), "{sys1}");
-    let cu_pos = sys1.find("## computer-use\nUse run_steps for batches.").expect("computer-use section");
+    let cu_pos = sys1
+        .find("## computer-use\nUse run_steps for batches.")
+        .expect("computer-use section");
     let zeta_pos = sys1.find("## zeta\nZeta rules.").expect("zeta section");
     assert!(cu_pos < zeta_pos, "sorted by server name: {sys1}");
     assert!(!sys1.contains("Duplicate ignored."), "{sys1}");

@@ -978,11 +978,17 @@ async fn tavily_raw_content_rescues_403_and_alternate_markdown_or_jsonld_rescues
         .await;
 
     assert_eq!(r.pages.len(), 3);
-    let p0 = r.pages[0].outcome.as_ref().expect("tavily raw_content rescue");
+    let p0 = r.pages[0]
+        .outcome
+        .as_ref()
+        .expect("tavily raw_content rescue");
     assert!(p0.markdown.contains("WAF Article"));
     assert_eq!(p0.entry.final_url, server.url("/waf.html"));
 
-    let p1 = r.pages[1].outcome.as_ref().expect("alternate markdown rescue");
+    let p1 = r.pages[1]
+        .outcome
+        .as_ref()
+        .expect("alternate markdown rescue");
     assert!(p1.markdown.contains("Alternate Markdown Docs"));
     assert_eq!(p1.entry.final_url, server.url("/spa-alt.md"));
 
@@ -1022,7 +1028,10 @@ async fn store_search_ttl_expires_stale_results_while_direct_read_stays_cached()
     let store_path = dir.path().join("web");
     let ctx = WebContext::new(
         c.clone(),
-        Some(Arc::new(WebStore::open(&store_path, c.store.max_session_bytes))),
+        Some(Arc::new(WebStore::open(
+            &store_path,
+            c.store.max_session_bytes,
+        ))),
     )
     .unwrap();
     let r1 = ctx
@@ -1052,11 +1061,8 @@ async fn store_search_ttl_expires_stale_results_while_direct_read_stays_cached()
     std::fs::write(&idx_path, stale).unwrap();
 
     // Direct WebFetch (`read`) ignores search TTL and serves the stored snapshot.
-    let restored = WebContext::new(
-        c,
-        Some(Arc::new(WebStore::open(&store_path, 64 << 20))),
-    )
-    .unwrap();
+    let restored =
+        WebContext::new(c, Some(Arc::new(WebStore::open(&store_path, 64 << 20)))).unwrap();
     let doc = restored
         .read(&server.url("/docs/retry.html"), false)
         .await
@@ -1173,6 +1179,9 @@ async fn search_retries_once_on_transient_network_drop() {
 
     assert_eq!(out.provider, Some(ProviderKind::Searxng));
     assert_eq!(out.attempts.len(), 2);
-    assert!(matches!(out.attempts[0].outcome, Err(SearchError::Network(_))));
+    assert!(matches!(
+        out.attempts[0].outcome,
+        Err(SearchError::Network(_))
+    ));
     assert_eq!(out.hits[0].title, "Recovered Hit");
 }
