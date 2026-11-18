@@ -1,11 +1,15 @@
-// File references of assistant messages: a Markdown link whose target is a project
-// file, or a bare path in text. Pure (no DOM, no IPC): unit-tested in
-// tests/unit/markdown-extensions.test.ts. Paths are relative to the conversation's project.
+// File references of assistant messages: a Markdown link whose target is a file
+// (`file:///` URL, absolute path, or project-relative path), or a bare path in
+// text. Pure (no DOM, no IPC): unit-tested in tests/unit/markdown-extensions.test.ts.
 import type { FileReference } from './types'
 
 /** A URI scheme (`https:`, `mailto:`, `file:`…) or a Windows drive. */
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i
-/** Characters a project path never contains: controls, backslash, wildcards, quotes, brackets, pipes. */
+/** A local `file://` URL (`file:///path` or `file://localhost/path`). */
+const FILE_URL = /^file:\/\/(?:localhost)?(\/.*)$/i
+/** A Windows drive prefix (`C:/...`). */
+const WINDOWS_DRIVE = /^[A-Za-z]:\//
+/** Characters a project or file path never contains: controls, backslash, wildcards, quotes, brackets, pipes. */
 const FORBIDDEN = /[\u0000-\u001f\u007f\\?*<>|"]/
 /** A file extension on the last segment: a name character, a dot, then a letter-led extension. */
 const EXTENSION = /[^.]\.[A-Za-z][A-Za-z0-9]{0,9}$/
@@ -15,8 +19,8 @@ const LINE_SUFFIX = /:(\d+)(?:-(\d+))?$/
 const HREF_LINES = /^#L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?$/
 /** A path segment of a bare reference: letters, digits and a few symbols, dots inside. */
 const SEGMENT = String.raw`[\p{L}\p{N}_~+@-]+(?:\.[\p{L}\p{N}_~+@-]+)*`
-/** Optional `./`, directories (possibly dot-led), then the file name (possibly dot-led). */
-const PATH = String.raw`(?:\.\/)?(?:\.?${SEGMENT}\/)*\.?${SEGMENT}`
+/** Optional `./` or leading `/`, directories (possibly dot-led), then the file name (possibly dot-led). */
+const PATH = String.raw`(?:\.\/|\/)?(?:\.?${SEGMENT}\/)*\.?${SEGMENT}`
 /** Candidate bare references in text: not glued to a word, a URL, an address or a path. */
 const TEXT_CANDIDATE = new RegExp(
   String.raw`(?<![\p{L}\p{N}_/\\:.@~+-])${PATH}(?::\d+(?:-\d+)?)?(?![\p{L}\p{N}_/-]|\.[\p{L}\p{N}]|:\d)`,
@@ -26,6 +30,10 @@ const TEXT_CANDIDATE = new RegExp(
 const HOST_FIRST_SEGMENT = /^(?:www\.|[\p{L}\p{N}-]+\.[A-Za-z]{2,6}$)/iu
 /** A bare name that reads as a web host (`example.com`, `www.…`), not as a file. */
 const HOST_NAME = /^www\.|\.(?:com|org|net|io|dev|app|fr|de|uk|edu|gov|info|co|eu|ai|us|me)$/i
+
+export function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith('/') || WINDOWS_DRIVE.test(path)
+}
 
 type Lines = { line: number; endLine?: number }
 
@@ -66,7 +74,7 @@ export function findFileReferences(text: string): FileReferenceMatch[] {
 }
 
 function parseHref(href: string): FileReference | null {
-  if (SCHEME.test(href) || href.startsWith('/') || href.startsWith('#')) return null
+  if (href.startsWith('#') || href.startsWith('//')) return null
   let base = href
   let lines: Lines | undefined
   const hash = href.indexOf('#')
@@ -77,9 +85,12 @@ function parseHref(href: string): FileReference | null {
     lines = lineRange(fragment[1], fragment[2])
     if (!lines) return null
   }
+  const fileUrl = FILE_URL.exec(base)
+  const isFileUrl = fileUrl !== null
+  if (fileUrl) base = fileUrl[1] as string
   const decoded = safeDecode(base)
   if (decoded === null) return null
-  let path = decoded
+  let path = isFileUrl && /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded
   if (lines === undefined) {
     const suffix = LINE_SUFFIX.exec(path)
     if (suffix) {
@@ -88,7 +99,7 @@ function parseHref(href: string): FileReference | null {
       path = path.slice(0, suffix.index)
     }
   }
-  return finish(path, lines, 'href')
+  return finish(path, lines, 'href', isFileUrl)
 }
 
 function parseText(text: string): FileReference | null {
@@ -100,7 +111,7 @@ function parseText(text: string): FileReference | null {
     if (!lines) return null
     path = text.slice(0, suffix.index)
   }
-  return finish(path, lines, 'text')
+  return finish(path, lines, 'text', false)
 }
 
 function lineRange(first: string, last: string | undefined): Lines | undefined {
@@ -112,25 +123,45 @@ function lineRange(first: string, last: string | undefined): Lines | undefined {
   return { line, endLine }
 }
 
-function finish(rawPath: string, lines: Lines | undefined, from: 'href' | 'text'): FileReference | null {
-  const path = projectPath(rawPath)
-  if (path === null) return null
-  // A bare name needs a line, except a link target that is not a host name: `[notes](NOTES.md)`.
-  if (lines === undefined && !path.includes('/') && (from === 'text' || HOST_NAME.test(path))) return null
+function finish(
+  rawPath: string,
+  lines: Lines | undefined,
+  from: 'href' | 'text',
+  isFileUrl: boolean,
+): FileReference | null {
+  const resolved = normalizeFilePath(rawPath, { allowDrive: isFileUrl, allowExtensionless: isFileUrl })
+  if (resolved === null) return null
+  // A bare name (or single-segment path like `/index.html` in prose) needs a line, except a link
+  // target that is an explicit `file:///` URL or not a host name (`[notes](NOTES.md)`).
+  if (
+    lines === undefined &&
+    resolved.segmentCount === 1 &&
+    (from === 'text' || (!resolved.isAbsolute && HOST_NAME.test(resolved.path)))
+  ) {
+    return null
+  }
   return lines === undefined
-    ? { path }
+    ? { path: resolved.path }
     : lines.endLine === undefined
-      ? { path, line: lines.line }
-      : { path, line: lines.line, endLine: lines.endLine }
+      ? { path: resolved.path, line: lines.line }
+      : { path: resolved.path, line: lines.line, endLine: lines.endLine }
 }
 
-function projectPath(raw: string): string | null {
+function normalizeFilePath(
+  raw: string,
+  options: { allowDrive: boolean; allowExtensionless: boolean },
+): { path: string; isAbsolute: boolean; segmentCount: number } | null {
   const path = raw.startsWith('./') ? raw.slice(2) : raw
-  // A home path (`~/…`) or a drive (`C:…`) is outside the project: never a reference.
-  if (path === '' || path.startsWith('~') || /^[A-Za-z]:/.test(path) || FORBIDDEN.test(path)) return null
-  const segments = path.split('/')
+  if (path === '' || path.startsWith('~') || FORBIDDEN.test(path)) return null
+  const hasDrive = WINDOWS_DRIVE.test(path)
+  if (hasDrive && !options.allowDrive) return null
+  // Reject non-file schemes and drive-relative Windows paths (`C:foo.ts`).
+  if (!hasDrive && SCHEME.test(path)) return null
+  const isAbsolute = path.startsWith('/') || hasDrive
+  const body = hasDrive ? path.slice(3) : path.startsWith('/') ? path.slice(1) : path
+  const segments = body.split('/')
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return null
-  if (!EXTENSION.test(segments[segments.length - 1] ?? '')) return null
-  if (segments.length > 1 && HOST_FIRST_SEGMENT.test(segments[0] ?? '')) return null
-  return path
+  if (!options.allowExtensionless && !EXTENSION.test(segments[segments.length - 1] ?? '')) return null
+  if (!isAbsolute && segments.length > 1 && HOST_FIRST_SEGMENT.test(segments[0] ?? '')) return null
+  return { path, isAbsolute, segmentCount: segments.length }
 }

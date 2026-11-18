@@ -59,7 +59,7 @@ export interface MarkdownDocumentOptions {
   cacheLimit?: number
 }
 
-/** A file reference found in a message: a path relative to the conversation's project. */
+/** A file reference found in a message: a project-relative or absolute path. */
 export interface FileReference {
   path: string
   /** 1-based first line, when given. */

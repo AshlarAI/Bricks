@@ -187,16 +187,18 @@ describe('headings and anchors', () => {
 describe('file references in messages', () => {
   it('link targets: a line written with a colon, a range, encoded spaces', () => {
     const html = render('[x](src/a.ts:12-14) [y](src/a%20b.ts:3)')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a.ts" data-line="12" data-end-line="14">x</button>')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a b.ts" data-line="3">y</button>')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a.ts" data-line="12" data-end-line="14"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">x</span></button>')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a b.ts" data-line="3"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">y</span></button>')
   })
 
-  it('link targets that leave the project or use a scheme are not file buttons', () => {
-    for (const target of ['../secret.ts#L1', '/etc/passwd.txt#L1', 'file:///etc/a.ts#L1']) {
+  it('link targets leaving via parent traversal or external schemes stay blocked, while file:// and absolute paths work', () => {
+    for (const target of ['../secret.ts#L1', 'file:///a/../secret.ts#L1', 'javascript:alert(1)']) {
       const html = render(`[x](${target})`)
       expect(html, target).not.toContain('file-ref')
       expect(html, target).not.toContain('href=')
     }
+    expect(render('[a](/other/repo/a.ts#L1)')).toContain('data-file-path="/other/repo/a.ts" data-line="1"')
+    expect(render('[b](file:///other/repo/b.ts#L4)')).toContain('data-file-path="/other/repo/b.ts" data-line="4"')
   })
 
   it('a URL with a path and a line stays a link', () => {
@@ -207,13 +209,14 @@ describe('file references in messages', () => {
 
   it('a bare path followed by a full stop: the button has no full stop', () => {
     const html = render('Voir src/a.ts:3.')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a.ts" data-line="3">src/a.ts:3</button>.')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a.ts" data-line="3"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">src/a.ts:3</span></button>.')
   })
 
-  it('bare paths: ranges count, out-of-project and absolute paths do not', () => {
-    const html = render('Voir src/lib.rs:42-50, puis ../x.ts:1 et /abs/y.ts:2.')
-    expect(html.match(/class="file-ref"/g)).toHaveLength(1)
-    expect(html).toContain('data-line="42" data-end-line="50"')
+  it('bare paths: relative and absolute ranges count, parent traversal and single-segment /route do not', () => {
+    const html = render('Voir src/lib.rs:42-50, puis ../x.ts:1, /index.html et /abs/y.ts:2.')
+    expect(html.match(/class="file-ref"/g)).toHaveLength(2)
+    expect(html).toContain('data-file-path="src/lib.rs" data-line="42" data-end-line="50"')
+    expect(html).toContain('data-file-path="/abs/y.ts" data-line="2"')
   })
 
   it('inline code and fenced code are not read for file references', () => {

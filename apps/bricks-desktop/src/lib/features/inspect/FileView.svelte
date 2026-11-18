@@ -43,12 +43,13 @@
 
   const first = $derived(line ?? 0)
   const last = $derived(endLine ?? line ?? 0)
+  const shownPath = $derived(file?.path ?? path)
 </script>
 
 <div class="flex min-h-0 flex-col gap-2 text-ui">
   <p class="flex min-w-0 items-start gap-1.5 font-mono text-xs text-muted-foreground">
-    <span class="flex h-4 shrink-0 items-center"><FileIcon {path} /></span>
-    <span class="min-w-0 break-all">{path}{#if line}:{line}{#if endLine && endLine !== line}-{endLine}{/if}{/if}</span>
+    <span class="flex h-4 shrink-0 items-center"><FileIcon path={shownPath} /></span>
+    <span class="min-w-0 break-all">{shownPath}{#if line}:{line}{#if endLine && endLine !== line}-{endLine}{/if}{/if}</span>
   </p>
   {#if error}
     <p class="text-xs text-destructive" role="alert">{error}</p>

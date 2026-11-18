@@ -8,6 +8,7 @@
   import { webSearchSources } from '../markdown/citations'
   import { ui } from '$lib/state/ui.svelte'
   import { throttledValue } from '../throttled.svelte'
+  import { isAbsoluteFilePath } from '../markdown/fileref-parse'
   import type { FileReference, MarkdownHeading } from '../markdown/types'
   import MarkdownView from '../markdown/MarkdownView.svelte'
 
@@ -65,13 +66,13 @@
 
   function openFile(ref: FileReference) {
     const projectId = conversation?.projectId
-    if (!projectId) {
+    if (!projectId && !isAbsoluteFilePath(ref.path)) {
       linkError = t('conversation.thisConversationIsntAttachedToAny')
       return
     }
     linkError = null
     ui.open('file', {
-      projectId,
+      projectId: projectId ?? '',
       path: ref.path,
       line: ref.line !== undefined ? String(ref.line) : undefined,
       endLine: ref.endLine !== undefined ? String(ref.endLine) : undefined,

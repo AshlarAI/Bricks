@@ -240,3 +240,34 @@ describe('Mermaid and diff fences are unchanged', () => {
 		doc.dispose()
 	})
 })
+
+describe('Inline file reference icons', () => {
+	it('linked and bare file references render their resolved file icon alongside the label', () => {
+		const blocks = renderReference(
+			'See [lib.rs:42](src/lib.rs#L42), [render.ts](file:///Users/dev/Bricks/render.ts#L10), src/a.ts:3, and [unknown](unknown.xyz).',
+			OPTIONS,
+		)
+		const html = htmlOf(blocks)
+		expect(html).toContain(
+			'<button type="button" class="file-ref" data-file-path="src/lib.rs" data-line="42"><img class="file-icon" src="/file-icons/svg/rust.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">lib.rs:42</span></button>',
+		)
+		expect(html).toContain(
+			'<button type="button" class="file-ref" data-file-path="/Users/dev/Bricks/render.ts" data-line="10"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">render.ts</span></button>',
+		)
+		expect(html).toContain(
+			'<button type="button" class="file-ref" data-file-path="src/a.ts" data-line="3"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">src/a.ts:3</span></button>',
+		)
+		expect(html).toContain(
+			'<button type="button" class="file-ref" data-file-path="unknown.xyz"><img class="file-icon" src="/file-icons/svg/file-generic.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">unknown</span></button>',
+		)
+	})
+
+	it('forged data-code-icon marks inside a file link label never produce images', () => {
+		const html = finishHtml(
+			'<button type="button" class="file-ref" data-file-path="src/lib.rs"><span data-code-icon="rust"></span><span class="file-ref-label">lib.rs</span></button>',
+			[],
+			NO_MATH,
+		)
+		expect(icons(html)).toEqual([])
+	})
+})

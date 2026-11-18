@@ -57,16 +57,16 @@
         {#if file.path && onFile}
           <button
             type="button"
-            class="inline-flex min-w-0 items-center gap-1.5 rounded-sm font-mono focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            class="-mx-1 inline-flex min-w-0 items-center gap-1.5 rounded-sm px-1 py-0.5 transition-colors hover:bg-element-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             onclick={() => onFile({ path: file.path! })}
           >
             <FileIcon path={file.path} />
             <span class="file-ref min-w-0 truncate">{file.path}</span>
           </button>
         {:else if file.path}
-          <span class="inline-flex min-w-0 items-center gap-1.5 font-mono">
+          <span class="inline-flex min-w-0 items-center gap-1.5">
             <FileIcon path={file.path} />
-            <span class="min-w-0 truncate">{file.path}</span>
+            <span class="min-w-0 truncate font-medium">{file.path}</span>
           </span>
         {:else}
           <span class="font-mono">patch</span>

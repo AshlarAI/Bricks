@@ -113,9 +113,16 @@ export function fenceIconId(info: string | undefined): string | null {
 const CODE_ICON_KEY = crypto.randomUUID().replace(/-/g, '')
 const CODE_ICON = new RegExp(`<span data-code-icon="([a-z0-9_.-]+)" data-code-icon-key="${CODE_ICON_KEY}"></span>`, 'g')
 
+/** Signs a catalog icon mark so `withCodeIcons` turns it into an image only when this renderer created it. */
+function iconMark(icon: string | null): string {
+  return icon && isIconId(icon)
+    ? `<span data-code-icon="${icon}" data-code-icon-key="${CODE_ICON_KEY}"></span>`
+    : ''
+}
+
 /**
- * Turns the icon marks of code block headers into their images. Only marks
- * signed by this renderer count, and only a catalog id becomes an image: the
+ * Turns the icon marks of code block headers and file references into their images.
+ * Only marks signed by this renderer count, and only a catalog id becomes an image: the
  * sanitizer still refuses every `img`.
  */
 export function withCodeIcons(html: string): string {
@@ -125,7 +132,7 @@ export function withCodeIcons(html: string): string {
 
 /** The frame of a code block: its icon, its label, its copy button and its body (safe HTML). */
 export function codeShell(label: string, body: string, icon: string | null = null): string {
-  const mark = icon && isIconId(icon) ? `<span data-code-icon="${icon}" data-code-icon-key="${CODE_ICON_KEY}"></span>` : ''
+  const mark = iconMark(icon)
   return (
     `<div class="code-block my-2 overflow-hidden rounded-md border border-border bg-code-bg text-code-foreground">` +
     `<div class="flex items-center justify-between gap-2 border-b border-border px-2.5 py-1 text-xs text-muted-foreground">` +
@@ -142,13 +149,14 @@ export function codeBlockHtml(text: string, lang: string): string {
   return codeShell(fenceLanguage(lang) || t('conversation.codeLanguageText'), highlightedBody(text, knownLanguage(lang)), fenceIconId(lang))
 }
 
-/** The button of a file reference; `label` is safe HTML. */
+/** The button of a file reference, with its inline file icon; `label` is safe HTML. */
 function fileButton(ref: FileReference, label: string): string {
   const line = ref.line === undefined ? '' : ` data-line="${ref.line}"`
   const endLine = ref.endLine === undefined ? '' : ` data-end-line="${ref.endLine}"`
+  const mark = iconMark(iconId({ path: ref.path }))
   return (
     `<button type="button" class="file-ref" data-file-path="${escapeHtml(ref.path)}"${line}${endLine}>` +
-    `${label}</button>`
+    `${mark}<span class="file-ref-label">${label}</span></button>`
   )
 }
 

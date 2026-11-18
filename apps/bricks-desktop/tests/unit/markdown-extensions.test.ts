@@ -31,8 +31,45 @@ describe('parseFileReference (link targets)', () => {
     expect(parseFileReference('./src/a.ts', 'href')).toEqual({ path: 'src/a.ts' })
   })
 
-  it('refuses schemes, absolute and in-page targets, parent segments and malformed escapes', () => {
-    for (const href of ['https://x.y/a.ts', 'mailto:a@b.c', 'file:///etc/passwd', '/etc/a.ts', '//host/a.ts', '#titre', '../a.ts', 'a/../b.ts', '%E0%A4%A.ts', 'a/b.ts?x=1']) {
+  it('accepts file:// URLs and absolute paths for multi-path links', () => {
+    expect(parseFileReference('file:///Users/a/b%20c.rs#L42', 'href')).toEqual({
+      path: '/Users/a/b c.rs',
+      line: 42,
+    })
+    expect(parseFileReference('file://localhost/Users/a/b.ts#L3-L9', 'href')).toEqual({
+      path: '/Users/a/b.ts',
+      line: 3,
+      endLine: 9,
+    })
+    expect(parseFileReference('file:///C:/Users/dev/main.rs#L7', 'href')).toEqual({
+      path: 'C:/Users/dev/main.rs',
+      line: 7,
+    })
+    expect(parseFileReference('file:///repo/Makefile#L1', 'href')).toEqual({
+      path: '/repo/Makefile',
+      line: 1,
+    })
+    expect(parseFileReference('/Users/dev/a.ts#L5', 'href')).toEqual({
+      path: '/Users/dev/a.ts',
+      line: 5,
+    })
+  })
+
+  it('refuses web schemes, remote hosts, in-page targets, parent segments and malformed escapes', () => {
+    for (const href of [
+      'https://x.y/a.ts',
+      'mailto:a@b.c',
+      'file://other-host/a.ts',
+      'file:///a/../b.ts',
+      'file:///a/b.ts?x=1',
+      '/a/../b.ts',
+      '//host/a.ts',
+      '#titre',
+      '../a.ts',
+      'a/../b.ts',
+      '%E0%A4%A.ts',
+      'a/b.ts?x=1',
+    ]) {
       expect(parseFileReference(href, 'href'), href).toBeNull()
     }
   })
@@ -65,9 +102,12 @@ describe('bare file references in text', () => {
     expect(findFileReferences(text)).toEqual([])
   })
 
-  it('a Windows, home or Unix absolute path is never a reference', () => {
+  it('supports bare Unix absolute paths while keeping backslash, home and single-segment prose safe', () => {
     expect(findFileReferences('Chemin C:\\Users\\dev\\main.rs:10 ici.')).toEqual([])
-    expect(findFileReferences('Voir ~/src/a.ts:3 et /home/dev/a.rs:3.')).toEqual([])
+    expect(findFileReferences('Voir ~/src/a.ts:3 et /index.html.')).toEqual([])
+    expect(findFileReferences('Dans /home/dev/a.rs:3.')).toEqual([
+      { start: 5, end: 21, ref: { path: '/home/dev/a.rs', line: 3 } },
+    ])
     expect(findFileReferences('Dans src\\lib.rs:4 seulement.')).toEqual([])
     expect(parseFileReference('~/src/a.ts', 'href')).toBeNull()
     expect(parseFileReference('C:\\Users\\a.ts', 'href')).toBeNull()
@@ -202,20 +242,20 @@ describe('footnotes', () => {
 describe('file references in messages', () => {
   it('a link to a project file is a file button with its line range', () => {
     const html = htmlOf('Voir [lib.rs:42](src/lib.rs#L42) et [a](src/a%20b.ts#L3-L9).')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/lib.rs" data-line="42">lib.rs:42</button>')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a b.ts" data-line="3" data-end-line="9">a</button>')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/lib.rs" data-line="42"><img class="file-icon" src="/file-icons/svg/rust.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">lib.rs:42</span></button>')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/a b.ts" data-line="3" data-end-line="9"><img class="file-icon" src="/file-icons/svg/typescript.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">a</span></button>')
   })
 
   it('a bare path in text is a file button, not in code or in a URL', () => {
     const html = htmlOf('Fichier src/lib.rs:7 ; `src/lib.rs:7` ; https://example.com/src/lib.rs:7')
-    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/lib.rs" data-line="7">src/lib.rs:7</button>')
+    expect(html).toContain('<button type="button" class="file-ref" data-file-path="src/lib.rs" data-line="7"><img class="file-icon" src="/file-icons/svg/rust.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">src/lib.rs:7</span></button>')
     expect(html.match(/class="file-ref"/g)).toHaveLength(1)
     expect(html).toContain('<code>src/lib.rs:7</code>')
   })
 
   it('a link to a bare file name is a file button, a link to a host name is not', () => {
     const html = htmlOf('[notes](NOTES.md) et [site](example.com)')
-    expect(html).toContain('data-file-path="NOTES.md">notes</button>')
+    expect(html).toContain('data-file-path="NOTES.md"><img class="file-icon" src="/file-icons/svg/fmt-markdown.svg" alt="" aria-hidden="true" width="16" height="16" draggable="false" decoding="async"><span class="file-ref-label">notes</span></button>')
     expect(html).not.toContain('data-file-path="example.com"')
   })
 

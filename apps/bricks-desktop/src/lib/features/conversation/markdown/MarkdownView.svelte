@@ -216,16 +216,17 @@
   .md :global(td[align='right']) {
     text-align: right;
   }
-  .md :global(a code) {
-    color: inherit;
-  }
   .md :global(:not(pre) > code) {
     border-radius: 0.25rem;
-    background: var(--code-bg);
-    color: var(--code-foreground);
+    background: color-mix(in oklab, var(--sidebar) 93%, var(--brand));
+    color: color-mix(in oklab, var(--brand) 50%, var(--foreground));
     padding: 0.05rem 0.3rem;
     font-family: var(--code-font-family);
     font-size: 0.8125em;
+  }
+  .md :global(a code),
+  .md :global(.file-ref code) {
+    color: inherit;
   }
   .md :global([id]) {
     scroll-margin-top: 0.75rem;
@@ -306,17 +307,30 @@
     margin: 0;
   }
   .md :global(.file-ref) {
-    border-radius: 0.125rem;
-    color: var(--brand);
-    font-family: var(--code-font-family);
-    font-size: 0.8125em;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-underline-offset: 2px;
+    border-radius: 0.25rem;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: 500;
     cursor: pointer;
+    transition: background-color 120ms ease;
   }
-  .md :global(.file-ref:hover) {
-    opacity: 0.8;
+  .md :global(button.file-ref) {
+    display: inline;
+    padding: 0.05rem 0.1875rem;
+  }
+  .md :global(.file-ref .file-icon) {
+    width: 0.95em;
+    height: 0.95em;
+    margin-right: 0.25rem;
+    vertical-align: -0.15em;
+  }
+  .md :global(.file-ref-label),
+  .md :global(span.file-ref) {
+    text-decoration: none;
+  }
+  .md :global(button.file-ref:hover) {
+    background: var(--element-hover);
   }
   .md :global(.file-ref:focus-visible) {
     outline: 2px solid var(--ring);

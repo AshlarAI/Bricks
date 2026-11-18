@@ -1,11 +1,11 @@
-//! Read-only windows of project files, for the file references of messages
-//! (`path:line` or `path:line-end`), and the save dialog of SVG diagrams.
+//! Read-only windows of files for the file references of messages
+//! (`path:line`, `path:line-end`, or `file://` URLs), and the save dialog of
+//! SVG / PNG diagrams.
 //!
-//! `project_file_read` never reads outside the project folder (canonical
-//! paths, symbolic links included), never reads more than `READ_LIMIT` bytes,
-//! refuses binary and non UTF-8 content, and returns at most `WINDOW_LINES`
-//! lines. No shell, no write. `save_svg_file` opens the native save dialog
-//! here, in Rust, and writes only the file the user picked.
+//! Relative paths stay confined to the project folder (`read_window`); absolute
+//! paths (`read_any_window`) are canonicalized without `..` and opened in the
+//! same read-only window (never reading more than `READ_LIMIT` bytes, refusing
+//! binary and non UTF-8 content, returning at most `WINDOW_LINES` lines).
 
 use crate::contract::{IpcError, IpcErrorCode, IpcResult, ProjectFileWindow};
 use crate::engine::AppState;
@@ -14,9 +14,12 @@ use crate::i18n::{msg, tr};
 use crate::services::{invalid, io_error, join_error, not_found};
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
+
+/// Longest path accepted by `read_any_window`, matching the other path commands.
+const PATH_LIMIT: usize = 4096;
 
 /// Lines in one window at most.
 pub const WINDOW_LINES: u32 = 400;
@@ -243,7 +246,64 @@ pub fn language_of(rel: &str) -> Option<String> {
     Some(language.into())
 }
 
-/// Reads the window of a file of the project `project_id` (see `read_window`).
+/// Validates an absolute path for read-only inspection (`read_any_window`):
+/// rejects empty/oversized/NUL strings, drive-relative paths (`C:foo.txt`), and
+/// `.` / `..` components.
+fn validate_absolute_path(path: &str) -> IpcResult<()> {
+    if path.is_empty() || path.len() > PATH_LIMIT || path.contains('\0') {
+        return Err(invalid(tr!(msg::INVALID_PATH)));
+    }
+    let mut components = Path::new(path).components();
+    if matches!(components.next(), Some(Component::Prefix(_)))
+        && !matches!(components.next(), Some(Component::RootDir))
+    {
+        return Err(invalid(tr!(msg::INVALID_PATH)));
+    }
+    let escapes = Path::new(path).components().any(|c| {
+        !matches!(
+            c,
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_)
+        )
+    });
+    if escapes {
+        return Err(invalid(tr!(msg::INVALID_PATH)));
+    }
+    Ok(())
+}
+
+/// Normalizes a canonical file `target` for display: project-relative when it
+/// sits inside `root`, otherwise the canonical absolute path.
+fn normalize_shown_path(root: Option<&Path>, target: &Path) -> String {
+    if let Some(canon_root) = root.and_then(|r| std::fs::canonicalize(r).ok())
+        && let Ok(rel) = target.strip_prefix(&canon_root)
+        && !rel.as_os_str().is_empty()
+    {
+        return rel.to_string_lossy().replace('\\', "/");
+    }
+    target.to_string_lossy().into_owned()
+}
+
+/// Reads a window of a relative project file (`read_window`) or a read-only
+/// canonical absolute path.
+pub fn read_any_window(
+    root: Option<&Path>,
+    path: &str,
+    line: Option<u32>,
+    end_line: Option<u32>,
+) -> IpcResult<ProjectFileWindow> {
+    if Path::new(path).is_absolute() {
+        validate_absolute_path(path)?;
+        let target = canonical_or_missing(Path::new(path), path)?
+            .ok_or_else(|| not_found(tr!(msg::NO_LONGER_EXISTS, path = path)))?;
+        let shown = normalize_shown_path(root, &target);
+        return read_target(&target, &shown, line, end_line);
+    }
+    let root = root.ok_or_else(|| invalid(tr!(msg::INVALID_PATH_IT_MUST_BE_RELATIVE)))?;
+    read_window(root, path, line, end_line)
+}
+
+/// Reads the window of a file in the project `project_id`, or an absolute path
+/// for multi-path references (see `read_any_window`).
 #[tauri::command]
 pub async fn project_file_read(
     state: State<'_, AppState>,
@@ -252,8 +312,16 @@ pub async fn project_file_read(
     line: Option<u32>,
     end_line: Option<u32>,
 ) -> IpcResult<ProjectFileWindow> {
-    let root = state.project_path(&project_id)?;
-    tokio::task::spawn_blocking(move || read_window(&root, &path, line, end_line))
+    let root = if Path::new(&path).is_absolute() {
+        if project_id.is_empty() {
+            None
+        } else {
+            state.project_path(&project_id).ok()
+        }
+    } else {
+        Some(state.project_path(&project_id)?)
+    };
+    tokio::task::spawn_blocking(move || read_any_window(root.as_deref(), &path, line, end_line))
         .await
         .map_err(join_error)?
 }

@@ -1,15 +1,8 @@
 # File icons
 
-Imported offline from the Logoscrap catalog (see `manifest.json` for each icon's
-source, upstream revision, license and checksum). The SVGs are unchanged.
+Imported from [miguelsolorio/vscode-symbols](https://github.com/miguelsolorio/vscode-symbols) at commit `a405d32cca082d838ad7739b6d0044dea9dbbb79`
+(see `manifest.json` for each icon's upstream path, source URL, and checksum).
 
-Les noms et logos identifient leurs marques respectives. Les licences des dépôts couvrent les fichiers du projet; elles ne transfèrent pas les droits de marque. Consulter les règles officielles de chaque marque avant tout usage produit.
+Every SVG uses medium-contrast colors suited for both light and dark themes.
 
-Upstream projects:
-
-- Devicon
-- Simple Icons
-- https://github.com/material-extensions/vscode-material-icon-theme
-- https://github.com/vscode-icons/vscode-icons
-
-License files: `LICENSE-DEVICON.txt`, `LICENSE-MATERIAL-ICON-THEME.txt`, `LICENSE-VSCODE-ICONS.txt`, `LICENSE-SIMPLE-ICONS.md`.
+License: `LICENSE-VSCODE-SYMBOLS.txt` (MIT).

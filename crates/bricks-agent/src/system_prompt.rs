@@ -389,7 +389,7 @@ const FOUNDATION_HEAD: &str = "Tu es Bricks, un agent de développement autonome
 - Demande l'accord de l'utilisateur quand une action l'exige : destructive, irréversible, commit ou push.
 - Adapte-toi à son contexte, réponds dans sa langue et reste concis.";
 
-const FOUNDATION_TAIL: &str = "- Termine par un bilan court, avec les fichiers référencés sous la forme [fichier.rs:42](src/fichier.rs#L42).";
+const FOUNDATION_TAIL: &str = "- Termine par un bilan court, avec les fichiers référencés sous la forme [fichier.rs](file:///chemin/absolu/fichier.rs#L42).";
 
 /// `a, b et c`.
 fn french_list(items: &[&str], last: &str) -> String {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 220 (2026/11/18)
+
+- Replace the file icon catalog with theme-safe `vscode-symbols` SVGs, add inline icons and clean UI typography to chat file links, apply a cool slate tint to inline Markdown code, and support multi-path `file://` links across the parser, `project_file_read`, and the agent system prompt.
+
 ### Commit 219 (2026/11/18)
 
 - Align Bricks Desktop light and dark surface tokens (`tokens.json`, `tokens.generated.css`) with the Antigravity palette (`#ffffff` / `#fafafa` in light mode, `#070708` / `#111114` / `#15151a` in dark mode) and update theme unit tests.

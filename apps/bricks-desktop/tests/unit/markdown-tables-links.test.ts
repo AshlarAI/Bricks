@@ -43,7 +43,7 @@ describe('links', () => {
 	});
 
 	it('keep bold in a link to a file', () => {
-		expect(html('[**main**](src/main.rs)')).toMatch(/<button[^>]*class="file-ref"[^>]*><strong>main<\/strong><\/button>/);
+		expect(html('[**main**](src/main.rs)')).toMatch(/<button[^>]*class="file-ref"[^>]*><img class="file-icon" src="\/file-icons\/svg\/rust\.svg"[^>]*><span class="file-ref-label"><strong>main<\/strong><\/span><\/button>/);
 	});
 });
 

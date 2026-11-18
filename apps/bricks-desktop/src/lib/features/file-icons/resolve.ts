@@ -1,7 +1,8 @@
 // File, folder and language icons: one synchronous, local resolution for
-// every surface. The rules and SVGs are the app's own copy of the Logoscrap
-// catalog (`public/file-icons`, imported by `scripts/import_file_icons.py`);
-// nothing is fetched, and a URL only ever names one of those files.
+// every surface. The rules and SVGs are the app's own copy of Symbols
+// (`miguelsolorio/vscode-symbols`, imported into `public/file-icons` by
+// `scripts/import_file_icons.py`); nothing is fetched, and a URL only ever
+// names one of those files.
 
 import rules from './rules.json' with { type: 'json' }
 

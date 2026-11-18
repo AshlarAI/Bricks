@@ -3,7 +3,7 @@
 //! unknown project, and the checks of the SVG save command.
 
 use bricks_desktop_lib::commands::project_file::{
-    READ_LIMIT, SVG_LIMIT, check_svg, language_of, read_window, svg_file_name,
+    READ_LIMIT, SVG_LIMIT, check_svg, language_of, read_any_window, read_window, svg_file_name,
 };
 use bricks_desktop_lib::contract::IpcErrorCode;
 use bricks_desktop_lib::engine::AppState;
@@ -409,4 +409,52 @@ fn the_proposed_name_is_a_plain_svg_file_name() {
 /// A second temporary folder, outside the project of a test.
 fn project_outside() -> tempfile::TempDir {
     tempfile::tempdir().expect("outside folder")
+}
+
+#[test]
+fn read_any_window_reads_external_absolute_paths_and_normalizes_in_project_paths() {
+    let dir = project();
+    let outside = project_outside();
+    write(dir.path(), "src/main.rs", b"fn main() {}\n");
+    write(outside.path(), "other.ts", b"const a = 1\nconst b = 2\n");
+
+    let inside_abs = dir.path().join("src/main.rs");
+    let inside = read_any_window(
+        Some(dir.path()),
+        inside_abs.to_str().expect("utf8 path"),
+        Some(1),
+        None,
+    )
+    .expect("reads project file given as absolute path");
+    assert_eq!(inside.path, "src/main.rs");
+    assert_eq!(inside.lines, ["fn main() {}"]);
+
+    let outside_abs = outside.path().join("other.ts");
+    let ext = read_any_window(
+        None,
+        outside_abs.to_str().expect("utf8 path"),
+        Some(2),
+        None,
+    )
+    .expect("reads external file without a project");
+    assert_eq!(
+        ext.path,
+        std::fs::canonicalize(&outside_abs)
+            .unwrap()
+            .to_string_lossy()
+    );
+    assert_eq!(ext.lines, ["const a = 1", "const b = 2"]);
+    assert_eq!(ext.language.as_deref(), Some("typescript"));
+
+    let traversal = outside.path().join("sub/../other.ts");
+    let (code, _) = code_of(read_any_window(
+        None,
+        traversal.to_str().expect("utf8 path"),
+        None,
+        None,
+    ));
+    assert_eq!(code, IpcErrorCode::Invalid);
+
+    let (code, _) = code_of(read_any_window(None, "relative.rs", None, None));
+    assert_eq!(code, IpcErrorCode::Invalid);
 }

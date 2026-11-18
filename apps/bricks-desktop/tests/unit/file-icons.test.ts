@@ -256,13 +256,7 @@ describe('assets: the rules name only icons the catalog has, and the catalog has
 	});
 
 	it('the license files and the notice exist', () => {
-		for (const name of [
-			'LICENSE-DEVICON.txt',
-			'LICENSE-MATERIAL-ICON-THEME.txt',
-			'LICENSE-VSCODE-ICONS.txt',
-			'LICENSE-SIMPLE-ICONS.md',
-			'NOTICE.md'
-		]) {
+		for (const name of ['LICENSE-VSCODE-SYMBOLS.txt', 'NOTICE.md']) {
 			expect(existsSync(`${ICONS_DIR}${name}`), name).toBe(true);
 			expect(readFileSync(`${ICONS_DIR}${name}`, 'utf8').trim().length, name).toBeGreaterThan(0);
 		}
