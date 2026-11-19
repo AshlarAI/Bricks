@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { ScrollArea } from '$lib/components/ui/scroll-area'
 	import { t } from '$lib/i18n/i18n.svelte';
-	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils.js';
 	import { parsePatch, type PatchLineKind } from './patch';
 
@@ -12,20 +11,15 @@
 		truncated?: boolean;
 		/** Binary file: there is no text to show. */
 		binary?: boolean;
-		/** Lines added per « Afficher plus ». */
-		pageSize?: number;
 		/** A patch written in a message: `+`/`-` lines count even without hunk headers. */
 		loose?: boolean;
 		class?: string;
 	}
 
-	let { patch, truncated = false, binary = false, pageSize = 400, loose = false, class: className }: Props = $props();
+	let { patch, truncated = false, binary = false, loose = false, class: className }: Props = $props();
 
-	const lines = $derived(parsePatch(patch, { loose }));
-	let extra = $state(0);
-	const limit = $derived(pageSize + extra);
-	const shown = $derived(lines.slice(0, limit));
-	const hidden = $derived(lines.length - shown.length);
+	/** Every line of the patch: no page of lines to unfold. */
+	const shown = $derived(parsePatch(patch, { loose }));
 
 	// Both markers are on the left: a coloured gutter edge, then the old and
 	// new line numbers; the line keeps its own `+` / `-` (not colour only).
@@ -52,7 +46,7 @@
 
 	{#if binary}
 		<p class="px-2 py-2 text-muted-foreground">{t('changes.binaryFileNoPreviewAvailable')}</p>
-	{:else if lines.length === 0}
+	{:else if shown.length === 0}
 		<p class="px-2 py-2 text-muted-foreground">{t('changes.noTextChanges')}</p>
 	{:else}
 		<!-- A named, focusable scroll container: keyboard users must be able to scroll
@@ -70,12 +64,5 @@
 				</div>
 			</div>
 		</ScrollArea>
-		{#if hidden > 0}
-			<div class="border-t border-border px-2 py-1">
-				<Button variant="ghost" size="xs" onclick={() => (extra += pageSize)}>
-					{t('changes.showMoreLinesLeft', { count: hidden })}
-				</Button>
-			</div>
-		{/if}
 	{/if}
 </div>

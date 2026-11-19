@@ -5,8 +5,8 @@
 //!
 //! A path is relative to that workspace (no `..`), or absolute and inside it.
 //! Once every symbolic link is followed, the file must still be inside the
-//! workspace. The window itself is the one of `project_file_read`: at most
-//! `WINDOW_LINES` lines, `READ_LIMIT` bytes read, binary and non UTF-8 content
+//! workspace. The window itself is the one of `project_file_read`: the whole
+//! file, `READ_LIMIT` bytes read at most, binary and non UTF-8 content
 //! refused. The file can also be revealed in the Finder, nothing more.
 
 use crate::commands::agent_file::{agent_root_of, candidate_of, resolve_reveal_target};
@@ -277,14 +277,15 @@ mod tests {
         write(dir.path(), "large.log", content.as_bytes());
         let read = read_in_root(dir.path(), "large.log", None, None).unwrap();
         assert!(read.window.truncated, "the read limit cut the file");
-        assert_eq!(read.window.lines.len(), 400);
+        // No line cap: every line within the read limit is in the window.
+        assert_eq!(read.window.lines.len() as u32, read.window.total_lines);
         let read_lines = u32::try_from(READ_LIMIT / line.len() as u64).unwrap();
         assert!(
             read.window.total_lines + 2 >= read_lines && read.window.total_lines <= read_lines + 1
         );
-        // A window further down the file is read the same way, with the same flag.
+        // Asking for a range further down gives the same whole window, with the same flag.
         let later = read_in_root(dir.path(), "large.log", Some(1000), Some(1500)).unwrap();
-        assert_eq!(later.window.start, 1000);
+        assert_eq!(later.window.start, 1);
         assert!(later.window.truncated);
     }
 
@@ -292,15 +293,16 @@ mod tests {
     fn windows_follow_the_line_numbers_of_project_file_read() {
         let dir = folder();
         write(dir.path(), "big.txt", &numbered(1000));
+        // No line cap: a line or a range opens the whole file, its numbers unchanged.
         let centred = read_in_root(dir.path(), "big.txt", Some(500), None).unwrap();
         assert_eq!(
             (centred.window.start, centred.window.lines.len()),
-            (300, 400)
+            (1, 1000)
         );
         let paged = read_in_root(dir.path(), "big.txt", Some(401), Some(800)).unwrap();
-        assert_eq!(paged.window.start, 401);
-        assert_eq!(paged.window.lines[0], "ligne 401");
-        assert_eq!(paged.window.lines.last().unwrap(), "ligne 800");
+        assert_eq!(paged.window.start, 1);
+        assert_eq!(paged.window.lines[400], "ligne 401");
+        assert_eq!(paged.window.lines[799], "ligne 800");
         let (code, message) = code_of(read_in_root(dir.path(), "big.txt", Some(1001), None));
         assert_eq!(code, IpcErrorCode::Invalid);
         assert!(message.contains("is past the end"), "{message}");

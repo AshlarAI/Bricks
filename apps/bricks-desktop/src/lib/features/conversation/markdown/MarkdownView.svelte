@@ -14,6 +14,7 @@
   import SvgBlock from './SvgBlock.svelte'
   import VegaBlock from './VegaBlock.svelte'
   import CitationCard from './CitationCard.svelte'
+  import { codeLanguages } from '$lib/code-highlight.svelte'
   import type { CitationSource } from './citations'
 
   interface Props {
@@ -53,6 +54,7 @@
 
   const blocks = $derived.by(() => {
     void mathVersion
+    doc.setCodeVersion(codeLanguages.version)
     doc.setLanguage(currentLanguage())
     return doc.update(source, !streaming)
   })

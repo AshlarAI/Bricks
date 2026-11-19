@@ -2,7 +2,7 @@
 // is raw until `finishHtml`: sanitized (sanitizeMarkdown), then math placeholders replaced
 // by the math renderer (or by the source when none is installed).
 import { t } from '$lib/i18n/i18n.svelte'
-import hljs from 'highlight.js/lib/common'
+import { highlightedLines, isHighlightable } from '$lib/code-highlight.svelte'
 import { Lexer, Marked, Renderer, type Parser, type Token, type Tokens } from 'marked'
 import { isOpenableUrl } from '../links'
 import { buttonVariants } from '$lib/components/ui/button'
@@ -52,7 +52,7 @@ interface Scope {
 let scope: Scope | null = null
 let highlights = 0
 
-/** Number of highlight.js calls so far; callers take differences. */
+/** Number of code blocks highlighted so far; callers take differences. */
 export function highlightCount(): number {
   return highlights
 }
@@ -84,17 +84,41 @@ const ALERT_TITLES: Record<string, string> = {
   get caution() { return t('conversation.danger') },
 }
 
-/** The language highlight.js knows for a fence, or '' for plain text. */
+/** The language Shiki knows for a fence, or '' for plain text. */
 export function knownLanguage(lang: string | undefined): string {
   const language = fenceLanguage(lang)
-  return language !== '' && hljs.getLanguage(language) !== undefined ? language : ''
+  return isHighlightable(language) ? language : ''
 }
 
-/** The body of a code block: highlighted when `language` is not '', escaped otherwise. Always safe HTML. */
+/** Highlighted bodies waiting for `withHighlights`, by placeholder id. */
+const pendingBodies = new Map<number, string>()
+let nextBody = 0
+
+/**
+ * The body of a code block: escaped text, wrapped in a placeholder that `withHighlights` replaces
+ * by Shiki's tokens once the HTML is sanitized (the sanitizer drops `style`, which Shiki colours
+ * with). A language not loaded yet stays plain; it is requested and the view renders again.
+ */
 export function highlightedBody(text: string, language: string): string {
   if (language === '') return escapeHtml(text)
+  const lines = highlightedLines(text, language)
+  if (lines === null) return escapeHtml(text)
   highlights += 1
-  return hljs.highlight(text, { language, ignoreIllegals: true }).value
+  const id = nextBody++
+  pendingBodies.set(id, lines.join('\n'))
+  return `<span data-shiki="${id}">${escapeHtml(text)}</span>`
+}
+
+const SHIKI_MARK = /<span data-shiki="(\d+)">([\s\S]*?)<\/span>/g
+
+/** Replaces each code placeholder by its highlighted tokens (escaped text, theme colours). */
+export function withHighlights(html: string): string {
+  if (!html.includes('data-shiki')) return html
+  return html.replace(SHIKI_MARK, (_mark, id: string, plain: string) => {
+    const body = pendingBodies.get(Number(id))
+    pendingBodies.delete(Number(id))
+    return body ?? plain
+  })
 }
 
 /**
@@ -139,7 +163,7 @@ export function codeShell(label: string, body: string, icon: string | null = nul
     `<span class="inline-flex min-w-0 items-center gap-1.5 font-mono">${mark}${escapeHtml(label)}</span>` +
     `<button type="button" data-copy class="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">${escapeHtml(t('common.copy'))}</button>` +
     `</div>` +
-    `<pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="hljs font-mono">${body}</code></pre>` +
+    `<pre class="overflow-x-auto p-2.5 text-xs leading-relaxed"><code class="font-mono">${body}</code></pre>` +
     `</div>`
   )
 }
@@ -319,7 +343,7 @@ export function withScope(prefix: string, run: () => string): { html: string; ma
 
 /** Sanitizes block HTML, then replaces each math placeholder by the renderer output or by its source. */
 export function finishHtml(raw: string, maths: MathItem[], math: MathSettings): string {
-  const html = withCodeIcons(sanitizeMarkdown(raw))
+  const html = withHighlights(withCodeIcons(sanitizeMarkdown(raw)))
   if (maths.length === 0) return html
   return html.replace(/<span data-math="(\d+)"><\/span>/g, (_match, index: string) =>
     mathHtml(maths[Number(index)] as MathItem, math),

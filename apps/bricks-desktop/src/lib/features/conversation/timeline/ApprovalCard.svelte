@@ -136,7 +136,7 @@
                   </div>
                   {#if file.diff}
                     <CollapsibleContent class="mt-1.5">
-                      <MonoBlock text={file.diff} label={t('conversation.diffOf', { path: file.path })} diff maxLines={400} />
+                      <MonoBlock text={file.diff} label={t('conversation.diffOf', { path: file.path })} diff maxLines={Number.POSITIVE_INFINITY} />
                     </CollapsibleContent>
                   {/if}
                 </Collapsible>

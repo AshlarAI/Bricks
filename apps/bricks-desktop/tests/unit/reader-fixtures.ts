@@ -9,9 +9,6 @@ export const PROJECT = '/proj';
 export const WORKTREE = '/wt/a1';
 export const SESSION = 's1';
 
-/** Window size of Rust (`WINDOW_LINES`). */
-const WINDOW = 400;
-
 /** Absolute path → lines of the file. */
 export type Disk = Record<string, string[]>;
 
@@ -20,20 +17,26 @@ function rootOf(request: ReaderFileRequest): string {
 	return request.agentId ? WORKTREE : PROJECT;
 }
 
-/** The answer of Rust to `reader_file_read` for `request`, from `disk`. Throws the message Rust gives for a missing file. */
+/**
+ * The answer of Rust to `reader_file_read` for `request`, from `disk`: the whole file from its first
+ * line, whatever the line or range asked (the byte limit is not simulated, so never truncated). A
+ * line past the end is refused. Throws the messages Rust gives for a missing file and for a line
+ * past the end.
+ */
 export function answer(disk: Disk, request: ReaderFileRequest): ReaderFileWindow {
 	const absolute = request.path.startsWith('/') ? request.path : `${rootOf(request)}/${request.path}`;
 	const lines = disk[absolute];
 	if (!lines) throw new Error(`\`${request.path}\` n'existe plus : le fichier a été supprimé ou déplacé`);
 	const total = lines.length;
-	const first = request.line ?? 1;
-	const last = Math.min(total, request.endLine ?? first + WINDOW - 1, first + WINDOW - 1);
+	if (request.line !== null && request.line > total) {
+		throw new Error(`ligne ${request.line} au-delà de la fin du fichier (${total} lignes)`);
+	}
 	return {
 		path: request.path,
-		start: first,
-		lines: lines.slice(first - 1, last),
+		start: 1,
+		lines: [...lines],
 		totalLines: total,
-		truncated: total > WINDOW,
+		truncated: false,
 		language: null,
 		absolute,
 	};

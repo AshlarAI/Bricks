@@ -193,26 +193,27 @@ describe('state per session', () => {
 });
 
 describe('windows', () => {
-	it('a long file opens on its first 400 lines, flagged as truncated', async () => {
+	it('a long file opens whole, from its first line, and is not truncated', async () => {
 		const { read } = diskRead({ [`${PROJECT}/big.txt`]: numbered(1000) });
 		const reader = new ReaderStore(read);
 		const tab = reader.open({ ...target, path: 'big.txt' });
 		await settle();
-		expect(tab.window).toMatchObject({ start: 1, totalLines: 1000, truncated: true, loading: false });
-		expect(tab.window?.lines).toHaveLength(400);
+		expect(tab.window).toMatchObject({ start: 1, totalLines: 1000, truncated: false, loading: false });
+		expect(tab.window?.lines).toHaveLength(1000);
+		expect(tab.window?.lines.at(-1)).toBe('ligne 1000');
 	});
 
-	it('loadWindow reads the 400 lines that start at the given line', async () => {
+	it('opening a line of an open file asks Rust again, and shows the window Rust answers', async () => {
 		const { read, requests } = diskRead({ [`${PROJECT}/big.txt`]: numbered(1000) });
 		const reader = new ReaderStore(read);
 		const tab = reader.open({ ...target, path: 'big.txt' });
 		await settle();
-		reader.loadWindow(tab.id, 401);
+		reader.open({ ...target, path: 'big.txt', line: 401 });
 		await settle();
-		expect(requests.at(-1)).toMatchObject({ line: 401, endLine: 800 });
-		expect(tab.window?.start).toBe(401);
-		expect(tab.window?.lines[0]).toBe('ligne 401');
-		expect(tab.window?.lines.at(-1)).toBe('ligne 800');
+		expect(requests.at(-1)).toMatchObject({ path: 'big.txt', line: 401 });
+		// Rust reads the file from its first line whatever the line asked: the store shows that answer.
+		expect(tab.window).toMatchObject({ start: 1, totalLines: 1000, loading: false, error: null });
+		expect(tab.window?.lines).toHaveLength(1000);
 	});
 
 	it('the window while it loads keeps the file totals, and says it is loading', async () => {
@@ -227,7 +228,7 @@ describe('windows', () => {
 		const pending = manualRead();
 		const reader = new ReaderStore(pending.read);
 		const tab = reader.open({ ...target, path: 'a.rs' });
-		reader.loadWindow(tab.id, 2);
+		reader.open({ ...target, path: 'a.rs', line: 2 });
 		const [older, newer] = pending.pending;
 		newer.resolve({ path: 'a.rs', start: 2, lines: ['second'], totalLines: 2, truncated: false, language: null, absolute: `${PROJECT}/a.rs` });
 		await settle();
@@ -240,7 +241,7 @@ describe('windows', () => {
 		const pending = manualRead();
 		const reader = new ReaderStore(pending.read);
 		const tab = reader.open({ ...target, path: 'a.rs' });
-		reader.loadWindow(tab.id, 2);
+		reader.open({ ...target, path: 'a.rs', line: 2 });
 		const [older, newer] = pending.pending;
 		newer.resolve({ path: 'a.rs', start: 2, lines: ['second'], totalLines: 2, truncated: false, language: null, absolute: `${PROJECT}/a.rs` });
 		await settle();

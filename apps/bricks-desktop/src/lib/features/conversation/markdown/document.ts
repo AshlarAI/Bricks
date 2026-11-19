@@ -16,6 +16,7 @@ import {
   footnotesHtml,
   highlightCount,
   highlightedBody,
+  withHighlights,
   knownLanguage,
   lexBlocks,
   marked,
@@ -231,6 +232,7 @@ export class MarkdownDocument {
   private readonly cacheLimit: number
   private math: MathRenderer | null = null
   private mathVersion = 0
+  private codeVersion = 0
   private readonly macros: Record<string, string> = {}
   private macroVersion = 0
   private macroSerial = 0
@@ -282,6 +284,13 @@ export class MarkdownDocument {
     if (renderer === this.math) return
     this.math = renderer
     this.mathVersion += 1
+  }
+
+  /** A code language finished loading (`codeLanguages.version`): blocks render again with colours. */
+  setCodeVersion(version: number): void {
+    if (version === this.codeVersion) return
+    this.codeVersion = version
+    this.openCode = null
   }
 
   /** Rendered blocks hold interface words (a copy button): a new language renders them again. */
@@ -562,7 +571,7 @@ export class MarkdownDocument {
       this.renderOpen(entry, stats)
       return
     }
-    const sig = [entry.labelSig, entry.idsSig, entry.fnSig, entry.mathCount > 0 ? `m${this.mathVersion}:${this.macroVersion}` : ''].join('\u0004')
+    const sig = [entry.labelSig, entry.idsSig, entry.fnSig, entry.mathCount > 0 ? `m${this.mathVersion}:${this.macroVersion}` : '', `c${this.codeVersion}`].join('\u0004')
     if (entry.output !== null && entry.outputSig === sig) {
       this.restoreMacros(entry.macros)
       stats.reusedBlocks += 1
@@ -610,7 +619,7 @@ export class MarkdownDocument {
    * An open code block while streaming: its highlighted body is kept, the text received since is
    * appended escaped, and the whole block is highlighted again once that tail is long. Nothing
    * here is cached: each tick replaces the open block. The output is safe by construction (the
-   * body is highlight.js output or escaped text, the frame is ours), so it is not sanitized.
+   * body is Shiki tokens with escaped text, or escaped text, the frame is ours), so it is not sanitized.
    */
   private renderOpen(entry: Entry, stats: RenderStats): void {
     const node = entry.token as Tok
@@ -623,11 +632,11 @@ export class MarkdownDocument {
       if (tail.length <= PROGRESSIVE_CHARS && countNewlines(tail) <= PROGRESSIVE_LINES) {
         body = state.body + escapeHtml(tail)
       } else {
-        body = highlightedBody(text, language)
+        body = withHighlights(highlightedBody(text, language))
         this.openCode = { key: entry.key, language, text, body }
       }
     } else {
-      body = highlightedBody(text, language)
+      body = withHighlights(highlightedBody(text, language))
       this.openCode = { key: entry.key, language, text, body }
     }
     const info = node.lang as string | undefined

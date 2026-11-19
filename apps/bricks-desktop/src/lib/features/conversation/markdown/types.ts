@@ -30,7 +30,7 @@ export interface RenderStats {
   renderedBlocks: number
   /** Blocks served from the cache in this update. */
   reusedBlocks: number
-  /** highlight.js calls in this update. */
+  /** Code blocks highlighted (Shiki) in this update. */
   highlightCalls: number
   /** Math expressions rendered by the math renderer in this update. */
   mathRenders: number

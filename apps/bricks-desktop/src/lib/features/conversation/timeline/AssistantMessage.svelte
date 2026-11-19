@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t } from '$lib/i18n/i18n.svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
-  import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
   import * as Trace from '$lib/components/ui/trace'
   import { formatWorked } from '../runend'
   import type { AssistantItem, Conversation } from '$lib/state/conversation.svelte'
@@ -9,7 +8,7 @@
   import { ui } from '$lib/state/ui.svelte'
   import { throttledValue } from '../throttled.svelte'
   import { isAbsoluteFilePath } from '../markdown/fileref-parse'
-  import type { FileReference, MarkdownHeading } from '../markdown/types'
+  import type { FileReference } from '../markdown/types'
   import MarkdownView from '../markdown/MarkdownView.svelte'
 
   /**
@@ -33,7 +32,6 @@
 
   /** The person's own choice; until then the reasoning is open while it streams. */
   let reasoningOpen = $state<boolean | undefined>(undefined)
-  let tocOpen = $state(false)
   /** Error of the last link or file reference that could not be opened; cleared by the next successful open. */
   let linkError = $state<string | null>(null)
   // The source is followed at most every 80 ms while the answer streams; the
@@ -49,9 +47,6 @@
   // svelte-ignore state_referenced_locally
   const safeId = item.id.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const idPrefix = `m${safeId.length}-${safeId}`
-  let headings = $state<MarkdownHeading[]>([])
-  /** A table of contents only helps a finished answer with several headings. */
-  const showToc = $derived(!item.streaming && headings.length >= 3)
 
   const hasReasoning = $derived(part !== 'answer' && item.thinking.trim().length > 0)
   const hasText = $derived(part !== 'reasoning')
@@ -103,34 +98,6 @@
     </Trace.Root>
   {/if}
 
-  {#if hasText && showToc}
-    <Collapsible bind:open={tocOpen}>
-      <CollapsibleTrigger
-        class="group inline-flex w-fit items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-element-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        {t('conversation.summary')}
-        <ChevronDown class="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <nav aria-label={t('conversation.answerSummary')} class="mt-1 text-xs">
-          <ul class="flex flex-col gap-0.5">
-            {#each headings as heading (heading.id)}
-              <li style:padding-left="{(heading.level - 1) * 0.75}rem">
-                <button
-                  type="button"
-                  class="rounded-sm text-left text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  onclick={() => jumpTo(heading.id)}
-                >
-                  {heading.text}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </nav>
-      </CollapsibleContent>
-    </Collapsible>
-  {/if}
-
   {#if !hasText}
     <!-- The answer's text follows the steps. -->
   {:else if item.text}
@@ -141,7 +108,6 @@
       onFile={openFile}
       onLinkResult={(error) => (linkError = error)}
       {sources}
-      bind:headings
     />
     {#if linkError}
       <p class="text-xs break-words text-destructive" role="alert">

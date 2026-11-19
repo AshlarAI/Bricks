@@ -19,7 +19,7 @@ export interface ReaderFileRequest {
   agentId: string | null
   /** Relative to that workspace (no `..`), or absolute inside it. */
   path: string
-  /** 1-based. Alone: a window centred on it. With `endLine`: the range, held by a window of 400 lines. */
+  /** 1-based, checked against the file; the window is always the whole file. */
   line: number | null
   endLine: number | null
 }

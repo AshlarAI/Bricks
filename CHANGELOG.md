@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 223 (2026/11/19)
+
+- Keep Shiki as the only code highlighter (highlight.js and `syntax.css` removed) in Markdown, streaming code and the reader, read whole files in the reader and show whole diffs (no 400-line windows or paging), replace « go to bottom » with a round arrow button, remove the reply table of contents, reuse the shadcn Switch for keep-awake in the « + » menu, and count only input tokens in the model context badge.
+
 ### Commit 222 (2026/11/18)
 
 - Drop the Windows `.msi` bundle from official releases, since WiX refuses a major version above 255 (`2026`). Windows ships as `.setup.exe` and `.zip`, and `latest.json` no longer lists an MSI entry.

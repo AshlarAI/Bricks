@@ -5,7 +5,7 @@
 //! Relative paths stay confined to the project folder (`read_window`); absolute
 //! paths (`read_any_window`) are canonicalized without `..` and opened in the
 //! same read-only window (never reading more than `READ_LIMIT` bytes, refusing
-//! binary and non UTF-8 content, returning at most `WINDOW_LINES` lines).
+//! binary and non UTF-8 content). A window holds the whole file read.
 
 use crate::contract::{IpcError, IpcErrorCode, IpcResult, ProjectFileWindow};
 use crate::engine::AppState;
@@ -21,18 +21,14 @@ use tauri_plugin_dialog::DialogExt;
 /// Longest path accepted by `read_any_window`, matching the other path commands.
 const PATH_LIMIT: usize = 4096;
 
-/// Lines in one window at most.
-pub const WINDOW_LINES: u32 = 400;
 /// Bytes read from one file at most; the rest of a larger file is not read.
 pub const READ_LIMIT: u64 = 2 * 1024 * 1024;
 /// Largest SVG document saved.
 pub const SVG_LIMIT: usize = 5 * 1024 * 1024;
 
 /// The window of `rel` (a path relative to the project folder `root`) asked
-/// by `line` and `end_line` (1-based, inclusive). Without `line`, the first
-/// lines. With `line` alone, `WINDOW_LINES` lines centred on it. With both, the
-/// range `line..=end_line`: a window of `WINDOW_LINES` lines that holds it,
-/// centred on its middle; a range as long as the window starts the window.
+/// by `line` and `end_line` (1-based, inclusive), which are checked against the
+/// file: the window is always the whole file read, from line 1.
 pub fn read_window(
     root: &Path,
     rel: &str,
@@ -100,7 +96,7 @@ pub(crate) fn read_target(
     File::open(target)
         .and_then(|file| file.take(READ_LIMIT + 1).read_to_end(&mut bytes))
         .map_err(|e| io_error(&tr!(msg::READING_2, shown = shown), e))?;
-    let mut truncated = bytes.len() as u64 > READ_LIMIT;
+    let truncated = bytes.len() as u64 > READ_LIMIT;
     if truncated {
         // Cut after the last newline: no half line, no half UTF-8 character.
         bytes.truncate(READ_LIMIT as usize);
@@ -133,8 +129,6 @@ pub(crate) fn read_target(
     } else {
         Vec::new()
     };
-    // The file is larger than the window: a range inside a short file is not truncated.
-    truncated |= total > WINDOW_LINES;
 
     Ok(ProjectFileWindow {
         path: shown.to_string(),
@@ -147,54 +141,22 @@ pub(crate) fn read_target(
 }
 
 /// First and last line (1-based, inclusive) of the window of a file of
-/// `total` lines. An empty file gives `(1, 0)`.
+/// `total` lines, once `line` and `end_line` are checked. An empty file gives `(1, 0)`.
 fn window_bounds(total: u32, line: Option<u32>, end_line: Option<u32>) -> IpcResult<(u32, u32)> {
     match (line, end_line) {
-        (None, Some(_)) => Err(invalid(tr!(msg::A_RANGE_END_WITH_NO_START))),
-        (None, None) => Ok((1, total.min(WINDOW_LINES))),
-        (Some(0), _) => Err(invalid(tr!(msg::LINES_START_AT_1))),
-        (Some(line), end) => {
-            if line > total {
-                return Err(beyond_end(line, total));
-            }
-            let last = match end {
-                None => line,
-                Some(end) => {
-                    if end < line {
-                        return Err(invalid(tr!(
-                            msg::INVALID_RANGE_THE_END_COMES_BEFORE,
-                            end = end,
-                            line = line
-                        )));
-                    }
-                    end.min(total)
-                }
-            };
-            if last - line + 1 >= WINDOW_LINES {
-                // A range as long as the window: the window starts on it.
-                return Ok((line, line.saturating_add(WINDOW_LINES - 1).min(total)));
-            }
-            Ok(centred_window(total, line, last))
+        (None, Some(_)) => return Err(invalid(tr!(msg::A_RANGE_END_WITH_NO_START))),
+        (Some(0), _) => return Err(invalid(tr!(msg::LINES_START_AT_1))),
+        (Some(line), _) if line > total => return Err(beyond_end(line, total)),
+        (Some(line), Some(end)) if end < line => {
+            return Err(invalid(tr!(
+                msg::INVALID_RANGE_THE_END_COMES_BEFORE,
+                end = end,
+                line = line
+            )));
         }
+        _ => {}
     }
-}
-
-/// The window of `WINDOW_LINES` lines that holds the range `line..=last`, which
-/// is shorter than the window, and is centred on the middle of the range. Near
-/// the start or the end of the file, it is pushed back into the file. A file of
-/// at most `WINDOW_LINES` lines is returned whole.
-fn centred_window(total: u32, line: u32, last: u32) -> (u32, u32) {
-    if total <= WINDOW_LINES {
-        return (1, total);
-    }
-    // The first line that keeps `last` in the window, the last first line that
-    // keeps `line` in it, and the first line that centres the middle of the range.
-    let lowest = last.saturating_add(1).saturating_sub(WINDOW_LINES).max(1);
-    let highest = line.min(total + 1 - WINDOW_LINES);
-    let middle = line + (last - line) / 2;
-    let wanted = middle.saturating_sub(WINDOW_LINES / 2).max(1);
-    let first = wanted.max(lowest).min(highest);
-    (first, first + WINDOW_LINES - 1)
+    Ok((1, total))
 }
 
 fn beyond_end(line: u32, total: u32) -> IpcError {

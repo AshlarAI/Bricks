@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MarkdownDocument, renderReference } from '../../src/lib/features/conversation/markdown/document'
 import type { MathRenderer, RenderedBlock } from '../../src/lib/features/conversation/markdown/types'
+import { loadHighlighter } from '../../src/lib/highlighter'
 
 // happy-dom drops the first element of an HTML fragment inside DOMPurify (a test-only DOM
 // quirk; browsers keep it). Sanitizing is not under test here: the block HTML is compared as
@@ -11,6 +12,10 @@ import type { MathRenderer, RenderedBlock } from '../../src/lib/features/convers
 vi.mock('../../src/lib/features/conversation/markdown/sanitize', () => ({
   sanitizeMarkdown: (html: string) => html,
 }))
+
+// Shiki loads its grammars asynchronously. The TypeScript grammar is loaded before any block is
+// rendered, so the references and the streams of this file are coloured alike, whenever they run.
+await loadHighlighter('ts')
 
 const CORPUS = `# Titre principal
 
@@ -88,7 +93,7 @@ function uncoloured(blocks: RenderedBlock[]): unknown[] {
     text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&amp;/g, '&')
   return projection(blocks).map((block) =>
     Array.isArray(block) && block[0] === 'html'
-      ? [block[0], block[1], String(block[2]).replace(/<code class="hljs font-mono">([\s\S]*?)<\/code>/g, (_all, inner: string) => `<code class="hljs font-mono">${decode(inner.replace(/<[^>]*>/g, ''))}</code>`)]
+      ? [block[0], block[1], String(block[2]).replace(/<code class="font-mono">([\s\S]*?)<\/code>/g, (_all, inner: string) => `<code class="font-mono">${decode(inner.replace(/<[^>]*>/g, ''))}</code>`)]
       : block,
   )
 }

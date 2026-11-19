@@ -1,6 +1,6 @@
-//! `project_file_read` on temporary folders only: windows, ranges, refusals
-//! (outside the project, symbolic links, binary, large, invalid ranges), the
-//! unknown project, and the checks of the SVG save command.
+//! `project_file_read` on temporary folders only: whole files from their first
+//! line, ranges, refusals (outside the project, symbolic links, binary, large,
+//! invalid ranges), the unknown project, and the checks of the SVG save command.
 
 use bricks_desktop_lib::commands::project_file::{
     READ_LIMIT, SVG_LIMIT, check_svg, language_of, read_any_window, read_window, svg_file_name,
@@ -54,25 +54,28 @@ fn a_small_file_is_returned_whole() {
 }
 
 #[test]
-fn a_line_gives_a_window_centred_on_it() {
+fn a_line_gives_the_whole_file_from_its_first_line() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let window = read_window(dir.path(), "big.txt", Some(500), None).unwrap();
-    assert_eq!(window.lines.len(), 400);
-    assert_eq!(window.start, 300);
-    assert_eq!(window.lines[0], "ligne 300");
+    assert_eq!(
+        window.start, 1,
+        "a line does not move the start of the file"
+    );
+    assert_eq!(window.lines.len(), 1000);
+    assert_eq!(window.lines[0], "ligne 1");
     assert!(window.lines.contains(&"ligne 500".to_string()));
-    assert!(window.truncated);
+    assert!(!window.truncated);
     assert_eq!(window.total_lines, 1000);
 }
 
 #[test]
-fn a_line_near_the_end_fills_the_window_upwards() {
+fn a_line_near_the_end_still_gives_the_whole_file() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let window = read_window(dir.path(), "big.txt", Some(999), None).unwrap();
-    assert_eq!(window.start, 601);
-    assert_eq!(window.lines.len(), 400);
+    assert_eq!(window.start, 1);
+    assert_eq!(window.lines.len(), 1000);
     assert_eq!(window.lines.last().unwrap(), "ligne 1000");
 }
 
@@ -92,52 +95,55 @@ fn a_short_range_in_a_short_file_comes_with_its_context() {
 }
 
 #[test]
-fn a_short_range_in_a_big_file_gets_a_window_of_400_lines_holding_it() {
+fn a_short_range_in_a_big_file_gives_the_whole_file_from_its_first_line() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let window = read_window(dir.path(), "big.txt", Some(500), Some(510)).unwrap();
-    // The middle of 500..=510 is 505: 400 lines centred on it start at 305.
-    assert_eq!(window.start, 305);
-    assert_eq!(window.lines.len(), 400);
-    assert_eq!(window.lines[0], "ligne 305");
-    // Index 195 is line 500, index 205 is line 510.
-    assert_eq!(window.lines[195..206].to_vec(), expected_lines(500, 11));
-    assert!(window.truncated);
+    assert_eq!(window.start, 1);
+    assert_eq!(window.lines.len(), 1000);
+    assert_eq!(window.lines[0], "ligne 1");
+    // Index 499 is line 500, index 509 is line 510.
+    assert_eq!(window.lines[499..510].to_vec(), expected_lines(500, 11));
+    assert!(
+        !window.truncated,
+        "a file under the read limit is not truncated"
+    );
 }
 
 #[test]
-fn a_short_range_near_either_end_is_pushed_back_into_the_file() {
+fn a_short_range_near_either_end_still_gives_the_whole_file() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let end = read_window(dir.path(), "big.txt", Some(995), Some(1000)).unwrap();
-    assert_eq!(end.start, 601, "filled upwards at the end of the file");
-    assert_eq!(end.lines.len(), 400);
+    assert_eq!(end.start, 1);
+    assert_eq!(end.lines.len(), 1000);
     assert_eq!(end.lines.last().unwrap(), "ligne 1000");
 
     let start = read_window(dir.path(), "big.txt", Some(2), Some(4)).unwrap();
     assert_eq!(start.start, 1);
-    assert_eq!(start.lines.len(), 400);
+    assert_eq!(start.lines.len(), 1000);
     assert_eq!(start.lines[1], "ligne 2");
 }
 
 #[test]
-fn a_range_as_long_as_the_window_starts_the_window() {
+fn a_long_range_still_gives_the_whole_file_from_its_first_line() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let exact = read_window(dir.path(), "big.txt", Some(100), Some(499)).unwrap();
-    assert_eq!(exact.start, 100);
-    assert_eq!(exact.lines.len(), 400);
+    assert_eq!(exact.start, 1);
+    assert_eq!(exact.lines.len(), 1000);
     let longer = read_window(dir.path(), "big.txt", Some(100), Some(600)).unwrap();
-    assert_eq!(longer.start, 100);
-    assert_eq!(longer.lines.len(), 400);
-    assert_eq!(longer.lines.last().unwrap(), "ligne 499");
+    assert_eq!(longer.start, 1);
+    assert_eq!(longer.lines.len(), 1000);
+    assert_eq!(longer.lines.last().unwrap(), "ligne 1000");
 }
 
 #[test]
-fn every_range_is_held_by_a_window_of_400_lines() {
-    for total in [401u32, 500, 1000] {
+fn every_range_gives_the_whole_file_from_its_first_line() {
+    for total in [1u32, 2, 401, 500, 1000] {
         let dir = project();
         write(dir.path(), "f.txt", &numbered(total));
+        let everything = expected_lines(1, total);
         for line in (1..=total).step_by(37) {
             for end in [
                 line,
@@ -150,31 +156,29 @@ fn every_range_is_held_by_a_window_of_400_lines() {
             ] {
                 let end = end.min(total);
                 let window = read_window(dir.path(), "f.txt", Some(line), Some(end)).unwrap();
-                let first = window.start;
-                let count = u32::try_from(window.lines.len()).unwrap();
-                assert_eq!(count, 400, "{total} lines, range {line}..={end}");
-                assert_eq!(window.lines[0], format!("ligne {first}"));
-                assert!(
-                    first <= line,
-                    "{total} lines, range {line}..={end}: starts at {first}"
+                assert_eq!(window.start, 1, "{total} lines, range {line}..={end}");
+                assert_eq!(
+                    window.total_lines, total,
+                    "{total} lines, range {line}..={end}"
                 );
-                if end - line + 1 < 400 {
-                    assert!(first + count > end, "{total} lines, range {line}..={end}");
-                } else {
-                    assert_eq!(first, line, "a range as long as the window starts it");
-                }
+                assert_eq!(
+                    window.lines, everything,
+                    "{total} lines, range {line}..={end}"
+                );
+                assert!(!window.truncated, "{total} lines, range {line}..={end}");
             }
         }
     }
 }
 
 #[test]
-fn a_range_longer_than_the_window_is_cut_and_an_end_past_the_file_is_clamped() {
+fn a_range_is_clamped_to_the_file_and_gives_the_whole_file() {
     let dir = project();
     write(dir.path(), "big.txt", &numbered(1000));
     let long = read_window(dir.path(), "big.txt", Some(1), Some(1000)).unwrap();
-    assert_eq!(long.lines.len(), 400);
-    assert_eq!(long.lines.last().unwrap(), "ligne 400");
+    assert_eq!(long.start, 1);
+    assert_eq!(long.lines.len(), 1000);
+    assert_eq!(long.lines.last().unwrap(), "ligne 1000");
 
     write(dir.path(), "short.txt", &numbered(10));
     let clamped = read_window(dir.path(), "short.txt", Some(9), Some(50)).unwrap();
@@ -204,6 +208,12 @@ fn invalid_ranges_are_refused_with_a_clear_message() {
 
     let (code, _) = code_of(read_window(dir.path(), "short.txt", None, Some(3)));
     assert_eq!(code, IpcErrorCode::Invalid);
+
+    // Whole files are read too: a line past the end of a long one is refused as well.
+    write(dir.path(), "big.txt", &numbered(1000));
+    let (code, message) = code_of(read_window(dir.path(), "big.txt", Some(1001), Some(1002)));
+    assert_eq!(code, IpcErrorCode::Invalid);
+    assert!(message.contains("is past the end"), "{message}");
 }
 
 #[test]
@@ -298,14 +308,15 @@ fn a_large_file_is_read_up_to_the_limit_only() {
     write(dir.path(), "large.log", content.as_bytes());
     let window = read_window(dir.path(), "large.log", None, None).unwrap();
     assert!(window.truncated);
-    assert_eq!(window.lines.len(), 400);
+    assert_eq!(window.start, 1);
+    // 2 MiB hold exactly 20 971 whole lines of 100 bytes: the rest of the read is cut away.
     let read_lines = READ_LIMIT / line.len() as u64;
-    assert!(
-        u64::from(window.total_lines) <= read_lines + 1
-            && u64::from(window.total_lines) + 2 >= read_lines,
-        "{} lines read, expected about {read_lines}",
-        window.total_lines
+    assert_eq!(
+        u64::from(window.total_lines),
+        read_lines,
+        "the read stops at the limit"
     );
+    assert_eq!(window.lines.len(), usize::try_from(read_lines).unwrap());
 }
 
 #[test]

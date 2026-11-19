@@ -24,9 +24,77 @@ const languages = {
 	typescript: () => import("shiki/langs/typescript.mjs"),
 	xml: () => import("shiki/langs/xml.mjs"),
 	yaml: () => import("shiki/langs/yaml.mjs"),
+	"c": () => import("shiki/langs/c.mjs"),
+	"cpp": () => import("shiki/langs/cpp.mjs"),
+	"csharp": () => import("shiki/langs/csharp.mjs"),
+	"go": () => import("shiki/langs/go.mjs"),
+	"java": () => import("shiki/langs/java.mjs"),
+	"kotlin": () => import("shiki/langs/kotlin.mjs"),
+	"lua": () => import("shiki/langs/lua.mjs"),
+	"php": () => import("shiki/langs/php.mjs"),
+	"ruby": () => import("shiki/langs/ruby.mjs"),
+	"rust": () => import("shiki/langs/rust.mjs"),
+	"swift": () => import("shiki/langs/swift.mjs"),
+	"toml": () => import("shiki/langs/toml.mjs"),
+	"ini": () => import("shiki/langs/ini.mjs"),
+	"dockerfile": () => import("shiki/langs/dockerfile.mjs"),
+	"make": () => import("shiki/langs/make.mjs"),
+	"scss": () => import("shiki/langs/scss.mjs"),
+	"less": () => import("shiki/langs/less.mjs"),
+	"graphql": () => import("shiki/langs/graphql.mjs"),
+	"powershell": () => import("shiki/langs/powershell.mjs"),
+	"r": () => import("shiki/langs/r.mjs"),
+	"dart": () => import("shiki/langs/dart.mjs"),
+	"scala": () => import("shiki/langs/scala.mjs"),
+	"vue": () => import("shiki/langs/vue.mjs"),
+	"perl": () => import("shiki/langs/perl.mjs"),
+	"haskell": () => import("shiki/langs/haskell.mjs"),
+	"elixir": () => import("shiki/langs/elixir.mjs"),
+	"zig": () => import("shiki/langs/zig.mjs"),
+	"nix": () => import("shiki/langs/nix.mjs"),
+	"objective-c": () => import("shiki/langs/objective-c.mjs"),
+	"latex": () => import("shiki/langs/latex.mjs"),
+	"proto": () => import("shiki/langs/proto.mjs"),
+	"hcl": () => import("shiki/langs/hcl.mjs"),
+	"nginx": () => import("shiki/langs/nginx.mjs"),
+	"julia": () => import("shiki/langs/julia.mjs"),
+	"clojure": () => import("shiki/langs/clojure.mjs"),
+	"erlang": () => import("shiki/langs/erlang.mjs"),
+	"ocaml": () => import("shiki/langs/ocaml.mjs"),
+	"fsharp": () => import("shiki/langs/fsharp.mjs"),
+	"bat": () => import("shiki/langs/bat.mjs"),
+	"astro": () => import("shiki/langs/astro.mjs"),
+	"prisma": () => import("shiki/langs/prisma.mjs"),
+	"cmake": () => import("shiki/langs/cmake.mjs"),
+	"solidity": () => import("shiki/langs/solidity.mjs"),
 };
 
 const aliases: Record<string, keyof typeof languages> = {
+	"c++": "cpp",
+	"c#": "csharp",
+	cs: "csharp",
+	cxx: "cpp",
+	h: "c",
+	hpp: "cpp",
+	golang: "go",
+	kt: "kotlin",
+	rb: "ruby",
+	rs: "rust",
+	docker: "dockerfile",
+	makefile: "make",
+	ps1: "powershell",
+	pwsh: "powershell",
+	objc: "objective-c",
+	tex: "latex",
+	proto3: "proto",
+	tf: "hcl",
+	batch: "bat",
+	cmd: "bat",
+	mjs: "javascript",
+	cjs: "javascript",
+	htm: "html",
+	console: "bash",
+	jsonc: "json",
 	js: "javascript",
 	md: "markdown",
 	py: "python",
@@ -40,15 +108,34 @@ const aliases: Record<string, keyof typeof languages> = {
 };
 
 let highlighter: Promise<HighlighterCore> | undefined;
+/** The highlighter once created: with a loaded language, it highlights synchronously. */
+let ready: HighlighterCore | null = null;
 
 function getHighlighter() {
 	highlighter ??= createHighlighterCore({
 		themes: [import("shiki/themes/github-light.mjs"), import("shiki/themes/github-dark.mjs")],
 		langs: [],
 		engine: createJavaScriptRegexEngine({ forgiving: true }),
-	});
+	}).then((core) => (ready = core));
 
 	return highlighter;
+}
+
+/** The Shiki language of a name or alias (`ts`, `rs`, `c++`…), or null when it is not listed. */
+export function languageId(language: string) {
+	return getLanguage(language);
+}
+
+/**
+ * The tokens of each line, at once, when the highlighter and the language are already loaded;
+ * null otherwise (load them with `loadHighlighter`).
+ */
+export function highlightSync(code: string, language: string): HighlightedLine[] | null {
+	const lang = getLanguage(language);
+	if (!lang || !ready || (lang !== "ansi" && !ready.getLoadedLanguages().includes(lang))) return null;
+	return ready
+		.codeToTokens(code, { lang, themes: { light: "github-light", dark: "github-dark" }, defaultColor: false })
+		.tokens.map((line) => toHighlightedLine(line));
 }
 
 function getLanguage(language: string) {

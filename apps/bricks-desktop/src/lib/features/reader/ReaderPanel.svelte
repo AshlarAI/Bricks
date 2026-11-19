@@ -16,6 +16,7 @@
   import type { Conversation } from '$lib/state/conversation.svelte'
   import { reader, type ReaderTab } from '$lib/state/reader.svelte'
   import { highlightLines } from './highlight'
+  import { codeLanguages } from '$lib/code-highlight.svelte'
 
   let { conversation }: { conversation: Conversation | null } = $props()
 
@@ -26,6 +27,7 @@
   const highlighted = $derived.by(() => {
     const w = active?.window
     if (!active || !w || w.lines.length === 0) return []
+    void codeLanguages.version
     return highlightLines(w.lines.join('\n'), active.language)
   })
 
@@ -165,7 +167,7 @@
             {#each highlighted as html, i (i)}
               <div class="grid grid-cols-[3.5rem_minmax(0,1fr)]">
                 <span class="px-2 text-right text-muted-foreground tabular-nums select-none">{active.window.start + i}</span>
-                <span class="hljs syntax-reader pr-3 whitespace-pre">{@html html || ' '}</span>
+                <span class="pr-3 whitespace-pre">{@html html || ' '}</span>
               </div>
             {/each}
           </div>
@@ -178,23 +180,6 @@
           <span class="tabular-nums">
             {t('reader.linesOf', { start: nf.format(w.start), value: nf.format(w.start + w.lines.length - 1), totalLines: nf.format(w.totalLines) })}
           </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="ml-auto"
-            disabled={w.start <= 1}
-            onclick={() => reader.loadWindow(active.id, Math.max(1, w.start - 400))}
-          >
-            {t('reader.previous')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={w.start + w.lines.length > w.totalLines}
-            onclick={() => reader.loadWindow(active.id, w.start + w.lines.length)}
-          >
-            {t('reader.next')}
-          </Button>
         </div>
       {/if}
     {/if}

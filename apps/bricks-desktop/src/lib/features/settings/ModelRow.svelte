@@ -43,7 +43,7 @@
 	const uid = $props.id();
 	const detailId = `${uid}-detail`;
 	const title = $derived(displayName(model.name, model.id));
-	const context = $derived(model.max_input_tokens + model.max_output_tokens);
+	const context = $derived(model.max_input_tokens);
 	let expanded = $state(false);
 </script>
 

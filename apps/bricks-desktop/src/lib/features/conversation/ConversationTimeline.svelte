@@ -273,15 +273,16 @@
   {#if !nearBottom}
     <div class="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
       <Button
-        variant="secondary"
-        size="sm"
-        class="pointer-events-auto shadow-float"
+        variant="outline"
+        size="icon"
+        class="pointer-events-auto relative rounded-full bg-background shadow-md"
+        aria-label={unseen > 0 ? `${t('conversation.goToBottom')}, ${t('conversation.newMessages', { count: unseen })}` : t('conversation.goToBottom')}
+        title={t('conversation.goToBottom')}
         onclick={() => scrollToBottom(true)}
       >
-        <ArrowDown aria-hidden="true" />
-        {t('conversation.goToBottom')}
+        <ArrowDown />
         {#if unseen > 0}
-          <span class="tabular-nums">· {t('conversation.newMessages', { count: unseen })}</span>
+          <span class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-brand ring-2 ring-background" aria-hidden="true"></span>
         {/if}
       </Button>
     </div>

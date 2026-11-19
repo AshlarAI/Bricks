@@ -1,38 +1,10 @@
-// Highlighted source split into lines: highlight.js works on the whole
-// window (multi-line strings and comments keep their colour) and its HTML is
-// cut at each newline, closing the spans open at the end of a line and
-// opening them again on the next one. The result is escaped HTML from
-// highlight.js only: the file's text never reaches the DOM unescaped.
-import hljs from 'highlight.js/lib/common'
+// Highlighted source split into lines, with Shiki: the whole text is tokenized at once (multi-line
+// strings and comments keep their colour), one HTML string per line. A language not loaded yet
+// gives plain lines and is requested; `codeLanguages.version` changes when it arrives. The file's
+// text is always escaped.
+import { highlightedLines, plainLines } from '$lib/code-highlight.svelte'
 
-function escape(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-/** One HTML string per line of `text`. Unknown languages are escaped as plain text. */
+/** One HTML string per line of `text`. Unknown or not yet loaded languages are plain text. */
 export function highlightLines(text: string, language: string | null): string[] {
-  const known = language !== null && hljs.getLanguage(language) !== undefined
-  const html = known ? hljs.highlight(text, { language: language!, ignoreIllegals: true }).value : escape(text)
-  const lines: string[] = []
-  const open: string[] = []
-  let current = ''
-  const tag = /<span[^>]*>|<\/span>|\n/g
-  let last = 0
-  for (const m of html.matchAll(tag)) {
-    current += html.slice(last, m.index)
-    last = (m.index ?? 0) + m[0].length
-    if (m[0] === '\n') {
-      lines.push(current + '</span>'.repeat(open.length))
-      current = open.join('')
-    } else if (m[0] === '</span>') {
-      open.pop()
-      current += m[0]
-    } else {
-      open.push(m[0])
-      current += m[0]
-    }
-  }
-  current += html.slice(last)
-  lines.push(current + '</span>'.repeat(open.length))
-  return lines
+  return highlightedLines(text, language) ?? plainLines(text)
 }

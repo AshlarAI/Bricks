@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Switch } from '$lib/components/ui/switch';
 	// « Plus »: the ADK inspectors of the shown conversation, from the top bar.
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { app } from '$lib/state/app.svelte';
@@ -52,20 +53,8 @@
 				<span class="text-sm">{t('common.keepTheComputerAwake')}</span>
 				<span class="text-xs text-muted-foreground">{t('context.onlyForThisSession')}</span>
 			</span>
-			<span
-				aria-hidden="true"
-				class={[
-					'relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors',
-					keepAwake ? 'bg-primary' : 'bg-input dark:bg-input/80'
-				]}
-			>
-				<span
-					class={[
-						'block size-4 rounded-full transition-transform',
-						keepAwake ? 'translate-x-[calc(100%-2px)] bg-background dark:bg-primary-foreground' : 'translate-x-px bg-background dark:bg-foreground'
-					]}
-				></span>
-			</span>
+			<!-- The settings' Switch, as the item's picture: the item itself is the control. -->
+			<Switch checked={keepAwake} tabindex={-1} aria-hidden="true" class="pointer-events-none" />
 		</DropdownMenuPrimitive.CheckboxItem>
 	</DropdownMenu.Content>
 </DropdownMenu.Root>

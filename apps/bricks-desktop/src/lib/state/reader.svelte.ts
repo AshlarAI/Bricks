@@ -1,5 +1,5 @@
 // The reader of the right column (Sprint 14.6.2): the files a conversation
-// names, read by Rust in windows of 400 lines, and the edit operations recorded
+// names, read whole by Rust, and the edit operations recorded
 // on each of them. Tabs are kept per session.
 //
 // A tab is one file of one workspace. Its identity is (session, agent, file):
@@ -17,9 +17,6 @@ import { SvelteMap } from 'svelte/reactivity'
 import { readerFileRead, type ReaderFileRequest, type ReaderFileWindow } from '$lib/ipc/reader'
 import type { TimelineItem } from './conversation.svelte'
 
-/** Lines in one window: the window of `project_file_read`. */
-export const WINDOW_LINES = 400
-
 export type ReaderMode = 'source' | 'preview' | 'changes'
 
 /** What a caller asks the reader to open. */
@@ -32,7 +29,7 @@ export interface ReaderTarget {
   path: string
   /** The absolute path the conversation recorded for the file, when it has one. */
   absolute?: string | null
-  /** 1-based line to show (the window is centred on it), or the first line of `endLine`. */
+  /** 1-based line to show, or the first line of `endLine`. */
   line?: number | null
   endLine?: number | null
 }
@@ -133,7 +130,7 @@ export class ReaderTab {
 
   /** The canonical absolute path once Rust has read the file; until then the path asked. */
   fullPath = $state('')
-  /** Language of highlight.js, from Rust, when known. */
+  /** Language of the file (a Shiki name or alias), from Rust, when known. */
   language = $state<string | null>(null)
   window = $state<ReaderWindow | null>(null)
   scrollTop = $state(0)
@@ -283,7 +280,7 @@ export class ReaderStore {
   /**
    * Opens a file: its tab is activated when the same file of the same agent is
    * already open (no second tab), else a tab is created and read. `line` and
-   * `endLine` centre the window on the line, or show the range. Returns the tab.
+   * `endLine` read it again and point at the line or the range. Returns the tab.
    */
   open(target: ReaderTarget): ReaderTab {
     this.openRequests += 1
@@ -337,14 +334,6 @@ export class ReaderStore {
   rememberScroll(tabId: string, px: number): void {
     const tab = this.find(tabId)
     if (tab) tab.scrollTop = Math.max(0, px)
-  }
-
-  /** Reads the window of 400 lines that starts at `start` (1-based). Near the end of a file the window may start earlier, so that it is full. */
-  loadWindow(tabId: string, start: number): void {
-    const tab = this.find(tabId)
-    if (!tab) return
-    const first = Number.isFinite(start) ? Math.max(1, Math.floor(start)) : 1
-    this.fetch(tab, { line: first, endLine: first + WINDOW_LINES - 1 })
   }
 
   /** Drops every tab of a session (its conversation is gone). */
