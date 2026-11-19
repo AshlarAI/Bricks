@@ -37,11 +37,9 @@ def build_manifest(
 
     mac_name = f"Bricks_{clean_version}_macos-arm64.app.tar.gz"
     win_nsis_name = f"Bricks_{clean_version}_windows-x64-setup.exe"
-    win_msi_name = f"Bricks_{clean_version}_windows-x64.msi"
 
     mac_sig = _read_sig(assets_dir, mac_name)
     win_nsis_sig = _read_sig(assets_dir, win_nsis_name)
-    win_msi_sig = _read_sig(assets_dir, win_msi_name)
 
     win_nsis_entry = {
         "signature": win_nsis_sig,
@@ -58,10 +56,6 @@ def build_manifest(
                 "url": f"{base_url}/{mac_name}",
             },
             "windows-x86_64-nsis": win_nsis_entry,
-            "windows-x86_64-msi": {
-                "signature": win_msi_sig,
-                "url": f"{base_url}/{win_msi_name}",
-            },
             "windows-x86_64": dict(win_nsis_entry),
         },
     }

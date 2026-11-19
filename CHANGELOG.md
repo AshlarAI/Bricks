@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 222 (2026/11/18)
+
+- Drop the Windows `.msi` bundle from official releases, since WiX refuses a major version above 255 (`2026`). Windows ships as `.setup.exe` and `.zip`, and `latest.json` no longer lists an MSI entry.
+
 ### Commit 221 (2026/11/18)
 
 - Repair the `release.yml` tag push glob (`v[0-9]*.[0-9]*.[0-9]*`) with strict 4-digit CalVer validation, enforce `cargo fmt --check` and `cargo clippy -D warnings` in `ci.yml`, apply `cargo fmt` across workspace Rust files, fix `clippy::manual_is_multiple_of` warnings, and remove the obsolete `repro_high_bugs.rs` scratch test file.

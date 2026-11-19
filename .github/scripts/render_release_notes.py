@@ -30,11 +30,7 @@ def render_notes(
     else:
         intro = f"Official release built from commit `{short_sha}`."
 
-    msi_note = (
-        "- `.exe` / `.msi` for Windows"
-        if release_kind == "release"
-        else "- `.exe` (and `.msi` on official releases) for Windows"
-    )
+    windows_note = "- `.exe` for Windows"
     tests_line = (
         "`cargo nextest`, doc tests, and Desktop unit tests skipped by request (`skip_tests=true`)."
         if tests_status == "skipped"
@@ -92,7 +88,7 @@ def render_notes(
 
 Only pick the format that matches your system:
 
-{msi_note}
+{windows_note}
 - `.dmg` for macOS
 
 Bricks is also distributed as a `.zip` archive for both macOS and Windows, with the following benefits:

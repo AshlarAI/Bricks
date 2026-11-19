@@ -105,7 +105,6 @@ class UpdaterManifestTests(unittest.TestCase):
             names = [
                 "Bricks_2026.11.14_macos-arm64.app.tar.gz",
                 "Bricks_2026.11.14_windows-x64-setup.exe",
-                "Bricks_2026.11.14_windows-x64.msi",
             ]
             for idx, name in enumerate(names):
                 (assets / name).write_bytes(b"binary")
@@ -132,7 +131,7 @@ class UpdaterManifestTests(unittest.TestCase):
             )
             self.assertEqual(platforms["windows-x86_64-nsis"]["signature"], "sig-1")
             self.assertEqual(platforms["windows-x86_64"]["signature"], "sig-1")
-            self.assertEqual(platforms["windows-x86_64-msi"]["signature"], "sig-2")
+            self.assertNotIn("windows-x86_64-msi", platforms)
 
     def test_missing_signature_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

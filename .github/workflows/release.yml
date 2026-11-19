@@ -124,7 +124,7 @@ jobs:
             fi
             TITLE="Bricks ${TAG}"
             PRERELEASE="false"
-            BUNDLES_WIN="msi,nsis"
+            BUNDLES_WIN="nsis"
             ZIP_LEVEL="9"
             OPT_LEVEL="3"
             LTO="thin"
@@ -462,17 +462,6 @@ jobs:
             $NsisSig = "$($NsisExe.FullName).sig"
             if (-not (Test-Path $NsisSig)) { throw "NSIS updater signature not found: $NsisSig" }
             Copy-Item $NsisSig (Join-Path $OutDir "Bricks_${CalVer}_windows-x64-setup.exe.sig")
-          }
-
-          if ($Bundles -like "*msi*") {
-            $Msi = Get-ChildItem -Path (Join-Path $BundleDir "msi") -Filter "*.msi" | Select-Object -First 1
-            if (-not $Msi) { throw "MSI installer not found" }
-            Copy-Item $Msi.FullName (Join-Path $OutDir "Bricks_${CalVer}_windows-x64.msi")
-            if ($Kind -eq "release") {
-              $MsiSig = "$($Msi.FullName).sig"
-              if (-not (Test-Path $MsiSig)) { throw "MSI updater signature not found: $MsiSig" }
-              Copy-Item $MsiSig (Join-Path $OutDir "Bricks_${CalVer}_windows-x64.msi.sig")
-            }
           }
 
           $Stage = Join-Path $Root "zip-stage\Bricks"
