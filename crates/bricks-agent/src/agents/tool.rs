@@ -172,10 +172,7 @@ impl Tool for NativeAgentTool {
                 return bricks_tools::tool_feedback::invalid_input(
                     self,
                     &input,
-                    format!(
-                        "{e}. Nothing was started. (`system_prompt` is not accepted: choose a \
-                         `profile` instead.)"
-                    ),
+                    format_agent_input_error(&input, &e),
                 );
             }
         };
@@ -199,6 +196,23 @@ impl Tool for NativeAgentTool {
     }
 }
 
+/// Format an invalid `Agent` input error, adding the `system_prompt` hint only
+/// when `system_prompt` was actually supplied in the input.
+fn format_agent_input_error(input: &Value, err: &str) -> String {
+    let has_system_prompt = input.get("system_prompt").is_some()
+        || input
+            .get("missions")
+            .and_then(|v| v.as_array())
+            .is_some_and(|arr| arr.iter().any(|m| m.get("system_prompt").is_some()));
+    if has_system_prompt {
+        format!(
+            "{err}. Nothing was started. (`system_prompt` is not accepted: choose a `profile` instead.)"
+        )
+    } else {
+        format!("{err}. Nothing was started.")
+    }
+}
+
 /// Missions of one `Agent` call, at most: every report then fits the
 /// orchestrator's queue.
 const MAX_MISSIONS: usize = 16;
@@ -210,9 +224,11 @@ fn missions(input: Value) -> Result<Vec<AgentSpawnRequest>, String> {
     #[serde(deny_unknown_fields)]
     struct Many {
         missions: Vec<AgentSpawnRequest>,
+        #[serde(default)]
+        description: Option<String>,
     }
     if input.get("missions").is_some() {
-        let many: Many = serde_json::from_value(input).map_err(|e| e.to_string())?;
+        let mut many: Many = serde_json::from_value(input).map_err(|e| e.to_string())?;
         if many.missions.is_empty() {
             return Err("`missions` is empty".into());
         }
@@ -221,6 +237,19 @@ fn missions(input: Value) -> Result<Vec<AgentSpawnRequest>, String> {
                 "{} missions at once; {MAX_MISSIONS} at most",
                 many.missions.len()
             ));
+        }
+        if let Some(desc) = many
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            for m in &mut many.missions {
+                let missing = m.description.as_deref().is_none_or(|d| d.trim().is_empty());
+                if missing {
+                    m.description = Some(desc.to_string());
+                }
+            }
         }
         return Ok(many.missions);
     }
@@ -866,5 +895,39 @@ mod input_tests {
         assert!(missions(json!({"missions": []})).is_err());
         assert!(missions(json!({"missions": [{"prompt": "a"}], "prompt": "b"})).is_err());
         assert!(missions(json!({"agents": [{"prompt": "a"}]})).is_err());
+    }
+
+    #[test]
+    fn missions_accepts_top_level_description_without_overriding_per_mission() {
+        let reqs = missions(json!({
+            "description": "Batch audit",
+            "missions": [
+                { "prompt": "Check alpha" },
+                { "prompt": "Check beta", "description": "Beta specific" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(reqs[0].description.as_deref(), Some("Batch audit"));
+        assert_eq!(reqs[1].description.as_deref(), Some("Beta specific"));
+    }
+
+    #[test]
+    fn format_agent_input_error_only_mentions_system_prompt_when_present() {
+        let plain = format_agent_input_error(&json!({"foo": 1}), "unknown field `foo`");
+        assert!(!plain.contains("system_prompt"));
+        assert_eq!(plain, "unknown field `foo`. Nothing was started.");
+
+        let top = format_agent_input_error(
+            &json!({"prompt": "hi", "system_prompt": "x"}),
+            "unknown field `system_prompt`",
+        );
+        assert!(top.contains("system_prompt` is not accepted"));
+
+        let nested = format_agent_input_error(
+            &json!({"missions": [{"prompt": "hi", "system_prompt": "x"}]}),
+            "unknown field `system_prompt`",
+        );
+        assert!(nested.contains("system_prompt` is not accepted"));
     }
 }

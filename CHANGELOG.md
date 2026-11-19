@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 226 (2026/11/19)
+
+- Accept top-level `description` alongside `missions` in the `Agent` tool (falling back to it when an individual mission omits its own description), and include the `system_prompt` hint in validation errors only when `system_prompt` was actually sent.
+
 ### Commit 225 (2026/11/19)
 
 - Breaking change: replace the 7 legacy built-in sub-agent profiles (`backend_coder`, `frontend_coder`, `inspecteur`, `orchestrateur`, `redactor`, `testeur`, `web_searcher`) with `general` and `explore` (allowing `Bash` while denying write and delegation tools), remove `AgentProfiles`, and enforce strict YAML frontmatter validation (rejecting unknown fields and `maxTurns`) with dynamic reloading for `.bricks/agents/*.md` and `~/.bricks/agents/*.md` (8 KiB cap on the embedded `Agent` tool description).
