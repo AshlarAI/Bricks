@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 225 (2026/11/19)
+
+- Breaking change: replace the 7 legacy built-in sub-agent profiles (`backend_coder`, `frontend_coder`, `inspecteur`, `orchestrateur`, `redactor`, `testeur`, `web_searcher`) with `general` and `explore` (allowing `Bash` while denying write and delegation tools), remove `AgentProfiles`, and enforce strict YAML frontmatter validation (rejecting unknown fields and `maxTurns`) with dynamic reloading for `.bricks/agents/*.md` and `~/.bricks/agents/*.md` (8 KiB cap on the embedded `Agent` tool description).
+- Breaking change: rename `AgentControl` to `Managent`, add `description`, `model`, `effort`, and `fork` to `Agent`, enrich `Managent list` and `status`, add multi-mode `wait` (`any` / `all`) and `rebase_changes` (3-way worktree apply with optional `verify_cmd`), update Bricks Desktop and documentation, and ignore `.agents/` and `.bricks/` in `.gitignore`.
+
 ### Commit 224 (2026/11/19)
 
 - Replace the Grafeo graph-based structured memory (`crates/bricks-memory/src/structured/`, `graph_migrate.rs`, and the `grafeo` dependency) with a Markdown file-based note store (`FileNoteStore` and `ScopedFileMemory`, with atomic `<id>.md` files and a generated `MEMORY.md` index).

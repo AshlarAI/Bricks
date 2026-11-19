@@ -711,12 +711,14 @@ fn the_session_offers_the_native_agent_tools_and_never_delegate() {
         .iter()
         .filter_map(|t| t["function"]["name"].as_str().map(str::to_string))
         .collect();
-    for want in ["Agent", "AgentControl", "AgentProfiles", "Messagent"] {
+    for want in ["Agent", "Managent", "Messagent"] {
         assert!(
             names.iter().any(|n| n == want),
             "{want} is offered: {names:?}"
         );
     }
+    assert!(!names.iter().any(|n| n == "AgentProfiles"), "{names:?}");
+    assert!(!names.iter().any(|n| n == "AgentControl"), "{names:?}");
     assert!(!names.iter().any(|n| n == "delegate"), "{names:?}");
     let text = body.to_string();
     assert!(

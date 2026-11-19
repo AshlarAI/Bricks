@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Built-in Tools Reference
 
-The built-in tools in `bricks::tools::all()` are in the categories below, and each is available through the composition functions in `bricks::tools`. `CodeSearch` is not in those sets (add `CodeSearchTool::with_embeddings` when embeddings are configured), `PowerShell` is included only on Windows or when `pwsh` is on `PATH`, and `Skill` is added by an agent with a skills service. The sub-agent tools (`Agent`, `AgentControl`, `AgentProfiles`, `Messagent`) are not in those sets either: see [Sub-agent tools](#sub-agent-tools).
+The built-in tools in `bricks::tools::all()` are in the categories below, and each is available through the composition functions in `bricks::tools`. `CodeSearch` is not in those sets (add `CodeSearchTool::with_embeddings` when embeddings are configured), `PowerShell` is included only on Windows or when `pwsh` is on `PATH`, and `Skill` is added by an agent with a skills service. The sub-agent tools (`Agent`, `Managent`, `Messagent`) are not in those sets either: see [Sub-agent tools](#sub-agent-tools).
 
 ```text
 bricks::tools::all()                     // coding() + planning() (13 or 14 tools)
@@ -439,35 +439,33 @@ Create and update the plan of the conversation: the complete list of its steps, 
 
 ## Sub-agent tools
 
-`Agent` (one mission with `task`, or several with `missions`), `AgentControl` (ids, results,
-resumes, cancellation and ChangeSets), `Messagent` (send messages to running sub-agents) and `AgentProfiles` (list and
-search the profiles) are native tools. The CLI and the controller register
-them when `[agents] enabled` is true (the default). They are not in
-`bricks::tools::all()`.
+`Agent` (one mission with `prompt`, or up to 16 with `missions`), `Managent` (status, waiting, results, resumes, cancellation, and ChangeSets), and `Messagent` (internal mail between agents in a session) are native tools. The CLI and the controller register them when `[agents] enabled` is true (the default). They are not in `bricks::tools::all()`.
 
-Sub-agents always run in parallel. `Agent` returns their ids at
-once; `AgentControl wait` and `result` give the results. There is no
-`background` parameter.
+Available profiles (`general`, `explore`, plus custom `.bricks/agents/*.md` and `~/.bricks/agents/*.md` profiles) are loaded dynamically and listed directly in the `Agent` tool description.
 
-**Permission:** `Agent`: Execute. Allowing it allows that
-delegation only: each child's own tool calls go through the policy one by one.
-`AgentControl`: ReadOnly for `list`, `status`, `result`, `wait` and
-`inspect_changes`, Execute for `resume` and `cancel`, Write for
-`apply_changes` and `discard_changes`. `AgentProfiles`: ReadOnly. `Messagent`: Execute.
+`Agent` parameters: `profile` (default `"general"`), `description` (3 to 5 word UI label), `prompt` (with `task` accepted as an alias), `model`, `effort`, `fork` (default `false`), `isolation` (`"shared"` or `"worktree"`), and `missions` (1 to 16 mission objects).
 
-The `AgentControl` actions, by their parameters:
+Sub-agents always run in parallel. `Agent` returns their ids at once; `Managent wait` and `result` give the results.
+
+**Permission:** `Agent`: Execute. Allowing it allows that delegation only: each child's own tool calls go through the policy one by one. `Managent`: ReadOnly for `list`, `status`, `result`, `wait`, `inspect_changes`, and `check_changes`; Execute for `resume` and `cancel`; Write for `apply_changes` and `discard_changes`. `Messagent`: Execute.
+
+The `Managent` actions, by their parameters:
 
 | action | parameters | effect |
 |---|---|---|
-| `list`, `status`, `result` | `agent_id` (`status`, `result`) | instances visible to the caller; state; the kept result |
-| `wait` | `agent_id`, `timeout_ms` (default 60000, at most 600000) | waits for the end; a timeout cancels nothing |
-| `resume` | `agent_id`, `prompt` | starts a new execution of an ended sub-agent, with its launch's profile, model, tools, skills and workspace |
-| `cancel` | `agent_id` | cancels it and its descendants |
-| `inspect_changes`, `apply_changes`, `discard_changes` | `changeset_id` or `agent_id` | a ChangeSet of an isolated sub-agent |
+| `list` | none | lists visible sub-agents with `agent_id`, `description`, `profile`, `state`, `elapsed_ms`, `last_action`, ChangeSet id and state, and slot counts |
+| `status` | `agent_id` | shows the same enriched status for one sub-agent |
+| `result` | `agent_id` | returns the sub-agent's final summary, changed files, commands run, and warnings |
+| `wait` | `mode` (`"any"` or `"all"`), `agent_id` or `agent_ids`, `timeout_ms` (default 60000, max 600000) | waits for sub-agents and returns `finished` and `pending` entries; a timeout cancels nothing |
+| `resume` | `agent_id`, `prompt` | resumes an ended sub-agent in its own conversation with a new prompt |
+| `cancel` | `agent_id` | requests cancellation of `agent_id` and its descendants |
+| `inspect_changes` | `changeset_id` or `agent_id` | shows changed files and patch diff for an isolated worktree ChangeSet |
+| `check_changes` | `changeset_id` or `agent_id` | checks whether the ChangeSet applies cleanly without writing files |
+| `rebase_changes` | `changeset_id` or `agent_id`, optional `verify_cmd` | rebases the ChangeSet onto `HEAD` in a temporary worktree and optionally runs `verify_cmd` |
+| `apply_changes` | `changeset_id` or `agent_id` | applies the ChangeSet to the working tree without committing |
+| `discard_changes` | `changeset_id` or `agent_id` | discards the ChangeSet and removes its worktree while keeping its patch record |
 
-Their parameters, the limits (`max_depth` = 1, `max_concurrent` = 16, `max_queued`
-= 64, `admission_timeout_ms` = 60000, `summary_chars` = 30000) and the
-isolation rules are in `docs/agents.md` in the repository.
+Their parameters, the limits (`max_depth` = 1, `max_concurrent` = 16, `max_queued` = 64, `admission_timeout_ms` = 60000, `summary_chars` = 30000), and the isolation rules are in `docs/agents.md` in the repository.
 
 ### Messagent
 

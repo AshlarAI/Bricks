@@ -101,12 +101,13 @@ impl ProjectLoader for Loader {
         bricks.agent.model = Some("test/a".into());
         bricks.semantic.lsp.enabled = false;
         bricks.agents.enabled = self.agents;
+        bricks.agents.max_depth = 2;
         let mut tools: Vec<String> = bricks_tools::coding()
             .iter()
             .map(|t| t.name().to_string())
             .collect();
         if self.agents {
-            tools.extend(["Agent", "AgentControl", "AgentProfiles", "Messagent"].map(String::from));
+            tools.extend(["Agent", "Managent", "Messagent"].map(String::from));
         }
         let system = build_system_prompt(&SystemPromptOptions {
             is_non_interactive: true,
@@ -310,7 +311,7 @@ async fn without_delegation_tools_the_bullet_is_absent_from_the_request() {
 #[test]
 fn a_child_prompt_without_delegation_tools_has_no_delegation_bullet() {
     let general = bricks_agent::agents::ProfileRegistry::built_in()
-        .get("inspecteur")
+        .get("general")
         .expect("a built-in profile");
     assert!(!general.instructions.trim().is_empty());
     let wd = Path::new("/w");

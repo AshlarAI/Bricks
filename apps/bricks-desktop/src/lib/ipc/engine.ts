@@ -335,6 +335,7 @@ export interface ChangeSet {
   state: ChangeSetState
   validations: CommandRun[]
   note?: string
+  rebased_from?: string
 }
 
 export interface SkillListing {

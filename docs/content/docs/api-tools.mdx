@@ -161,7 +161,7 @@ The permission level is the one each tool declares in code (`permission_level()`
 |------|-----------|-------------|
 | `TodoWriteTool` | None | Create and update the plan of a conversation: the complete list of steps, validated (at most one `in_progress`) and written with a revision. Its plan is the `PlanHandle` extension (`todo_write::PlanService`): kept in `plan.json` when the agent has a session folder, in memory otherwise. |
 
-**Sub-agent tools**: `Agent`, `Agents`, `AgentControl` and `AgentProfiles` are described in [Sub-agent tools](/docs/built-in-tools#sub-agent-tools). The native runtime tool `Messagent` is registered with them, not by `bricks::tools::all()`:
+**Sub-agent tools**: `Agent` and `Managent` are described in [Sub-agent tools](/docs/built-in-tools#sub-agent-tools). The native runtime tool `Messagent` is registered with them, not by `bricks::tools::all()`:
 
 | Tool | Permission | Description |
 |------|-----------|-------------|

@@ -8,7 +8,8 @@
 //! there is no second agentic loop.
 
 use super::profile::{
-    AgentProfile, Isolation, ModelPref, ProfileScope, ProfileSource, ReasoningPref,
+    AgentProfile, Isolation, ModelPref, ProfilePermissions, ProfileScope, ProfileSource,
+    ToolPolicy, parse_effort,
 };
 use super::registry::ProfileCatalog;
 use crate::control::{ModelCatalog, ModelChoice};
@@ -115,38 +116,81 @@ pub struct ParentModel {
     pub reasoning: Option<String>,
 }
 
+/// Snapshot of the parent agent's active conversation history, used when
+/// `fork: true` to seed a child agent's history cleanly.
+#[derive(Clone)]
+pub struct ParentHistory(pub Arc<dyn Fn() -> Vec<bricks_types::Message> + Send + Sync>);
+
+/// Truncates `history` cleanly BEFORE the assistant turn containing
+/// `in_flight_tool_call_id` (and any trailing assistant turn with unanswered
+/// `ToolUse` blocks) so a forked child never inherits an unanswered `ToolUse`
+/// that would trigger an HTTP 400.
+pub fn truncate_fork_history(
+    mut history: Vec<bricks_types::Message>,
+    in_flight_tool_call_id: Option<&str>,
+) -> Vec<bricks_types::Message> {
+    if let Some(call_id) = in_flight_tool_call_id
+        && let Some(idx) = history.iter().rposition(|m| {
+            m.role == bricks_types::Role::Assistant
+                && m.content_blocks().iter().any(|b| {
+                    matches!(b, bricks_types::ContentBlock::ToolUse { id, .. } if id == call_id)
+                })
+        })
+    {
+        history.truncate(idx);
+    }
+    loop {
+        let unanswered = crate::compact::find_unanswered_tool_uses(&history);
+        if unanswered.is_empty() {
+            break;
+        }
+        let Some(idx) = history.iter().rposition(|m| {
+            m.role == bricks_types::Role::Assistant
+                && m.content_blocks().iter().any(|b| {
+                    matches!(b, bricks_types::ContentBlock::ToolUse { id, .. } if unanswered.contains(id))
+                })
+        }) else {
+            break;
+        };
+        history.truncate(idx);
+    }
+    history
+}
+
 /// Where a parent's run reports its children's lifecycle.
 #[derive(Clone)]
 pub struct SubAgentSink(pub Arc<dyn Fn(AgentEvent) + Send + Sync>);
 
 // ─── Requests, instances, results ────────────────────────────────────────────
 
-/// A delegation. Only `task` is required.
+/// A delegation. Only `prompt` (or alias `task`) is required.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentSpawnRequest {
-    /// The complete, self-contained task. `prompt` is accepted as an alias
-    /// (the former `Agent` tool's field).
-    #[serde(alias = "prompt")]
-    pub task: String,
-    /// A short label (3–5 words) for displays.
+    /// The complete, self-contained mission prompt (`task` accepted as alias).
+    #[serde(alias = "task")]
+    pub prompt: String,
+    /// A short label (3–5 words) for UI & `Managent list/status`.
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
     pub profile: Option<String>,
-    /// `inherit`, `auto` or `provider_id/model_id`.
+    /// `inherit` (default) or `provider_id/model_id`.
     #[serde(default)]
     pub model: Option<String>,
-    /// `inherit` or a reasoning profile id of the chosen model.
+    /// `inherit` (default) or a reasoning effort/profile id (`reasoning` accepted as alias).
+    #[serde(default, alias = "reasoning")]
+    pub effort: Option<String>,
+    /// Clone parent's active history (truncated before the current assistant turn).
     #[serde(default)]
-    pub reasoning: Option<String>,
+    pub fork: Option<bool>,
     /// Extra context passed explicitly (bounded).
     #[serde(default)]
     pub context: Option<String>,
     /// Run in the background (a handle is returned at once).
     #[serde(default)]
     pub background: Option<bool>,
-    /// `auto` (default), `shared` or `worktree`.
+    /// `shared` (default) or `worktree`.
     #[serde(default)]
     pub isolation: Option<String>,
 }
@@ -492,17 +536,18 @@ impl std::fmt::Display for SpawnError {
 
 // ─── Resolution ──────────────────────────────────────────────────────────────
 
-/// The neutral profile used when none is named.
+/// The neutral profile used when `general` is unavailable.
 pub fn neutral_profile() -> Arc<AgentProfile> {
     Arc::new(AgentProfile {
         name: "general".into(),
-        description: "A general sub-agent for one self-contained task.".into(),
+        description:
+            "General-purpose sub-agent for coding, debugging, research, and multi-step execution."
+                .into(),
+        tools: ToolPolicy::Inherit,
+        permissions: ProfilePermissions::Inherit,
         model: ModelPref::Inherit,
-        reasoning: ReasoningPref::Inherit,
-        permissions: "inherit".into(),
-        tools: "inherit".into(),
-        isolation: Isolation::Auto,
-        background: false,
+        effort: None,
+        isolation: Isolation::Shared,
         memory: None,
         skills: Vec::new(),
         instructions: String::new(),
@@ -512,7 +557,6 @@ pub fn neutral_profile() -> Arc<AgentProfile> {
             label: "builtin:general (internal default)".into(),
             revision: "internal".into(),
         },
-        notes: Vec::new(),
     })
 }
 
@@ -550,30 +594,6 @@ pub fn resolve(
 ) -> Result<Resolved, String> {
     let mut warnings = Vec::new();
     let find = |sel: &str| models.iter().find(|m| m.selection == sel);
-    let auto = |warnings: &mut Vec<String>| -> (String, Option<String>) {
-        match &settings.auto_model {
-            Some(m) if find(m).is_some() => (m.clone(), Some("[agents] auto_model".into())),
-            Some(m) => {
-                warnings.push(format!(
-                    "auto_model `{m}` is not configured: the parent's model is used"
-                ));
-                (
-                    parent.selection.clone(),
-                    Some("auto: rule invalid, inherited".into()),
-                )
-            }
-            None => {
-                warnings.push(
-                    "model `auto` without an `[agents] auto_model` rule: the parent's model is used"
-                        .into(),
-                );
-                (
-                    parent.selection.clone(),
-                    Some("auto: no rule, inherited".into()),
-                )
-            }
-        }
-    };
 
     // Model.
     let (model_requested, model, model_reason) = match req.model.as_deref().map(str::trim) {
@@ -583,10 +603,6 @@ pub fn resolve(
                 parent.selection.clone(),
                 Some("inherited".into()),
             ),
-            Ok(ModelPref::Auto) => {
-                let (s, r) = auto(&mut warnings);
-                (m.to_string(), s, r)
-            }
             Ok(ModelPref::Explicit(sel)) => {
                 if find(&sel).is_none() {
                     return Err(format!(
@@ -604,10 +620,6 @@ pub fn resolve(
                 parent.selection.clone(),
                 Some("inherited".into()),
             ),
-            ModelPref::Auto => {
-                let (s, r) = auto(&mut warnings);
-                ("auto".into(), s, r)
-            }
             ModelPref::Explicit(sel) => {
                 if find(sel).is_some() {
                     (
@@ -646,18 +658,18 @@ pub fn resolve(
         }
     };
 
-    // Reasoning.
+    // Reasoning / effort.
     let (reasoning_requested, reasoning, reasoning_reason) = match req
-        .reasoning
+        .effort
         .as_deref()
         .map(str::trim)
     {
-        Some(r) if !r.is_empty() => match ReasoningPref::parse(r) {
-            Ok(ReasoningPref::Inherit) => {
+        Some(r) if !r.is_empty() => match parse_effort(r) {
+            Ok(parsed) if parsed == "inherit" => {
                 let (a, why) = inherited();
-                (r.to_string(), a, why)
+                (parsed, a, why)
             }
-            Ok(ReasoningPref::Id(id)) => {
+            Ok(id) => {
                 if model_info.is_some() && !has(&id) {
                     return Err(format!(
                         "model `{model}` has no reasoning profile `{id}`; its profiles: {}.",
@@ -672,30 +684,34 @@ pub fn resolve(
             }
             Err(e) => return Err(format!("{e}.")),
         },
-        _ => match &profile.reasoning {
-            ReasoningPref::Inherit => {
+        _ => match profile.requested_effort() {
+            None => {
                 let (a, why) = inherited();
                 ("inherit".into(), a, why)
             }
-            ReasoningPref::Id(id) if model_info.is_none() || has(id) => (
-                id.clone(),
-                Some(id.clone()),
+            Some(id) if model_info.is_none() || has(id) => (
+                id.to_string(),
+                Some(id.to_string()),
                 format!("profile `{}`", profile.name),
             ),
-            ReasoningPref::Id(id) => match settings.reasoning_aliases.get(id) {
+            Some(id) => match settings.reasoning_aliases.get(id) {
                 Some(alias) if has(alias) => (
-                    id.clone(),
+                    id.to_string(),
                     Some(alias.clone()),
                     format!("alias `{id}` → `{alias}` ([agents.reasoning_aliases])"),
                 ),
                 _ => {
                     let (a, why) = inherited();
                     warnings.push(format!(
-                            "profile `{}` prefers reasoning `{id}`, which `{model}` does not have ({}); {why}",
+                            "profile `{}` prefers effort `{id}`, which `{model}` does not have ({}); {why}",
                             profile.name,
-                            if ids.is_empty() { "no profiles".to_string() } else { ids.join(", ") }
+                            if ids.is_empty() {
+                                "no profiles".to_string()
+                            } else {
+                                ids.join(", ")
+                            }
                         ));
-                    (id.clone(), a, format!("`{id}` unavailable: {why}"))
+                    (id.to_string(), a, format!("`{id}` unavailable: {why}"))
                 }
             },
         },
@@ -718,18 +734,51 @@ pub fn resolve(
 
 // ─── The child's policy ──────────────────────────────────────────────────────
 
-/// The parent's policy, with the child's identity on every request (so an
-/// approval shows which agent asks). Nothing is decided here.
+/// The parent's policy, scoped to the child's identity and enforced under
+/// the profile's `permissions` mode (`inherit`, `read_only`, `ask`, `execute`).
+/// A child never gains permissions its parent policy denies.
 struct ChildPolicy {
     inner: Arc<dyn PermissionPolicy>,
     agent_id: String,
+    profile_name: String,
+    permissions: ProfilePermissions,
 }
 
 #[async_trait::async_trait]
 impl PermissionPolicy for ChildPolicy {
     async fn check(&self, request: &PermissionRequest) -> PermissionDecision {
         let mut r = request.clone();
-        r.agent_id = Some(self.agent_id.clone());
+        match self.permissions {
+            ProfilePermissions::Inherit | ProfilePermissions::Execute => {
+                r.agent_id = Some(self.agent_id.clone());
+            }
+            ProfilePermissions::ReadOnly => {
+                let allowed_level = matches!(
+                    request.permission_level,
+                    bricks_tools::PermissionLevel::None | bricks_tools::PermissionLevel::ReadOnly
+                );
+                if !allowed_level {
+                    return PermissionDecision::Deny(format!(
+                        "profile `{}` has `read_only` permissions: `{}` is not allowed",
+                        self.profile_name, request.tool_name
+                    ));
+                }
+                r.agent_id = Some(self.agent_id.clone());
+            }
+            ProfilePermissions::Ask => {
+                let local_read = matches!(
+                    crate::permission::ActionClass::of(request.permission_level, request.category,),
+                    Some(crate::permission::ActionClass::Read)
+                );
+                if local_read {
+                    r.agent_id = Some(self.agent_id.clone());
+                } else {
+                    // Leave agent_id unset so PermissionEngine asks the session approver
+                    // instead of auto-allowing a sub-agent Ask.
+                    r.agent_id = None;
+                }
+            }
+        }
         self.inner.check(&r).await
     }
 }
@@ -763,7 +812,8 @@ struct Prepared {
     profile: Arc<AgentProfile>,
     resolved: Resolved,
     background: bool,
-    isolation: Option<Isolation>,
+    isolation: Isolation,
+    fork: bool,
     /// The profile's skills, read and checked before anything starts.
     skills: Vec<bricks_skills::Activation>,
 }
@@ -810,16 +860,6 @@ struct ChildStart {
     execution: u32,
     history: Option<Vec<bricks_types::Message>>,
     worktree: Option<(PathBuf, Option<String>)>,
-}
-
-impl ChildStart {
-    fn launch() -> Self {
-        Self {
-            execution: 1,
-            history: None,
-            worktree: None,
-        }
-    }
 }
 
 /// What a child task takes from its parent's context.
@@ -998,20 +1038,23 @@ impl AgentSpawner {
         ext: &bricks_tools::Extensions,
         batch_background: Option<bool>,
     ) -> Result<Prepared, SpawnError> {
-        if subagent::is_blank(&req.task) {
+        if subagent::is_blank(&req.prompt) {
             return Err(SpawnError::Invalid(
-                "`task` is empty: give the sub-agent a precise, self-contained task.".into(),
+                "`prompt` is empty: give the sub-agent a precise, self-contained prompt.".into(),
             ));
         }
-        let isolation = match req.isolation.as_deref().map(str::trim) {
+        let req_isolation = match req.isolation.as_deref().map(str::trim) {
             None | Some("") => None,
             Some(s) => Some(Isolation::parse(s).map_err(SpawnError::Invalid)?),
         };
+        let snapshot = self.profiles.snapshot();
         let profile = match req.profile.as_deref().map(str::trim) {
-            None | Some("") => neutral_profile(),
-            Some(name) => self
-                .profiles
-                .snapshot()
+            None | Some("") => match snapshot.get("general") {
+                Ok(p) => p,
+                Err(e) if e.starts_with("no profile `general`") => neutral_profile(),
+                Err(e) => return Err(SpawnError::Invalid(format!("{e}."))),
+            },
+            Some(name) => snapshot
                 .get(name)
                 .map_err(|e| SpawnError::Invalid(format!("{e}.")))?,
         };
@@ -1038,13 +1081,9 @@ impl AgentSpawner {
             &self.settings,
         )
         .map_err(SpawnError::Invalid)?;
-        let background = batch_background
-            .or(req.background)
-            .unwrap_or(profile.background);
-        let isolation = isolation.or(match profile.isolation {
-            Isolation::Auto => None,
-            other => Some(other),
-        });
+        let background = batch_background.or(req.background).unwrap_or(false);
+        let isolation = req_isolation.unwrap_or(profile.isolation);
+        let fork = req.fork.unwrap_or(false);
         let skills = self.profile_skills(&profile, ext)?;
         Ok(Prepared {
             req: req.clone(),
@@ -1052,6 +1091,7 @@ impl AgentSpawner {
             resolved,
             background,
             isolation,
+            fork,
             skills,
         })
     }
@@ -1095,20 +1135,9 @@ impl AgentSpawner {
         Ok(out)
     }
 
-    /// Shared or worktree, from the writers that would really coexist.
-    fn decide(&self, p: &Prepared, batch_len: usize) -> Isolation {
-        let default = Isolation::parse(&self.settings.default_isolation).unwrap_or(Isolation::Auto);
-        match p.isolation.unwrap_or(default) {
-            Isolation::Shared => Isolation::Shared,
-            Isolation::Worktree => Isolation::Worktree,
-            Isolation::Auto => {
-                if p.background || batch_len > 1 {
-                    Isolation::Worktree
-                } else {
-                    Isolation::Shared
-                }
-            }
-        }
+    /// Shared or worktree, resolved from request or profile.
+    fn decide(&self, p: &Prepared, _batch_len: usize) -> Isolation {
+        p.isolation
     }
 
     /// Run one foreground child to its end (the 10.1 entry point).
@@ -1241,7 +1270,7 @@ impl AgentSpawner {
                     Isolation::Worktree => "worktree".into(),
                     _ => "shared".into(),
                 },
-                task: shorten(p.req.task.trim(), 4_000).0,
+                task: shorten(p.req.prompt.trim(), 4_000).0,
                 description: p.req.description.clone().filter(|d| !subagent::is_blank(d)),
                 created_at: now_rfc3339(),
                 batch_index: opts.batch.then_some(i),
@@ -1249,6 +1278,16 @@ impl AgentSpawner {
                 depth: depth + 1,
                 branch: None,
                 skills: Vec::new(),
+            };
+            let forked_history = if p.fork {
+                let raw = ctx
+                    .extensions
+                    .get::<ParentHistory>()
+                    .map(|h| (h.0)())
+                    .unwrap_or_default();
+                Some(truncate_fork_history(raw, call_id.as_deref()))
+            } else {
+                None
             };
             // A background child outlives its parent's turn (not its
             // session); a foreground one is cancelled with the parent's run.
@@ -1275,7 +1314,11 @@ impl AgentSpawner {
                         snap,
                         pc,
                         cancel,
-                        ChildStart::launch(),
+                        ChildStart {
+                            execution: 1,
+                            history: forked_history,
+                            worktree: None,
+                        },
                     )
                     .await;
                 let _ = tx.send(r);
@@ -1370,7 +1413,7 @@ impl AgentSpawner {
     /// reasoning, tools, skills and workspace of its launch, through the same
     /// admission as a launch. Refused, before anything starts, when any of
     /// these is no longer the same or available. Returns at once, like a
-    /// launch; `AgentControl wait` waits for it.
+    /// launch; `Managent wait` waits for it.
     pub async fn resume(
         self: &Arc<Self>,
         id: &str,
@@ -1425,7 +1468,8 @@ impl AgentSpawner {
             .extensions
             .get::<bricks_tools::memory_tools::RunMemory>()
             .and_then(|m| m.0.clone());
-        let (child_tools, _) = self.build_child_tools(&profile, parent_memory.as_ref());
+        let (child_tools, _) =
+            self.build_child_tools(&profile, rec.info.depth, parent_memory.as_ref());
         let available: Vec<String> = child_tools.iter().map(|t| t.name().to_string()).collect();
         if let Some(missing) = launch.tools.iter().find(|t| !available.contains(t)) {
             return Err(SpawnError::Refused(format!(
@@ -1517,13 +1561,14 @@ impl AgentSpawner {
         };
         let p = Prepared {
             req: AgentSpawnRequest {
-                task: prompt.to_string(),
+                prompt: prompt.to_string(),
                 ..Default::default()
             },
             profile,
             resolved,
             background: true,
-            isolation: Some(iso),
+            isolation: iso,
+            fork: false,
             skills,
         };
         let this = Arc::clone(self);
@@ -1740,17 +1785,21 @@ impl AgentSpawner {
             isolation: info.isolation.clone(),
             workspace: info.workspace.clone(),
             branch: info.branch.clone(),
-            permissions: "parent policy, scoped to this agent".into(),
+            permissions: format!(
+                "parent policy, scoped to {} ({})",
+                p.profile.name,
+                p.profile.permissions.as_str()
+            ),
         });
         self.runtime.update_launch(&info, launch);
 
         let prompt = match p.req.context.as_deref().filter(|c| !subagent::is_blank(c)) {
             Some(c) => format!(
                 "{}\n\n## Context given by the parent agent\n\n{}",
-                p.req.task.trim(),
+                p.req.prompt.trim(),
                 c.trim()
             ),
-            None => p.req.task.trim().to_string(),
+            None => p.req.prompt.trim().to_string(),
         };
         let mut r = self
             .run_child(
@@ -1773,7 +1822,7 @@ impl AgentSpawner {
             match self
                 .runtime
                 .workspaces
-                .finalize(&id, &p.req.task, r.commands.clone())
+                .finalize(&id, &p.req.prompt, r.commands.clone())
                 .await
             {
                 Ok(Some(cs)) => {
@@ -1814,7 +1863,7 @@ impl AgentSpawner {
     #[allow(clippy::too_many_arguments)]
     async fn run_child(
         &self,
-        child: Agent,
+        child: Arc<Agent>,
         prompt: String,
         info: &SpawnInfo,
         resolved: &Resolved,
@@ -1863,12 +1912,15 @@ impl AgentSpawner {
                     send(e);
                 }
                 let out = match ev {
-                    AgentEvent::ToolStart { name, id, input } => Some(SubAgentEvent::ToolStarted {
-                        agent_id: fwd_id.clone(),
-                        tool_call_id: id,
-                        name,
-                        input,
-                    }),
+                    AgentEvent::ToolStart { name, id, input } => {
+                        rt.record_last_action(&fwd_id, format!("{name}..."));
+                        Some(SubAgentEvent::ToolStarted {
+                            agent_id: fwd_id.clone(),
+                            tool_call_id: id,
+                            name,
+                            input,
+                        })
+                    }
                     AgentEvent::ToolEnd {
                         name,
                         id,
@@ -2033,10 +2085,12 @@ impl AgentSpawner {
         cancel: &CancellationToken,
         lease: Arc<super::runtime::ActivityLease>,
         history: Option<Vec<bricks_types::Message>>,
-    ) -> Result<(Agent, Vec<SkillLoad>, Vec<String>), String> {
+    ) -> Result<(Arc<Agent>, Vec<SkillLoad>, Vec<String>), String> {
         // The parent's tools (rebuilt), delegation tools of this runtime, and
         // memory tools resolved uniformly with `resume`.
-        let (tools, child_memory) = self.build_child_tools(profile, pc.long_term_memory.as_ref());
+        let child_depth = info.depth;
+        let (tools, child_memory) =
+            self.build_child_tools(profile, child_depth, pc.long_term_memory.as_ref());
         let names: Vec<String> = tools.iter().map(|t| t.name().to_string()).collect();
         let ext = subagent::child_extensions(pc.depth);
         // Services: the code engine only within the same workspace (a
@@ -2096,6 +2150,8 @@ impl AgentSpawner {
             .permission_engine_arc(Arc::new(ChildPolicy {
                 inner: Arc::clone(&pc.permissions),
                 agent_id: info.agent_id.clone(),
+                profile_name: profile.name.clone(),
+                permissions: profile.permissions,
             }))
             .working_dir(cwd)
             .bricks_config(self.bricks.clone())
@@ -2122,9 +2178,14 @@ impl AgentSpawner {
         if let Some(access) = &pc.skills {
             b = b.skills(access.clone()).preloaded_skills(preloaded);
         }
-        let agent = b
-            .build()
-            .map_err(|e| format!("cannot build the sub-agent: {e}"))?;
+        let agent = Arc::new(
+            b.build()
+                .map_err(|e| format!("cannot build the sub-agent: {e}"))?,
+        );
+        let weak = Arc::downgrade(&agent);
+        agent.extensions.insert(ParentHistory(Arc::new(move || {
+            weak.upgrade().map(|a| a.messages()).unwrap_or_default()
+        })));
         if let Some(m) = &pc.mcp_manager {
             agent.adopt_mcp(Arc::clone(m)).await;
         }
@@ -2440,23 +2501,26 @@ impl AgentSpawner {
     fn build_child_tools(
         self: &Arc<Self>,
         profile: &AgentProfile,
+        child_depth: u32,
         parent_memory: Option<&Arc<dyn bricks_memory::LongTermMemory>>,
     ) -> ChildMemoryTools {
         let mut tools = subagent::child_tools((self.tools)(), &[]);
-        tools.push(Box::new(super::tool::NativeAgentTool::new(Arc::clone(
-            self,
-        ))));
-        tools.push(Box::new(super::tool::AgentControlTool::new(Arc::clone(
-            self,
-        ))));
-        tools.push(Box::new(super::tool::AgentProfilesTool::new(Arc::clone(
-            self,
-        ))));
-        if !tools.iter().any(|t| t.name() == "Messagent") {
-            tools.push(Box::new(super::messagent::MessagentTool));
+        if child_depth < self.settings.max_depth {
+            if profile.allows_tool("Agent") {
+                tools.push(Box::new(super::tool::NativeAgentTool::new(Arc::clone(
+                    self,
+                ))));
+            }
+            if profile.allows_tool("Managent") {
+                tools.push(Box::new(super::tool::ManagentTool::new(Arc::clone(self))));
+            }
+            if profile.allows_tool("Messagent") && !tools.iter().any(|t| t.name() == "Messagent") {
+                tools.push(Box::new(super::messagent::MessagentTool));
+            }
         }
         let (memory_access, child_memory) = self.resolve_child_memory(profile, parent_memory);
         apply_child_memory_tools(&mut tools, child_memory.is_some(), memory_access);
+        tools.retain(|t| profile.allows_tool(t.name()));
         (tools, child_memory)
     }
 }
@@ -2497,21 +2561,18 @@ mod tests {
         }
     }
 
-    fn prof(model: ModelPref, reasoning: ReasoningPref) -> AgentProfile {
+    fn prof(model: ModelPref, effort: Option<&str>) -> AgentProfile {
         let mut p = (*neutral_profile()).clone();
         p.name = "x".into();
         p.model = model;
-        p.reasoning = reasoning;
+        p.effort = effort.map(String::from);
         p
     }
 
     #[test]
     fn precedence_request_profile_parent() {
         let s = DelegationSettings::default();
-        let p = prof(
-            ModelPref::Explicit("p/custom".into()),
-            ReasoningPref::Id("high".into()),
-        );
+        let p = prof(ModelPref::Explicit("p/custom".into()), Some("high"));
         let r = resolve(
             &AgentSpawnRequest::default(),
             &p,
@@ -2536,7 +2597,7 @@ mod tests {
     #[test]
     fn custom_reasoning_ids_and_aliases() {
         let mut s = DelegationSettings::default();
-        let p = prof(ModelPref::Inherit, ReasoningPref::Id("high".into()));
+        let p = prof(ModelPref::Inherit, Some("high"));
         // No alias: the parent's compatible profile.
         let r = resolve(
             &AgentSpawnRequest::default(),
@@ -2562,7 +2623,7 @@ mod tests {
         // A custom, non-English id is accepted as is.
         let req = AgentSpawnRequest {
             model: Some("p/custom".into()),
-            reasoning: Some("réfléchi".into()),
+            effort: Some("réfléchi".into()),
             ..Default::default()
         };
         let r = resolve(&req, &p, &parent(None), &models(), &s).unwrap();
@@ -2572,7 +2633,7 @@ mod tests {
     #[test]
     fn inconsistent_explicit_overrides_are_refused() {
         let s = DelegationSettings::default();
-        let p = prof(ModelPref::Inherit, ReasoningPref::Inherit);
+        let p = prof(ModelPref::Inherit, None);
         let bad_model = AgentSpawnRequest {
             model: Some("q/unknown".into()),
             ..Default::default()
@@ -2580,39 +2641,63 @@ mod tests {
         let e = resolve(&bad_model, &p, &parent(None), &models(), &s).unwrap_err();
         assert!(e.contains("not configured") && e.contains("p/fast"), "{e}");
         let bad_reasoning = AgentSpawnRequest {
-            reasoning: Some("high".into()),
+            effort: Some("high".into()),
             ..Default::default()
         };
         let e = resolve(&bad_reasoning, &p, &parent(None), &models(), &s).unwrap_err();
         assert!(e.contains("quick, deep"), "{e}");
+        let invalid_effort = AgentSpawnRequest {
+            effort: Some("very high".into()),
+            ..Default::default()
+        };
+        let e = resolve(&invalid_effort, &p, &parent(None), &models(), &s).unwrap_err();
+        assert!(e.contains("effort"), "{e}");
     }
 
     #[test]
-    fn auto_needs_a_rule() {
-        let mut s = DelegationSettings::default();
-        let p = prof(ModelPref::Auto, ReasoningPref::Inherit);
-        let r = resolve(
-            &AgentSpawnRequest::default(),
-            &p,
-            &parent(None),
-            &models(),
-            &s,
-        )
-        .unwrap();
-        assert_eq!(r.model.applied, "p/fast");
-        assert!(r.warnings.iter().any(|w| w.contains("auto_model")));
-        s.auto_model = Some("p/plain".into());
-        let r = resolve(
-            &AgentSpawnRequest::default(),
-            &p,
-            &parent(Some("quick")),
-            &models(),
-            &s,
-        )
-        .unwrap();
-        assert_eq!(r.model.applied, "p/plain");
-        // p/plain has no reasoning profiles: the parent's id cannot apply.
-        assert_eq!(r.reasoning.applied, "(none)");
+    fn truncate_fork_history_removes_in_flight_and_unanswered_tool_uses() {
+        use bricks_types::{ContentBlock, Message};
+
+        let hist = vec![
+            Message::user("start"),
+            Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "reading".into(),
+                },
+                ContentBlock::ToolUse {
+                    id: "t1".into(),
+                    name: "Read".into(),
+                    input: serde_json::json!({}),
+                },
+            ]),
+            Message::user_blocks(vec![ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                content: bricks_types::ToolResultContent::Text("ok".into()),
+                is_error: Some(false),
+            }]),
+            Message::assistant_blocks(vec![
+                ContentBlock::Text {
+                    text: "delegating".into(),
+                },
+                ContentBlock::ToolUse {
+                    id: "call_agent".into(),
+                    name: "Agent".into(),
+                    input: serde_json::json!({}),
+                },
+                ContentBlock::ToolUse {
+                    id: "call_other".into(),
+                    name: "Read".into(),
+                    input: serde_json::json!({}),
+                },
+            ]),
+        ];
+        let trimmed = truncate_fork_history(hist.clone(), Some("call_agent"));
+        assert_eq!(trimmed.len(), 3);
+        assert!(crate::compact::find_unanswered_tool_uses(&trimmed).is_empty());
+
+        let trimmed_no_id = truncate_fork_history(hist, None);
+        assert_eq!(trimmed_no_id.len(), 3);
+        assert!(crate::compact::find_unanswered_tool_uses(&trimmed_no_id).is_empty());
     }
 
     /// A sub-agent's calls go through its parent's engine, read at each
@@ -2637,6 +2722,8 @@ mod tests {
             let child: Arc<dyn PermissionPolicy> = Arc::new(ChildPolicy {
                 inner: parent,
                 agent_id: "sub_0000".into(),
+                profile_name: "general".into(),
+                permissions: ProfilePermissions::Inherit,
             });
             let request = || PermissionRequest {
                 tool_name: "Write".into(),
@@ -2675,6 +2762,91 @@ mod tests {
             assert!(matches!(d, PermissionDecision::Deny(r) if r.contains("own rule")));
             assert!(broker.pending().is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn profile_permissions_read_only_and_ask_are_enforced_in_child_policy() {
+        use crate::permission::{PermissionEngine, PermissionProfile, PolicyCell, SessionPolicy};
+        use bricks_tools::permissions::{
+            InteractivePolicy, PermissionDecision, PermissionPolicy, PermissionRequest,
+        };
+        use bricks_tools::{PermissionLevel, ToolCategory};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let make_req = |tool: &str, level: PermissionLevel, cat: ToolCategory| PermissionRequest {
+            tool_name: tool.into(),
+            tool_input: serde_json::json!({}),
+            permission_level: level,
+            category: cat,
+            description: tool.into(),
+            id: "call".into(),
+            preview: None,
+            agent_id: None,
+            policy_revision: None,
+        };
+
+        let asks = Arc::new(AtomicUsize::new(0));
+        let asks_c = Arc::clone(&asks);
+        let approver = Arc::new(InteractivePolicy::new(move |_| {
+            asks_c.fetch_add(1, Ordering::SeqCst);
+            PermissionDecision::AllowOnce
+        }));
+        let cell = PolicyCell::new(SessionPolicy::chosen(PermissionProfile::Ask), 1);
+        let engine: Arc<dyn PermissionPolicy> = Arc::new(PermissionEngine::new(cell, approver));
+
+        // ReadOnly: allows Read, denies Write and Bash without asking.
+        let ro = ChildPolicy {
+            inner: Arc::clone(&engine),
+            agent_id: "sub_0000".into(),
+            profile_name: "ro".into(),
+            permissions: ProfilePermissions::ReadOnly,
+        };
+        assert!(matches!(
+            ro.check(&make_req(
+                "Read",
+                PermissionLevel::ReadOnly,
+                ToolCategory::FileSystem
+            ))
+            .await,
+            PermissionDecision::Allow
+        ));
+        assert!(matches!(
+            ro.check(&make_req("Write", PermissionLevel::Write, ToolCategory::FileSystem)).await,
+            PermissionDecision::Deny(r) if r.contains("read_only")
+        ));
+        assert!(matches!(
+            ro.check(&make_req("Bash", PermissionLevel::Execute, ToolCategory::Shell)).await,
+            PermissionDecision::Deny(r) if r.contains("read_only")
+        ));
+        assert_eq!(asks.load(Ordering::SeqCst), 0);
+
+        // Ask: local Read does not ask; Write asks the approver.
+        let ask = ChildPolicy {
+            inner: Arc::clone(&engine),
+            agent_id: "sub_0001".into(),
+            profile_name: "ask_prof".into(),
+            permissions: ProfilePermissions::Ask,
+        };
+        assert!(matches!(
+            ask.check(&make_req(
+                "Read",
+                PermissionLevel::ReadOnly,
+                ToolCategory::FileSystem
+            ))
+            .await,
+            PermissionDecision::Allow
+        ));
+        assert_eq!(asks.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            ask.check(&make_req(
+                "Write",
+                PermissionLevel::Write,
+                ToolCategory::FileSystem
+            ))
+            .await,
+            PermissionDecision::AllowOnce
+        ));
+        assert_eq!(asks.load(Ordering::SeqCst), 1);
     }
 
     #[test]

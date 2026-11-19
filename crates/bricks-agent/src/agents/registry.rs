@@ -4,16 +4,19 @@
 //!   workspace is the session's working directory (the folder whose
 //!   `bricks.toml` applies); parent folders are not searched.
 //! * User profiles are `~/.bricks/agents/*.md`.
-//! * Built-in profiles are compiled in and parsed by the same parser.
+//! * Built-in profiles are compiled in and parsed by the same strict parser.
 //!
 //! A higher scope shadows a lower one by name, **even when it is invalid**:
 //! a broken project profile makes that name unavailable with its
-//! diagnostic, it is never silently replaced by the built-in. Two files with
-//! the same name in one scope make that name unavailable too. Other profiles
-//! stay usable.
+//! diagnostic, it is never silently replaced by a user or built-in profile.
+//! Two files with the same name in one scope make that name unavailable too.
+//! Other profiles stay usable.
 //!
-//! A registry is an immutable snapshot; [`ProfileCatalog::reload`] makes a
-//! new one. Instances keep the profile they were started with.
+//! [`ProfileCatalog`] dynamically reloads profiles from disk on every lookup,
+//! list, snapshot, or tool-description formatting call so newly created,
+//! edited, or deleted `.bricks/agents/*.md` and `~/.bricks/agents/*.md` files
+//! take effect immediately without a restart. Running instances keep the
+//! `Arc<AgentProfile>` they were started with.
 
 use super::profile::{
     AgentProfile, ProfileScope, ProfileSource, intended_name, parse_profile, revision_of,
@@ -28,25 +31,8 @@ pub const MAX_PROFILES_PER_SCOPE: usize = 256;
 
 /// The built-in profiles (`crates/bricks-agent/agents/*.md`).
 pub const BUILT_IN: &[(&str, &str)] = &[
-    (
-        "orchestrateur.md",
-        include_str!("../../agents/orchestrateur.md"),
-    ),
-    (
-        "web_searcher.md",
-        include_str!("../../agents/web_searcher.md"),
-    ),
-    ("inspecteur.md", include_str!("../../agents/inspecteur.md")),
-    (
-        "backend_coder.md",
-        include_str!("../../agents/backend_coder.md"),
-    ),
-    (
-        "frontend_coder.md",
-        include_str!("../../agents/frontend_coder.md"),
-    ),
-    ("testeur.md", include_str!("../../agents/testeur.md")),
-    ("redactor.md", include_str!("../../agents/redactor.md")),
+    ("general.md", include_str!("../../agents/general.md")),
+    ("explore.md", include_str!("../../agents/explore.md")),
 ];
 
 /// A file found in a scope folder.
@@ -63,7 +49,7 @@ enum Found {
     },
 }
 
-/// Where to look.
+/// Where to look for custom profile files.
 #[derive(Debug, Clone, Default)]
 pub struct ProfileSources {
     pub project_dir: Option<PathBuf>,
@@ -117,7 +103,7 @@ pub struct ProfileListing {
     pub shadows: Vec<String>,
 }
 
-/// An immutable snapshot of the profiles.
+/// An immutable snapshot of the profiles at a point in time.
 #[derive(Debug, Clone, Default)]
 pub struct ProfileRegistry {
     slots: BTreeMap<String, Slot>,
@@ -154,8 +140,16 @@ impl ProfileRegistry {
     }
 
     fn read_dir(&mut self, dir: &Path) -> Vec<Found> {
-        let Ok(rd) = std::fs::read_dir(dir) else {
-            return Vec::new(); // no folder: nothing defined there
+        let rd = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) => {
+                self.diagnostics.push(ProfileDiagnostic {
+                    source: dir.display().to_string(),
+                    message: format!("cannot read profile directory: {e}"),
+                });
+                return Vec::new();
+            }
         };
         let mut paths: Vec<PathBuf> = rd
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -224,15 +218,7 @@ impl ProfileRegistry {
                         revision: revision_of(&text),
                     };
                     match parse_profile(&text, source) {
-                        Ok(p) => {
-                            for n in &p.notes {
-                                self.diagnostics.push(ProfileDiagnostic {
-                                    source: label.clone(),
-                                    message: format!("profile `{}`: {n}", p.name),
-                                });
-                            }
-                            (label, p.name.clone(), Entry::Valid(Arc::new(p)))
-                        }
+                        Ok(p) => (label, p.name.clone(), Entry::Valid(Arc::new(p))),
                         Err(e) => (
                             label.clone(),
                             intended_name(&text, &stem),
@@ -386,6 +372,93 @@ impl ProfileRegistry {
             total,
         )
     }
+
+    /// Maximum byte size of [`Self::format_for_tool`] so large profile folders
+    /// cannot blow up every model request or trigger provider schema limits.
+    pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 8 * 1024;
+
+    /// Format available profiles (built-ins + custom) for embedding directly into
+    /// the `Agent` tool schema/description. Invalid custom profiles are surfaced
+    /// explicitly so malformed files are never silently ignored. When the full
+    /// rendering exceeds [`Self::MAX_TOOL_DESCRIPTION_BYTES`] (8 KiB), it falls
+    /// back to a compact names-only listing.
+    pub fn format_for_tool(&self) -> String {
+        let mut valid_lines = Vec::new();
+        let mut valid_names = Vec::new();
+        let mut invalid_lines = Vec::new();
+        let mut invalid_names = Vec::new();
+        for (name, slot) in &self.slots {
+            match &slot.entry {
+                Entry::Valid(p) => {
+                    let mut attrs = vec![
+                        format!("isolation: {}", p.isolation.as_str()),
+                        format!("tools: {}", p.tools.summary()),
+                    ];
+                    if p.permissions != super::profile::ProfilePermissions::Inherit {
+                        attrs.push(format!("permissions: {}", p.permissions.as_str()));
+                    }
+                    if p.model != super::profile::ModelPref::Inherit {
+                        attrs.push(format!("model: {}", p.model.label()));
+                    }
+                    if let Some(effort) = p.requested_effort() {
+                        attrs.push(format!("effort: {effort}"));
+                    }
+                    valid_names.push(name.clone());
+                    valid_lines.push(format!(
+                        "- `{name}` ({}): {} [{}]",
+                        slot.scope.as_str(),
+                        p.description,
+                        attrs.join(", ")
+                    ));
+                }
+                Entry::Invalid { source, error } => {
+                    invalid_names.push(format!("`{name}` ({source})"));
+                    invalid_lines.push(format!(
+                        "- `{name}` ({}, {source}): {error}",
+                        slot.scope.as_str()
+                    ));
+                }
+            }
+        }
+
+        let mut out = String::from("Available profiles:\n");
+        if valid_lines.is_empty() {
+            out.push_str("(none)");
+        } else {
+            out.push_str(&valid_lines.join("\n"));
+        }
+        if !invalid_lines.is_empty() {
+            out.push_str("\n\nInvalid profiles (fix or remove):\n");
+            out.push_str(&invalid_lines.join("\n"));
+        }
+        if out.len() <= Self::MAX_TOOL_DESCRIPTION_BYTES {
+            return out;
+        }
+
+        let mut compact = String::from("Available profiles (names only; truncated to 8 KiB):\n");
+        if valid_names.is_empty() {
+            compact.push_str("(none)");
+        } else {
+            compact.push_str(&valid_names.join(", "));
+        }
+        if !invalid_names.is_empty() {
+            compact.push_str(&format!(
+                "\n\nInvalid profiles ({}; fix or remove): {}",
+                invalid_names.len(),
+                invalid_names.join(", ")
+            ));
+        }
+        if compact.len() > Self::MAX_TOOL_DESCRIPTION_BYTES {
+            const SUFFIX: &str = "...";
+            let mut cut = Self::MAX_TOOL_DESCRIPTION_BYTES.saturating_sub(SUFFIX.len());
+            while cut > 0 && !compact.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            compact.truncate(cut);
+            compact.push_str(SUFFIX);
+        }
+        compact
+    }
 }
 
 fn stem_of(path: Option<&Path>, label: &str) -> String {
@@ -407,7 +480,11 @@ fn slot_label(s: &Slot) -> String {
     }
 }
 
-/// The registry of a session, reloadable.
+/// The dynamic profile catalog of a session.
+///
+/// Re-reads `.bricks/agents/*.md` and `~/.bricks/agents/*.md` on every lookup,
+/// list, snapshot, or tool-description formatting call so newly created
+/// directories and updated files are picked up without a restart.
 pub struct ProfileCatalog {
     sources: ProfileSources,
     current: parking_lot::RwLock<Arc<ProfileRegistry>>,
@@ -422,16 +499,36 @@ impl ProfileCatalog {
         }
     }
 
-    /// The current snapshot.
+    /// Dynamically load the latest profile snapshot from disk.
     pub fn snapshot(&self) -> Arc<ProfileRegistry> {
-        Arc::clone(&self.current.read())
+        self.reload()
     }
 
-    /// Read the files again. Running instances keep their profiles.
+    /// Explicitly reload profiles from disk. Running instances keep their profiles.
     pub fn reload(&self) -> Arc<ProfileRegistry> {
         let reg = Arc::new(ProfileRegistry::load(&self.sources));
         *self.current.write() = Arc::clone(&reg);
         reg
+    }
+
+    /// Look up a profile by name (reloading from disk).
+    pub fn get(&self, name: &str) -> Result<Arc<AgentProfile>, String> {
+        self.snapshot().get(name)
+    }
+
+    /// List all profiles (reloading from disk).
+    pub fn list(&self) -> Vec<ProfileListing> {
+        self.snapshot().list()
+    }
+
+    /// Diagnostics from the latest dynamic load.
+    pub fn diagnostics(&self) -> Vec<ProfileDiagnostic> {
+        self.snapshot().diagnostics.clone()
+    }
+
+    /// Format available profiles for embedding into the `Agent` tool schema/description.
+    pub fn format_for_tool(&self) -> String {
+        self.snapshot().format_for_tool()
     }
 
     pub fn sources(&self) -> &ProfileSources {
@@ -441,6 +538,7 @@ impl ProfileCatalog {
 
 #[cfg(test)]
 mod tests {
+    use super::super::profile::{Isolation, ModelPref, ProfilePermissions, ToolPolicy};
     use super::*;
 
     fn profile(name: &str, desc: &str) -> String {
@@ -448,80 +546,120 @@ mod tests {
     }
 
     #[test]
-    fn the_seven_built_ins_load_with_the_same_parser() {
+    fn built_in_general_and_explore_load_through_strict_parser() {
         let reg = ProfileRegistry::built_in();
         assert!(reg.diagnostics.is_empty(), "{:?}", reg.diagnostics);
         let names: Vec<String> = reg.list().into_iter().map(|l| l.name).collect();
-        assert_eq!(
-            names,
-            vec![
-                "backend_coder",
-                "frontend_coder",
-                "inspecteur",
-                "orchestrateur",
-                "redactor",
-                "testeur",
-                "web_searcher"
-            ]
-        );
-        for n in &names {
-            let p = reg.get(n).unwrap();
-            assert_eq!(p.model, super::super::profile::ModelPref::Inherit);
-            assert_eq!(p.permissions, "inherit");
-            assert_eq!(p.tools, "inherit");
-            assert!(!p.background);
-            assert_eq!(p.isolation, super::super::profile::Isolation::Auto);
-            assert!(p.skills.is_empty(), "no hypothetical skill in {n}");
-            // No made-up tool: CodeScout is a real tool, named as such.
-            for word in ["codescout", "Codescout"] {
-                assert!(!p.instructions.contains(word), "{n}");
-            }
+        assert_eq!(names, vec!["explore", "general"]);
+
+        let general = reg.get("general").unwrap();
+        assert_eq!(general.model, ModelPref::Inherit);
+        assert_eq!(general.permissions, ProfilePermissions::Inherit);
+        assert_eq!(general.tools, ToolPolicy::Inherit);
+        assert_eq!(general.isolation, Isolation::Shared);
+        assert!(general.allows_tool("Bash"));
+        assert!(general.allows_tool("Write"));
+        assert!(general.allows_tool("Edit"));
+        assert!(general.allows_tool("Agent"));
+
+        let explore = reg.get("explore").unwrap();
+        assert_eq!(explore.model, ModelPref::Inherit);
+        assert_eq!(explore.permissions, ProfilePermissions::Inherit);
+        assert_eq!(explore.isolation, Isolation::Shared);
+        // Bash and read-only tools MUST be allowed in explore.
+        assert!(explore.allows_tool("Bash"));
+        assert!(explore.allows_tool("Read"));
+        assert!(explore.allows_tool("Grep"));
+        assert!(explore.allows_tool("Glob"));
+        assert!(explore.allows_tool("CodeScout"));
+        assert!(explore.allows_tool("memory_read"));
+        // Mutating and delegation tools MUST be denied in explore.
+        for denied in [
+            "Write",
+            "Edit",
+            "ApplyPatch",
+            "Agent",
+            "Managent",
+            "Messagent",
+            "memory_write",
+            "memory_update",
+            "memory_delete",
+        ] {
+            assert!(!explore.allows_tool(denied), "explore must deny `{denied}`");
         }
-        assert!(
-            reg.get("inspecteur")
-                .unwrap()
-                .instructions
-                .contains("CodeScout")
-        );
     }
 
     #[test]
-    fn scopes_shadow_by_priority_with_visible_sources() {
+    fn dynamic_loading_sees_newly_created_dir_and_project_overrides_user() {
         let d = tempfile::tempdir().unwrap();
-        let (proj, user) = (d.path().join("p"), d.path().join("u"));
-        std::fs::create_dir_all(&proj).unwrap();
-        std::fs::create_dir_all(&user).unwrap();
-        std::fs::write(user.join("testeur.md"), profile("testeur", "user tester")).unwrap();
-        std::fs::write(proj.join("t.md"), profile("testeur", "project tester")).unwrap();
-        std::fs::write(user.join("mine.md"), profile("mine", "mine")).unwrap();
-        let reg = ProfileRegistry::load(&ProfileSources {
-            project_dir: Some(proj),
-            user_dir: Some(user),
+        let proj = d.path().join("project").join(".bricks").join("agents");
+        let user = d.path().join("home").join(".bricks").join("agents");
+        // Neither directory exists when ProfileCatalog is created.
+        let cat = ProfileCatalog::new(ProfileSources {
+            project_dir: Some(proj.clone()),
+            user_dir: Some(user.clone()),
         });
-        let t = reg.get("testeur").unwrap();
-        assert_eq!(t.description, "project tester");
-        assert_eq!(t.source.scope, ProfileScope::Project);
-        let l = reg
+        assert_eq!(cat.list().len(), 2);
+        assert!(cat.get("custom_role").is_err());
+
+        // Create user directory and profile dynamically without restart or reload().
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::write(
+            user.join("custom_role.md"),
+            profile("custom_role", "user version"),
+        )
+        .unwrap();
+        let from_user = cat.get("custom_role").unwrap();
+        assert_eq!(from_user.description, "user version");
+        assert_eq!(from_user.source.scope, ProfileScope::User);
+
+        // Create project directory and override the same name dynamically.
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(
+            proj.join("override.md"),
+            profile("custom_role", "project version"),
+        )
+        .unwrap();
+        let from_proj = cat.get("custom_role").unwrap();
+        assert_eq!(from_proj.description, "project version");
+        assert_eq!(from_proj.source.scope, ProfileScope::Project);
+
+        // Running instances keep the Arc<AgentProfile> they were started with.
+        assert_eq!(from_user.description, "user version");
+
+        // Project profile also overrides built-in `explore`.
+        std::fs::write(
+            proj.join("explore.md"),
+            profile("explore", "project explore"),
+        )
+        .unwrap();
+        let explore = cat.get("explore").unwrap();
+        assert_eq!(explore.description, "project explore");
+        assert_eq!(explore.source.scope, ProfileScope::Project);
+        let listing = cat
             .list()
             .into_iter()
-            .find(|l| l.name == "testeur")
+            .find(|l| l.name == "custom_role")
             .unwrap();
-        assert_eq!(l.shadows.len(), 2, "{:?}", l.shadows);
-        assert!(l.shadows[0].starts_with("user"));
-        assert!(l.shadows[1].starts_with("built_in"));
-        assert_eq!(reg.get("mine").unwrap().source.scope, ProfileScope::User);
-        assert_eq!(reg.len(), 8);
+        assert_eq!(listing.shadows.len(), 1);
+        assert!(listing.shadows[0].starts_with("user"));
     }
 
     #[test]
-    fn an_invalid_or_duplicated_profile_is_never_replaced_silently() {
+    fn invalid_or_duplicated_profile_surfaces_explicit_errors_and_never_falls_back() {
         let d = tempfile::tempdir().unwrap();
         let proj = d.path().join("p");
         std::fs::create_dir_all(&proj).unwrap();
-        // Invalid project override of a built-in.
+        // Invalid project override of a built-in (unknown field + maxTurns).
         std::fs::write(
-            proj.join("inspecteur.md"),
-            "---\nname: inspecteur\ndescription: d\npermissions: everything\n---\n",
+            proj.join("explore.md"),
+            "---\nname: explore\ndescription: d\nmaxTurns: 10\n---\n",
+        )
+        .unwrap();
+        // Misspelled field in another custom file.
+        std::fs::write(
+            proj.join("typo.md"),
+            "---\nname: typo\ndescription: d\nisolationn: shared\n---\n",
         )
         .unwrap();
         // Two files, one name.
@@ -530,61 +668,75 @@ mod tests {
         // Garbage file named by its stem.
         std::fs::write(proj.join("broken.md"), "not a profile").unwrap();
         std::fs::write(proj.join("ok.md"), profile("ok", "fine")).unwrap();
+
         let reg = ProfileRegistry::load(&ProfileSources {
             project_dir: Some(proj),
             user_dir: None,
         });
-        let e = reg.get("inspecteur").unwrap_err();
+        let e = reg.get("explore").unwrap_err();
         assert!(
-            e.contains("project scope") && e.contains("only `inherit`"),
+            e.contains("project scope") && e.contains("maxTurns") && e.contains("explore.md"),
             "{e}"
+        );
+        let typo_err = reg.get("typo").unwrap_err();
+        assert!(
+            typo_err.contains("isolationn") && typo_err.contains("typo.md"),
+            "{typo_err}"
         );
         assert!(reg.get("twin").unwrap_err().contains("defined 2 times"));
         assert!(reg.get("broken").is_err());
         assert!(reg.get("ok").is_ok(), "others stay usable");
-        assert!(reg.get("testeur").is_ok());
-        assert!(reg.diagnostics.len() >= 3);
+        assert!(reg.get("general").is_ok());
+        assert!(reg.diagnostics.len() >= 4);
         assert!(
             reg.diagnostics
                 .iter()
-                .any(|d| d.source.ends_with("inspecteur.md"))
+                .any(|d| d.source.ends_with("explore.md"))
         );
         assert!(reg.get("nope").unwrap_err().contains("available"));
+
+        let formatted = reg.format_for_tool();
+        assert!(formatted.contains("`general` (built_in)"));
+        assert!(formatted.contains("`ok` (project)"));
+        assert!(formatted.contains("Invalid profiles"));
+        assert!(formatted.contains("maxTurns"));
+        assert!(formatted.contains("isolationn"));
     }
 
     #[test]
-    fn reload_makes_a_new_snapshot_and_keeps_the_old_one() {
+    fn format_for_tool_renders_builtins_and_custom_profiles() {
         let d = tempfile::tempdir().unwrap();
         let proj = d.path().join("p");
         std::fs::create_dir_all(&proj).unwrap();
-        std::fs::write(proj.join("x.md"), profile("x", "first")).unwrap();
+        std::fs::write(
+            proj.join("reviewer.md"),
+            "---\nname: reviewer\ndescription: Reviews code.\nisolation: worktree\npermissions: read_only\neffort: high\n---\nReview carefully.\n",
+        )
+        .unwrap();
+
         let cat = ProfileCatalog::new(ProfileSources {
-            project_dir: Some(proj.clone()),
+            project_dir: Some(proj),
             user_dir: None,
         });
-        let running = cat.snapshot().get("x").unwrap();
-        std::fs::write(proj.join("x.md"), profile("x", "second")).unwrap();
-        assert_eq!(cat.snapshot().get("x").unwrap().description, "first");
-        cat.reload();
-        assert_eq!(cat.snapshot().get("x").unwrap().description, "second");
-        assert_eq!(
-            running.description, "first",
-            "a started instance keeps its snapshot"
+        let text = cat.format_for_tool();
+        assert!(text.contains("`general` (built_in)"), "{text}");
+        assert!(text.contains("`explore` (built_in)"), "{text}");
+        assert!(
+            text.contains("`reviewer` (project): Reviews code."),
+            "{text}"
         );
-        assert_ne!(
-            running.source.revision,
-            cat.snapshot().get("x").unwrap().source.revision
-        );
+        assert!(text.contains("isolation: worktree"), "{text}");
+        assert!(text.contains("permissions: read_only"), "{text}");
+        assert!(text.contains("effort: high"), "{text}");
+        assert!(!text.contains("Invalid profiles"), "{text}");
     }
 
-    /// A page past every profile, however large, is empty (the model picks
-    /// the number).
     #[test]
     fn a_huge_page_is_empty_not_a_panic() {
         let reg = ProfileRegistry::built_in();
         let (items, total) = reg.search("", usize::MAX, 20);
         assert!(items.is_empty());
-        assert!(total > 0);
+        assert_eq!(total, 2);
     }
 
     #[test]
@@ -603,31 +755,44 @@ mod tests {
             project_dir: Some(proj),
             user_dir: None,
         });
-        assert_eq!(reg.len(), 37, "no fixed number of custom profiles");
+        assert_eq!(reg.len(), 32, "2 built-ins + 30 custom profiles");
         let (page, total) = reg.search("custom", 1, 10);
         assert_eq!(total, 30);
         assert_eq!(page.len(), 10);
         assert_eq!(page[0].name, "custom-10");
         let (_, total) = reg.search("no-such-role-zz", 0, 10);
         assert_eq!(total, 0);
-        let (p, _) = reg.search("MEANINGFUL CHECKS", 0, 10);
-        assert_eq!(p[0].name, "testeur");
+        let (p, _) = reg.search("EXPLORATION", 0, 10);
+        assert_eq!(p[0].name, "explore");
     }
 
     #[test]
-    fn documented_examples_load_cleanly() {
-        let dir =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/agents/examples");
+    fn format_for_tool_caps_at_8_kib_with_names_only_fallback() {
+        let d = tempfile::tempdir().unwrap();
+        let proj = d.path().join("p");
+        std::fs::create_dir_all(&proj).unwrap();
+        let long_desc = "x".repeat(600);
+        for i in 0..25 {
+            std::fs::write(
+                proj.join(format!("big-{i:02}.md")),
+                profile(&format!("big-{i:02}"), &long_desc),
+            )
+            .unwrap();
+        }
         let reg = ProfileRegistry::load(&ProfileSources {
-            project_dir: Some(dir),
+            project_dir: Some(proj),
             user_dir: None,
         });
-        assert!(reg.diagnostics.is_empty(), "{:?}", reg.diagnostics);
-        assert_eq!(
-            reg.get("reviewer").unwrap().source.scope,
-            ProfileScope::Project
+        let formatted = reg.format_for_tool();
+        assert!(
+            formatted.len() <= ProfileRegistry::MAX_TOOL_DESCRIPTION_BYTES,
+            "got {} bytes",
+            formatted.len()
         );
-        assert!(reg.get("migration_planner").unwrap().notes.is_empty());
-        assert_eq!(reg.len(), 9);
+        assert!(formatted.contains("names only"));
+        assert!(formatted.contains("general"));
+        assert!(formatted.contains("explore"));
+        assert!(formatted.contains("big-00"));
+        assert!(formatted.contains("big-24"));
     }
 }

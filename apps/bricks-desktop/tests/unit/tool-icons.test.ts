@@ -43,13 +43,16 @@ describe('toolIcon: the icon says what the tool does', () => {
 		['Edit', PenLineIcon],
 		['WebSearch', BinocularsIcon],
 		['Agent', BotIcon],
+		['Managent', BotIcon],
 		['Messagent', MailIcon],
 	])('%s has its own icon', (name, icon) => {
 		expect(toolIcon(name)).toBe(icon);
 	});
 
-	it('the removed Agents and SendMessage tools have no icon of their own', () => {
+	it('the removed Agents, AgentControl, AgentProfiles and SendMessage tools have no icon of their own', () => {
 		expect(toolIcon('Agents')).toBe(WrenchIcon);
+		expect(toolIcon('AgentControl')).toBe(WrenchIcon);
+		expect(toolIcon('AgentProfiles')).toBe(WrenchIcon);
 		expect(toolIcon('SendMessage')).toBe(WrenchIcon);
 	});
 

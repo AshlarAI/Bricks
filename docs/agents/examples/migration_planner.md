@@ -4,11 +4,10 @@ description: >
   Plans a dependency or API migration: impacted call sites, ordered steps,
   risks and how to verify each step.
 model: inherit
-reasoning: high
+effort: high
 permissions: inherit
 tools: inherit
-isolation: auto
-background: false
+isolation: shared
 skills: []
 ---
 

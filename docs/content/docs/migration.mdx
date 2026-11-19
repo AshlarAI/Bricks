@@ -555,3 +555,13 @@ Use `scripts/bench_cli.py` for CLI startup measurements and the active
 * **`ViewImage` merged into `Read`:** `Read` now handles both text files and images (PNG, JPEG, GIF, WebP). `ViewImage` is no longer a separate tool.
 * **`SendMessage` replaced by `Messagent`:** Team messaging between agents uses `Messagent` (`bricks_agent::agents::MessagentTool`).
 * **Legacy memory modules removed:** `memdir`, `claudemd`, `manager`, `graph`, and `embedding_memory` have been removed from `bricks-memory`. Use `StructuredMemory` and `ScopedMemory` (behind the `structured` feature) with `memory_search`, `memory_write` (notes capped at `NOTE_MAX_CHARS = 280`), and `delete_entry(EntryKind, id)`.
+
+## 21. Breaking changes and migration (sub-agents and Managent)
+
+* **`AgentControl` renamed to `Managent`:** Update tool calls, permission rules, and SDK references from `AgentControl` to `Managent`. `Managent` adds enriched `list`/`status` fields (`description`, `elapsed_ms`, `last_action`, ChangeSet state), `wait` with `mode: "any" | "all"` and `agent_ids`, and `rebase_changes` with optional `verify_cmd`.
+* **`AgentProfiles` removed:** `AgentProfiles` is no longer a built-in tool. Available profiles are loaded dynamically and embedded directly in the `Agent` tool description.
+* **Legacy built-in profiles removed:** The 7 legacy built-in profiles (`backend_coder`, `frontend_coder`, `inspecteur`, `orchestrateur`, `redactor`, `testeur`, `web_searcher`) are removed in favor of `general` and `explore`. Unknown profile names are now rejected instead of falling back.
+* **Strict YAML frontmatter in custom profiles:** In `.bricks/agents/*.md` and `~/.bricks/agents/*.md`, unknown fields and turn caps now fail explicitly:
+  * Rename `reasoning:` to `effort:`.
+  * Replace `isolation: auto` with `shared` or `worktree`.
+  * Remove `background:`, `max_turns`, `maxTurns`, and `max-turns`.

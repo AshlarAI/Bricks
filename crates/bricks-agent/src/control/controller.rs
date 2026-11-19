@@ -548,8 +548,8 @@ fn profile_catalog(
     Arc::new(crate::agents::ProfileCatalog::new(sources))
 }
 
-/// The session agent's tools: the configured ones, plus the native `Agent`
-/// and `AgentProfiles` tools when `[agents] enabled` (never a second
+/// The session agent's tools: the configured ones, plus the native `Agent`,
+/// `Managent` and `Messagent` tools when `[agents] enabled` (never a second
 /// `Agent` next to one already configured).
 fn session_tools(
     cfg: &EngineConfig,
@@ -578,10 +578,7 @@ fn session_tools(
         tools.push(Box::new(crate::agents::NativeAgentTool::new(Arc::clone(
             &spawner,
         ))));
-        tools.push(Box::new(crate::agents::AgentControlTool::new(Arc::clone(
-            &spawner,
-        ))));
-        tools.push(Box::new(crate::agents::AgentProfilesTool::new(Arc::clone(
+        tools.push(Box::new(crate::agents::ManagentTool::new(Arc::clone(
             &spawner,
         ))));
         if !tools.iter().any(|t| t.name() == "Messagent") {
@@ -603,7 +600,7 @@ fn build_agent(
     permissions: &PolicyCell,
     profiles: &Arc<crate::agents::ProfileCatalog>,
     skills: Option<bricks_skills::SkillAccess>,
-) -> Result<(Agent, Option<Arc<crate::agents::AgentSpawner>>), String> {
+) -> Result<(Arc<Agent>, Option<Arc<crate::agents::AgentSpawner>>), String> {
     let settings = &project.bricks.agent;
     let (mut tools, spawner) = session_tools(cfg, project, meta, profiles);
     // Questions for the person, when someone can answer them.
@@ -673,7 +670,13 @@ fn build_agent(
     if let Some(access) = skills {
         b = b.skills(access);
     }
-    let agent = b.build().map_err(|e| e.to_string())?;
+    let agent = Arc::new(b.build().map_err(|e| e.to_string())?);
+    let weak = Arc::downgrade(&agent);
+    agent
+        .extensions
+        .insert(crate::agents::ParentHistory(Arc::new(move || {
+            weak.upgrade().map(|a| a.messages()).unwrap_or_default()
+        })));
     Ok((agent, spawner))
 }
 
@@ -860,7 +863,6 @@ impl Controller {
             &profiles,
             skills.clone(),
         )?;
-        let agent = Arc::new(agent);
         meta.save(&files_dir(&cfg, &meta.id))?;
         let queue = Arc::new(EventQueue::new(&meta.id, cfg.queue_capacity));
         // A resumed session's history is in the agent from the start: the
@@ -1208,7 +1210,7 @@ impl Controller {
     }
 
     /// A person's action on the session's sub-agents (the frontend's
-    /// equivalent of `AgentControl`; the session's tree is the destination
+    /// equivalent of `Managent`; the session's tree is the destination
     /// of `apply_changes`).
     async fn agent_control(
         &self,
@@ -1229,13 +1231,16 @@ impl Controller {
                 (
                     true,
                     recs.iter()
-                        .map(crate::agents::tool::render_record)
+                        .map(|r| crate::agents::tool::render_record_with_runtime(r, rt))
                         .collect::<Vec<_>>()
                         .join("\n"),
                 )
             }
             "status" => match rec(&agent_id) {
-                Some(r) => (true, crate::agents::tool::render_record(&r)),
+                Some(r) => (
+                    true,
+                    crate::agents::tool::render_record_with_runtime(&r, rt),
+                ),
                 None => (false, "unknown sub-agent".into()),
             },
             "result" => match rec(&agent_id) {
@@ -2086,7 +2091,6 @@ impl Controller {
             &profiles,
             skills.clone(),
         )?;
-        let agent = Arc::new(agent);
         meta.save(&files_dir(cfg, &meta.id))?;
         // From here the target replaces the current session.
         *self.inner.permissions.write() = permissions;

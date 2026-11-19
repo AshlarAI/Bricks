@@ -18,9 +18,10 @@ use bricks_tools::{Extensions, Tool, ToolResult};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-/// Tool names that start a sub-agent or control one. A child never
-/// receives them.
-pub const DELEGATION_TOOLS: &[&str] = &["Agent", "AgentControl", "AgentProfiles"];
+/// Tool names that start a sub-agent, control one, or message the team.
+/// Stripped from `(self.tools)()` and selectively re-attached by the spawner
+/// only when `child_depth < max_depth` and `profile.allows_tool(...)`.
+pub const DELEGATION_TOOLS: &[&str] = &["Agent", "Managent", "Messagent"];
 
 /// The current run's cancellation, put in the tool context by the runner
 /// at the start of each run: children are cancelled with it.

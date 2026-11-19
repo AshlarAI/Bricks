@@ -1,9 +1,9 @@
 //! A scripted model follows the handles it is given. `Agent` returns the ids
 //! of its sub-agents at once; a model then waits for each of them with
-//! `AgentControl wait` (agent_id), in the order they were started. This
+//! `Managent wait` (agent_id), in the order they were started. This
 //! module makes that wait for a scripted run: before a request is answered
 //! from the script, every started sub-agent whose end is not reported yet is
-//! waited for, one `AgentControl wait` per request. A wait may return earlier
+//! waited for, one `Managent wait` per request. A wait may return earlier
 //! (a delivery for the model, such as another sub-agent's report): the
 //! sub-agent is then waited for again, until its end is reported.
 //!
@@ -58,9 +58,9 @@ pub fn started_ids(req: &CompletionRequest) -> Vec<String> {
 }
 
 /// The sub-agent whose end a `wait` result of `req` reported, if any (the
-/// wait's answer: `<id> has ended; AgentControl result <id> gives its report.`).
+/// wait's answer: `<id> has ended; Managent result <id> gives its report.`).
 fn ended_in(text: &str) -> Option<String> {
-    let at = text.find(" has ended; AgentControl result ")?;
+    let at = text.find(" has ended; Managent result ")?;
     let id = text[..at].rsplit(char::is_whitespace).next()?;
     id.starts_with("sub_").then(|| id.to_string())
 }
@@ -88,7 +88,7 @@ fn ended_ids(req: &CompletionRequest) -> HashSet<String> {
     ids
 }
 
-/// The next `AgentControl wait` for `req`, if a started sub-agent has not
+/// The next `Managent wait` for `req`, if a started sub-agent has not
 /// reported its end yet. The first wait for a sub-agent is `wait_<id>`; a
 /// later one, `wait_<id>_<n>`.
 pub fn next_wait(req: &CompletionRequest, waited: &Waited) -> Option<Reply> {
@@ -108,7 +108,7 @@ pub fn next_wait(req: &CompletionRequest, waited: &Waited) -> Option<Reply> {
     };
     Some(Reply::tool(
         &call,
-        "AgentControl",
+        "Managent",
         json!({ "action": "wait", "agent_id": id }),
     ))
 }

@@ -197,7 +197,7 @@ fn tool_output(evs: &[Envelope], name: &str) -> (bool, String) {
 }
 
 /// The result of the tool call with this id (`wait_<agent_id>` for a wait).
-/// The `AgentControl wait` result that reports the end of sub-agent `id`
+/// The `Managent wait` result that reports the end of sub-agent `id`
 /// (a wait may return earlier, for another delivery: it is asked again).
 fn ended_wait(evs: &[Envelope], id: &str) -> (bool, String) {
     evs.iter()
@@ -233,17 +233,18 @@ fn tool_output_by_id(evs: &[Envelope], id: &str) -> (bool, String) {
 
 #[tokio::test]
 async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() {
-    let mut env = open(
+    let mut env = open_with(
         vec![
             Reply::tool(
                 "c1",
                 "Agent",
-                json!({"task": "Find where parse is defined.", "profile": "inspecteur"}),
+                json!({"prompt": "Find where parse is defined.", "profile": "general", "description": "Find parse definition"}),
             ),
             Reply::text("Edit Map: src/lib.rs, fn parse."),
-            Reply::text("The inspector found it in src/lib.rs."),
+            Reply::text("The agent found it in src/lib.rs."),
         ],
         allow(&["Agent"]),
+        |b| b.agents.max_depth = 2,
     )
     .await;
     let builds_before = env.catalog.builds.load(Ordering::SeqCst);
@@ -262,7 +263,7 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
     let (outcome, text) = run_outcome(&evs);
     assert_eq!(outcome, RunOutcome::Succeeded);
     // The parent's answer is its own, not the child's text.
-    assert_eq!(text, "The inspector found it in src/lib.rs.");
+    assert_eq!(text, "The agent found it in src/lib.rs.");
 
     // Events, correlated.
     let spawned = evs
@@ -272,14 +273,18 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
             _ => None,
         })
         .unwrap();
-    assert_eq!(spawned.profile, "inspecteur");
+    assert_eq!(spawned.profile, "general");
+    assert_eq!(
+        spawned.description.as_deref(),
+        Some("Find parse definition")
+    );
     assert_eq!(spawned.model.applied, "test/a");
     assert!(spawned.parent_id.as_deref().unwrap().starts_with("main_"));
     assert!(spawned.root_run_id.starts_with("run_"));
-    // Auto isolation: a worktree, the children run in parallel.
-    assert_eq!(spawned.isolation, "worktree");
+    // Default isolation: shared (falling back to profile's isolation).
+    assert_eq!(spawned.isolation, "shared");
     // `Agent` answers with the handle at once: its tool result comes before
-    // the child's end. The end is reported by `AgentControl wait`; the report
+    // the child's end. The end is reported by `Managent wait`; the report
     // itself comes to the parent between two turns.
     let (err, handle) = tool_output(&evs, "Agent");
     assert!(!err, "{handle}");
@@ -312,7 +317,7 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
         .collect();
     assert_eq!(child.len(), 1);
     let c = child[0];
-    // Fresh context: the task only, nothing of the parent's conversation.
+    // Fresh context: the prompt only, nothing of the parent's conversation or description label.
     assert_eq!(c.messages.len(), 1);
     let whole = format!(
         "{}{}",
@@ -324,31 +329,29 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
         "a secret of the parent leaked"
     );
     assert!(
+        !whole.contains("Find parse definition"),
+        "description label must not be injected into child prompt"
+    );
+    assert!(
         c.messages[0]
             .get_text()
             .unwrap_or("")
             .contains("Find where parse is defined.")
     );
-    // The profile's instructions, the parent's tools, never a delegation tool.
-    assert!(
-        c.system
-            .as_deref()
-            .unwrap()
-            .contains("Profile `inspecteur`")
-    );
+    // The profile's instructions and the parent's tools.
+    assert!(c.system.as_deref().unwrap().contains("Profile `general`"));
     let names: Vec<&str> = c.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"CodeScout") && names.contains(&"Bash"));
-    // 10.5: the delegation tools pass on (recursion is bounded by the
-    // scheduler). The legacy `delegate` tool is gone from the catalogue.
-    assert!(names.contains(&"Agent") && names.contains(&"AgentControl"));
-    // Every member of the team writes to the others.
+    // With max_depth = 2, depth-1 `general` child gets delegation tools.
+    assert!(names.contains(&"Agent") && names.contains(&"Managent"));
     assert!(names.contains(&"Messagent"));
+    assert!(!names.contains(&"AgentProfiles"));
     assert!(!names.contains(&"delegate"));
     // The parent received the compact result, not the transcript.
     let parent_last = &reqs[2].1;
     let fed = serde_json::to_string(&parent_last.messages).unwrap();
     assert!(fed.contains(&format!(
-        "Sub-agent {} (inspecteur, model test/a",
+        "Sub-agent {} (general, model test/a",
         spawned.agent_id
     )));
     assert!(fed.contains("Edit Map: src/lib.rs, fn parse."));
@@ -823,31 +826,25 @@ async fn compaction_keeps_the_tool_the_profile_catalogue_and_the_policy() {
             break;
         }
     }
-    env.script
-        .push(Reply::tool("profiles", "AgentProfiles", json!({})));
     env.script.push(Reply::text("second"));
     env.ctl
         .send(Command::Submit {
             prompt: Prompt::text("again"),
         })
         .unwrap();
-    let events = until_finished(&mut env.events).await;
-    let (is_error, profiles) = tool_output(&events, "AgentProfiles");
-    assert!(!is_error, "{profiles}");
-    assert!(profiles.contains("inspecteur") && profiles.contains("redactor"));
+    let _events = until_finished(&mut env.events).await;
     let last = env.script.requests().last().unwrap().1.clone();
     let names: Vec<&str> = last.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(
         names.contains(&"Agent")
-            && names.contains(&"AgentProfiles")
+            && names.contains(&"Managent")
             && names.contains(&"CodeScout")
+            && !names.contains(&"AgentProfiles")
     );
     {
-        let name = "Agent";
-        let tool = last.tools.iter().find(|t| t.name == name).unwrap();
-        let schema = serde_json::to_string(&tool.input_schema).unwrap();
-        assert!(schema.contains("AgentProfiles"));
-        assert!(!schema.contains("inspecteur") && !schema.contains("redactor"));
+        let tool = last.tools.iter().find(|t| t.name == "Agent").unwrap();
+        assert!(tool.description.contains("`general` (built_in)"));
+        assert!(tool.description.contains("`explore` (built_in)"));
     }
 }
 
@@ -869,7 +866,12 @@ async fn profiles_listed_and_reloaded_through_the_controller() {
         .unwrap();
     let e = next(&mut env.events).await;
     match e.event {
-        Event::AgentProfiles { total, .. } => assert_eq!(total, 0, "not read before a reload"),
+        Event::AgentProfiles {
+            profiles, total, ..
+        } => {
+            assert_eq!(total, 1, "dynamically loaded without restart");
+            assert_eq!(profiles[0].name, "mine");
+        }
         other => panic!("{other:?}"),
     }
     env.ctl.send(Command::ReloadAgentProfiles).unwrap();
@@ -878,7 +880,7 @@ async fn profiles_listed_and_reloaded_through_the_controller() {
         Event::AgentProfiles {
             profiles, total, ..
         } => {
-            assert_eq!(total, 8);
+            assert_eq!(total, 3);
             assert!(profiles.iter().any(|p| p.name == "mine" && p.valid));
         }
         other => panic!("{other:?}"),
@@ -948,7 +950,7 @@ async fn a_worktree_launch_outside_git_is_refused_before_any_provider() {
             Reply::tool(
                 "c1",
                 "Agent",
-                json!({"missions": [{"task": "one"}, {"task": "two"}]}),
+                json!({"missions": [{"prompt": "one", "isolation": "worktree"}, {"prompt": "two", "isolation": "worktree"}]}),
             ),
             Reply::tool(
                 "c2",

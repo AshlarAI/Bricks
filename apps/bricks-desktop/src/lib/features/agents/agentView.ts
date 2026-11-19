@@ -86,7 +86,7 @@ function toolAction(name: string, input: unknown): string {
 			return t('agents.delegatingToASubAgent');
 		case 'Messagent':
 			return t('agents.messageToTheTeam');
-		case 'AgentControl':
+		case 'Managent':
 			return t('agents.followingItsSubAgents');
 		default:
 			return formatToolName(name);

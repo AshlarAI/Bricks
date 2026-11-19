@@ -34,9 +34,21 @@ export function Tag({ type }) {
 
 <Version version="Unreleased" date="Not yet released">
 
+### Breaking changes and migration
+
+<Tag type="changed" /> **Sub-agent tools and profiles (`Managent` and `Agent`).**
+- `AgentControl` is renamed to `Managent`, with enriched `list` and `status` output (`description`, `elapsed_ms`, `last_action`, ChangeSet state), `wait` with `mode: "any" | "all"` and `agent_ids`, and `rebase_changes` with optional `verify_cmd`.
+- `AgentProfiles` is removed as a built-in tool. Available profiles are now loaded dynamically and listed directly in the `Agent` tool description.
+- The 7 legacy built-in profiles (`backend_coder`, `frontend_coder`, `inspecteur`, `orchestrateur`, `redactor`, `testeur`, `web_searcher`) are removed and replaced by `general` and `explore`. Unknown profile names are now rejected.
+- Custom Markdown profiles in `.bricks/agents/*.md` and `~/.bricks/agents/*.md` now enforce strict YAML frontmatter validation: rename `reasoning:` to `effort:`, replace `isolation: auto` with `shared` or `worktree`, and remove `background:`, `max_turns`, and `maxTurns` (unknown fields and turn caps now fail explicitly).
+
 <Tag type="changed" /> **Memory cleanup and entry deletion.** Removed legacy memory modules (`claudemd`, `embedding_memory`, `graph`, `manager`, `memdir`) in `bricks-memory`. Long-term memory uses `StructuredMemory` and `ScopedMemory` (`structured` feature), with `memory_search` and `memory_write` tools. Notes are capped at `NOTE_MAX_CHARS` (`280` characters), and individual entries can be deleted with `delete_entry(EntryKind, id)`. Desktop memory uses configured providers (with fallback to `HashingEmbeddings`) and respects `[memory]` in `bricks.toml`, while sub-agents inherit memory tools consistently across spawn and resume.
 
 <Tag type="changed" /> **Tools and error type updates.** `ViewImage` was merged into `Read` (which now reads both text files and images). `Messagent` (`bricks_agent::agents::MessagentTool`) handles team messaging between agents. `CerseiError` was renamed to `BricksError`.
+
+<Tag type="added" /> **OpenCode providers, Settings › Models and Settings › Usage.** I added the OpenCode Go and OpenCode Zen gateways. "Add a provider" offers six one-step templates; I paste a key and Bricks writes the provider with its current models, read from models.dev. Settings › Models is now two columns. Settings › Usage reads `<BRICKS_HOME>/desktop/usage.jsonl`, which records every model response, and shows the totals, the cost, a one-year activity grid and the tokens per model. For OpenCode Go with a key, it also shows the plan limits.
+
+<Tag type="added" /> **OpenCode request headers and gateway billing.** Every request sends `User-Agent: Bricks/<version>`. Requests to `opencode.ai` send `x-opencode-session`, the conversation id, which OpenCode Go requires. `Usage` gains an optional `billing` field with what the gateway charged, so `cost_usd` is the real charge on OpenCode. The JSONL `usage` and `run_usage` events may carry `billing`; the schema version does not change.
 
 <Tag type="added" /> **MCP and provider configuration.** MCP servers can be managed in both the Desktop app and the CLI (`bricks mcp`), configured in `~/.bricks/mcp.toml` and `bricks.toml`. Provider keys are stored in `~/.bricks/providers.toml` (or `$BRICKS_HOME/providers.toml`), and saving the first provider creates the file automatically.
 

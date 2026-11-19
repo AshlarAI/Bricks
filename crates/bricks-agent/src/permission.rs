@@ -378,7 +378,7 @@ impl PermissionEngine {
 impl PermissionPolicy for PermissionEngine {
     async fn check(&self, request: &PermissionRequest) -> PermissionDecision {
         // Resuming an ended sub-agent starts it again: a delegation too.
-        let resume = request.tool_name == "AgentControl"
+        let resume = request.tool_name == "Managent"
             && request.tool_input["action"].as_str() == Some("resume");
         let verdict = self.cell.verdict(
             if resume {

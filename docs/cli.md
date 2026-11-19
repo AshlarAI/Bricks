@@ -68,7 +68,7 @@ A session of the `bricks` command or of Bricks Desktop has these tools:
 * **`CodeSearch`**: added when semantic search is set up (see `docs/semantic.md`).
 * **With skills** (both frontends): `Skill`.
 * **`Ask`**: lets the model ask you a question.
-* **When `[agents] enabled` is true (the default)**: `Agent`, `AgentControl`, `AgentProfiles` and `Messagent`.
+* **When `[agents] enabled` is true (the default)**: `Agent`, `Managent`, and `Messagent`.
 * **With `[memory] enabled = true`**: `memory_search` and `memory_write`.
 * **MCP tools**, named `mcp__server__tool`.
 
@@ -151,12 +151,12 @@ When a run stops at a limit, the history, the partial answer and the tool result
 
 If a provider's `Retry-After` is longer than `[agent] retry_after_max_wait_ms` (`60000` by default), the run does not wait. It fails at once with an error that names the setting. Shorter waits are taken, each shown by a `Retrying in ...` notice.
 
-**Sub-agents** (the tools `Agent`, `AgentControl`, `AgentProfiles` and `Messagent`, active unless `[agents] enabled = false`; see `docs/agents.md`):
+**Sub-agents** (the tools `Agent`, `Managent`, and `Messagent`, active unless `[agents] enabled = false`; see `docs/agents.md`):
 
-* `Agent` takes one mission, or a `missions` list. Each sub-agent runs in the background, and `Agent` returns the ids at once.
+* `Agent` takes one mission (`prompt`), or a `missions` list (up to 16). Each sub-agent runs in the background, and `Agent` returns the ids at once.
 * Starting sub-agents follows the session profile. Under ASK it is refused. Under EXECUTE it runs. Under CUSTOM it runs only when the rule of `Agent` is `allow`. A launched sub-agent asks for nothing, and `deny` rules still hold.
-* Sub-agents get their parent's permissions and at most its tools. They never get the sub-agent tools themselves.
-* `AgentControl` (`wait`, `result`, `resume`, `cancel` and more) follows them. `Messagent` sends messages between agents.
+* Sub-agents get their parent's permissions and at most its tools. When `child_depth >= max_depth` or a profile denies delegation tools, they do not get the sub-agent tools themselves.
+* `Managent` (`list`, `status`, `wait`, `result`, `resume`, `cancel`, and ChangeSet actions) follows them. `Messagent` sends messages between agents.
 * They are cancelled with the parent's run. In headless mode, sub-agents still running after the answer are waited for, at most `[agents] background_drain_ms`, then cancelled. Exit code 6 if any did not complete.
 * Each ends as `completed`, `incomplete`, `cancelled` or `failed`, with its partial answer.
 
@@ -196,7 +196,7 @@ Events (`type`):
 | `edit_applied` | `tool_call_id, tool, files[{path, kind, added, removed, binary?, absolute?, patch?, patch_truncated?}], agent_id?, changeset_id?` | a change was applied to the session's workspace: a successful `Write`, `Edit` or `ApplyPatch` of the session agent, or of a sub-agent working in that workspace (`agent_id`), or a ChangeSet applied (`changeset_id`); never for a denial, a refusal or a failure. Counts are those of the complete diff; one event per change |
 | `memory_recalled` | `items, tokens, omitted, budget` | what went into the system prompt |
 | `context` | `status{context_used{tokens, provenance, …}, context_window, input_limit, totals, …}` | `provenance`: `measured`, `counted`, `mixed`, `estimated` |
-| `usage` | `turn{…}, total{…}` | observed token usage; `cost_usd` absent = unknown, not zero |
+| `usage` | `turn{…}, total{…}` | observed token usage; `cost_usd` absent = unknown, not zero; `billing` (optional) is what a gateway such as OpenCode charged, and then `cost_usd` is that amount |
 | `compaction` | `reason, outcome, compacted` | |
 | `model_changed` | `model, reasoning?, effective_reasoning?, applies` | `next_turn` during a run, `next_run` otherwise |
 | `reasoning_changed` | `model, requested?, previous?, previous_label?, effective?, effective_label?, applies` | answer to `set_reasoning`: the effective profile before and after (ids and configured labels); `requested` absent = the model's default |
@@ -218,7 +218,7 @@ Events (`type`):
 | `agent_profiles` | `profiles[{name, description, scope, source, valid, error?, shadows}], total, page, diagnostics?` | answer to `list_agent_profiles` / `reload_agent_profiles` |
 | `changes_ready` | `changeset{id, agent_id, task, workspace, branch, base_sha, snapshot_id, baseline_tree, final_tree, files[{path, status, from?, added?, removed?, binary}], patch, patch_bytes, state, validations, note?}` | an isolated sub-agent ended with changes; nothing applied |
 | `changes_updated` | `changeset_id, state, files, detail?` | `applied`, `conflict` (nothing written), `discarded` |
-| `run_usage` | `root_run_id, own, descendants, total, final_total, pending_agents` | after a run, then once more when its last background descendant ends (`final_total: true`); each agent counted once |
+| `run_usage` | `root_run_id, own, descendants, total, final_total, pending_agents` | after a run, then once more when its last background descendant ends (`final_total: true`); each agent counted once; the usage objects may carry `billing`, as in `usage` |
 | `agent_control_result` | `action, ok, text` | answer to `agent_control` |
 | `job_started` / `job_output` / `job_finished` | `job_id, agent_id, root_run_id, command, cwd, pid` / `job_id, stdout_bytes, stderr_bytes` / `job_id, state, code?, signal?, duration_ms, logs` | background commands; `job_output` carries counts, never the output |
 | `skill_activated` | `agent_id?, name, source, revision, origin` | a skill's instructions are in an agent's context; `origin`: `user`, `model`, `profile`, `restored`; `agent_id` absent for the session agent |

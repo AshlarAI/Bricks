@@ -369,7 +369,7 @@ async fn the_previous_sessions_jobs_end_with_the_resume() {
 }
 
 #[tokio::test]
-async fn messagent_is_announced_and_agentcontrol_no_longer_sends() {
+async fn messagent_is_announced_and_managent_no_longer_sends() {
     let w = World::new(vec![
         Reply::tool(
             "send",
@@ -378,7 +378,7 @@ async fn messagent_is_announced_and_agentcontrol_no_longer_sends() {
         ),
         Reply::tool(
             "old",
-            "AgentControl",
+            "Managent",
             json!({"action": "message", "agent_id": "sub_9999"}),
         ),
         Reply::text("done"),
@@ -406,7 +406,7 @@ async fn messagent_is_announced_and_agentcontrol_no_longer_sends() {
         .1
         .tools
         .iter()
-        .find(|t| t.name == "AgentControl")
+        .find(|t| t.name == "Managent")
         .unwrap();
     assert!(
         !control.input_schema["properties"]["action"]["enum"]

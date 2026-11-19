@@ -39,7 +39,7 @@ struct Shared {
     /// The parent's replies, in order (see `with_ids` for placeholders).
     queue: parking_lot::Mutex<VecDeque<Reply>>,
     /// Whether the parent and the children wait for the sub-agents they
-    /// were given, one `AgentControl wait` at a time (see `common::follow`).
+    /// were given, one `Managent wait` at a time (see `common::follow`).
     auto_wait: AtomicBool,
     waited: Waited,
 }
@@ -523,9 +523,9 @@ async fn agents_run_children_at_the_same_time_and_answer_in_order() {
                 "c1",
                 "Agent",
                 json!({ "missions": [
-                    { "task": "T0 [barrier]", "profile": "inspecteur" },
-                    { "task": "T1 [barrier]", "profile": "web_searcher" },
-                    { "task": "T2 [barrier]", "profile": "testeur" }
+                    { "task": "T0 [barrier]", "profile": "general", "isolation": "worktree" },
+                    { "task": "T1 [barrier]", "profile": "explore", "isolation": "worktree" },
+                    { "task": "T2 [barrier]", "profile": "general", "isolation": "worktree" }
                 ]}),
             ),
             Reply::text("synthesis"),
@@ -597,7 +597,7 @@ async fn agents_run_children_at_the_same_time_and_answer_in_order() {
     // just before `run_finished`.
     let parent_requests = 2 + evs
         .iter()
-        .filter(|e| matches!(&e.event, Event::ToolFinished { name, .. } if name == "AgentControl"))
+        .filter(|e| matches!(&e.event, Event::ToolFinished { name, .. } if name == "Managent"))
         .count() as u64;
     let n = evs.len();
     assert!(matches!(evs[n - 2].event, Event::RunUsage { .. }));
@@ -732,8 +732,15 @@ async fn the_depth_limit_refuses_before_any_provider() {
     });
     assert_eq!(child_tool, Some(true));
     let reqs = env.shared.child_requests.lock().clone();
+    let child_tool_names: Vec<&str> = reqs[0].tools.iter().map(|t| t.name.as_str()).collect();
+    assert!(
+        !child_tool_names.contains(&"Agent")
+            && !child_tool_names.contains(&"Managent")
+            && !child_tool_names.contains(&"Messagent"),
+        "max-depth child must not see delegation tools in its schema: {child_tool_names:?}"
+    );
     let fed = serde_json::to_string(&reqs.last().unwrap().messages).unwrap();
-    assert!(fed.contains("AgentDepthExceeded"), "{fed}");
+    assert!(!fed.is_empty(), "{fed}");
 }
 
 /// A failed mission leaves its siblings running: they are not cancelled. The
@@ -857,8 +864,8 @@ async fn every_path_lets_a_child_go_on_until_its_answer() {
                 "c1",
                 "Agent",
                 json!({ "missions": [
-                    { "task": "first [loop:105]" },
-                    { "task": "second [spawn-child:grandchild {loop|40}]" }
+                    { "task": "first [loop:105]", "isolation": "worktree" },
+                    { "task": "second [spawn-child:grandchild {loop|40}]", "isolation": "worktree" }
                 ]}),
             ),
             Reply::text("all done"),
@@ -973,7 +980,7 @@ async fn agent_control_waits_reads_and_cancels_in_scope() {
             Reply::tool("c1", "Agent", json!({ "task": "bg [hold]" })),
             Reply::text("started"),
         ],
-        allow(&["Agent", "AgentControl"]),
+        allow(&["Agent", "Managent"]),
         true,
         |_| {},
     )
@@ -1091,8 +1098,8 @@ async fn parallel_writers_get_worktrees_and_changesets_without_last_writer_wins(
                 "c1",
                 "Agent",
                 json!({ "missions": [
-                    { "task": "edit A [bash:echo by A > shared.txt]" },
-                    { "task": "edit B [bash:echo by B > shared.txt]" }
+                    { "task": "edit A [bash:echo by A > shared.txt]", "isolation": "worktree" },
+                    { "task": "edit B [bash:echo by B > shared.txt]", "isolation": "worktree" }
                 ]}),
             ),
             Reply::text("done"),
@@ -1250,7 +1257,7 @@ async fn profile_skills_are_preloaded_whole_before_the_childs_first_call() {
         ],
         allow(&["Agent", "Bash"]),
         true,
-        |_| {},
+        |b| b.agents.max_depth = 2,
         with_skills(true),
     )
     .await;
@@ -1646,13 +1653,13 @@ async fn shared_children_report_their_writes_and_isolated_ones_only_when_applied
                 "c3",
                 "Agent",
                 json!({ "missions": [
-                    { "task": "iso one [write:same.txt=one]" },
-                    { "task": "iso two [write:same.txt=two]" }
+                    { "task": "iso one [write:same.txt=one]", "isolation": "worktree" },
+                    { "task": "iso two [write:same.txt=two]", "isolation": "worktree" }
                 ]}),
             ),
             Reply::text("done"),
         ],
-        allow(&["Agent", "Write", "AgentControl"]),
+        allow(&["Agent", "Write", "Managent"]),
         true,
         |_| {},
     )
@@ -1772,7 +1779,7 @@ async fn a_changeset_applied_by_the_agent_counts_once_too() {
             ),
             Reply::text("ready"),
         ],
-        allow(&["Agent", "Write", "AgentControl"]),
+        allow(&["Agent", "Write", "Managent"]),
         true,
         |_| {},
     )
@@ -1786,16 +1793,16 @@ async fn a_changeset_applied_by_the_agent_counts_once_too() {
         })
         .unwrap();
     assert!(edits(&evs).is_empty());
-    // The session agent applies it with AgentControl.
+    // The session agent applies it with Managent.
     env.shared.push_parent(vec![
         Reply::tool(
             "a1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "apply_changes", "changeset_id": cs.id }),
         ),
         Reply::tool(
             "a2",
-            "AgentControl",
+            "Managent",
             json!({ "action": "apply_changes", "changeset_id": cs.id }),
         ),
         Reply::text("applied"),
@@ -2163,7 +2170,7 @@ async fn a_resumed_agent_continues_its_stored_conversation() {
             Reply::tool("c1", "Agent", json!({ "task": "first step [glob]" })),
             Reply::text("first answered"),
         ],
-        allow(&["Agent", "AgentControl", "Glob"]),
+        allow(&["Agent", "Managent", "Glob"]),
         true,
         |_| {},
     )
@@ -2173,12 +2180,12 @@ async fn a_resumed_agent_continues_its_stored_conversation() {
     env.shared.push_parent(vec![
         Reply::tool(
             "r1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "resume", "agent_id": id, "prompt": "second step" }),
         ),
         Reply::tool(
             "w1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "wait", "agent_id": id }),
         ),
         Reply::text("resumed and answered"),
@@ -2216,7 +2223,7 @@ async fn a_resume_works_after_a_restart() {
             Reply::tool("c1", "Agent", json!({ "task": "kept [glob]" })),
             Reply::text("first answered"),
         ],
-        allow(&["Agent", "AgentControl", "Glob"]),
+        allow(&["Agent", "Managent", "Glob"]),
         true,
         |_| {},
     )
@@ -2227,12 +2234,12 @@ async fn a_resume_works_after_a_restart() {
     env.shared.push_parent(vec![
         Reply::tool(
             "r1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "resume", "agent_id": id, "prompt": "after restart" }),
         ),
         Reply::tool(
             "w1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "wait", "agent_id": id }),
         ),
         Reply::text("resumed"),
@@ -2255,7 +2262,7 @@ async fn a_resume_without_a_launch_record_is_refused() {
             Reply::tool("c1", "Agent", json!({ "task": "old one" })),
             Reply::text("first answered"),
         ],
-        allow(&["Agent", "AgentControl"]),
+        allow(&["Agent", "Managent"]),
         true,
         |_| {},
     )
@@ -2276,7 +2283,7 @@ async fn a_resume_without_a_launch_record_is_refused() {
     env.shared.push_parent(vec![
         Reply::tool(
             "r1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "resume", "agent_id": id, "prompt": "again" }),
         ),
         Reply::text("refused"),
@@ -2304,7 +2311,7 @@ async fn a_resume_after_a_profile_change_is_refused() {
             ),
             Reply::text("done"),
         ],
-        allow(&["Agent", "AgentControl"]),
+        allow(&["Agent", "Managent"]),
         true,
         |_| {},
     )
@@ -2336,7 +2343,7 @@ async fn a_resume_after_a_profile_change_is_refused() {
     env.shared.push_parent(vec![
         Reply::tool(
             "r1",
-            "AgentControl",
+            "Managent",
             json!({ "action": "resume", "agent_id": id, "prompt": "again" }),
         ),
         Reply::text("refused"),
@@ -2356,18 +2363,18 @@ async fn two_resumes_at_once_start_one_execution() {
             Reply::tools(vec![
                 (
                     "r1",
-                    "AgentControl",
+                    "Managent",
                     json!({ "action": "resume", "agent_id": "$ID0", "prompt": "again" }),
                 ),
                 (
                     "r2",
-                    "AgentControl",
+                    "Managent",
                     json!({ "action": "resume", "agent_id": "$ID0", "prompt": "again" }),
                 ),
             ]),
             Reply::text("both asked"),
         ],
-        allow(&["Agent", "AgentControl", "Glob"]),
+        allow(&["Agent", "Managent", "Glob"]),
         true,
         |_| {},
     )
@@ -2407,12 +2414,12 @@ async fn a_resume_of_a_running_agent_is_refused() {
             Reply::tool("c1", "Agent", json!({ "task": "long [hold]" })),
             Reply::tool(
                 "r1",
-                "AgentControl",
+                "Managent",
                 json!({ "action": "resume", "agent_id": "$ID0", "prompt": "again" }),
             ),
             Reply::text("ok"),
         ],
-        allow(&["Agent", "AgentControl"]),
+        allow(&["Agent", "Managent"]),
         true,
         |_| {},
     )
@@ -2444,18 +2451,18 @@ async fn a_resume_waits_for_a_slot_like_a_launch() {
             Reply::tool("c1", "Agent", json!({ "task": "a1 [glob]" })),
             Reply::tool(
                 "w1",
-                "AgentControl",
+                "Managent",
                 json!({ "action": "wait", "agent_id": "$ID0" }),
             ),
             Reply::tool("h1", "Agent", json!({ "task": "b1 [hold]" })),
             Reply::tool(
                 "r1",
-                "AgentControl",
+                "Managent",
                 json!({ "action": "resume", "agent_id": "$ID0", "prompt": "again" }),
             ),
             Reply::text("parent done"),
         ],
-        allow(&["Agent", "AgentControl", "Glob"]),
+        allow(&["Agent", "Managent", "Glob"]),
         true,
         |b| b.agents.max_concurrent = 1,
     )
@@ -2697,4 +2704,347 @@ async fn an_expired_admission_releases_its_reservation() {
     let evs = submit(&mut env, "again").await;
     assert_eq!(results(&evs).len(), 1);
     assert_eq!(results(&evs)[0].status, "completed");
+}
+
+#[tokio::test]
+async fn explore_profile_allows_bash_and_denies_write_edit_and_delegation() {
+    let mut env = open(
+        vec![
+            Reply::tool(
+                "c1",
+                "Agent",
+                json!({
+                    "prompt": "inspect [bash:echo explore-ok]",
+                    "profile": "explore",
+                    "description": "Explore repo safely"
+                }),
+            ),
+            Reply::text("ok"),
+        ],
+        allow(&["Agent", "Bash", "Write", "Edit", "Managent"]),
+        true,
+        // Even when depth < max_depth, `explore`'s tool policy must exclude delegation tools.
+        |b| b.agents.max_depth = 2,
+    )
+    .await;
+    let evs = submit(&mut env, "go").await;
+    let id = spawned(&evs)[0].agent_id.clone();
+
+    let reqs = env.shared.child_requests.lock().clone();
+    assert!(!reqs.is_empty());
+    let names: Vec<&str> = reqs[0].tools.iter().map(|t| t.name.as_str()).collect();
+    assert!(
+        names.contains(&"Bash"),
+        "explore must allow Bash: {names:?}"
+    );
+    assert!(
+        names.contains(&"Read"),
+        "explore must allow Read: {names:?}"
+    );
+    for denied in [
+        "Write",
+        "Edit",
+        "ApplyPatch",
+        "Agent",
+        "Managent",
+        "Messagent",
+        "memory_write",
+    ] {
+        assert!(
+            !names.contains(&denied),
+            "explore must deny `{denied}`: {names:?}"
+        );
+    }
+
+    // Verify Bash actually executed and `last_action` + `description` show up in `Managent list`.
+    let rs = results(&evs);
+    assert_eq!(rs[0].status, "completed");
+    assert_eq!(rs[0].commands.len(), 1);
+    assert!(!rs[0].commands[0].is_error);
+
+    env.shared.push_parent(vec![
+        Reply::tool("l1", "Managent", json!({ "action": "list" })),
+        Reply::text("listed"),
+    ]);
+    let list_evs = submit(&mut env, "list").await;
+    let (err, list_out) = tool_out(&list_evs, "l1");
+    assert!(!err, "{list_out}");
+    assert!(list_out.contains(&id), "{list_out}");
+    assert!(list_out.contains("Explore repo safely"), "{list_out}");
+    assert!(list_out.contains("explore"), "{list_out}");
+    assert!(list_out.contains("last_action: Bash..."), "{list_out}");
+}
+
+#[tokio::test]
+async fn fork_true_clones_parent_history_without_orphan_tool_use() {
+    let mut env = open(
+        vec![
+            Reply::tool("p_glob", "Glob", json!({ "pattern": "*.txt" })),
+            Reply::tool(
+                "c1",
+                "Agent",
+                json!({
+                    "prompt": "Continue with forked context",
+                    "description": "Forked analysis",
+                    "fork": true
+                }),
+            ),
+            Reply::text("parent done"),
+        ],
+        allow(&["Agent", "Glob"]),
+        true,
+        |_| {},
+    )
+    .await;
+    let evs = submit(&mut env, "initial parent question").await;
+    assert_eq!(results(&evs).len(), 1);
+    assert_eq!(results(&evs)[0].status, "completed");
+
+    let reqs = env.shared.child_requests.lock().clone();
+    assert_eq!(reqs.len(), 1);
+    let child_msgs = &reqs[0].messages;
+    let serialized = serde_json::to_string(child_msgs).unwrap();
+    assert!(
+        serialized.contains("initial parent question"),
+        "forked child must see earlier user prompt: {serialized}"
+    );
+    assert!(
+        serialized.contains("p_glob"),
+        "forked child must see prior completed tool call: {serialized}"
+    );
+    assert!(
+        serialized.contains("Continue with forked context"),
+        "forked child must see its own mission prompt: {serialized}"
+    );
+    assert!(
+        !serialized.contains("\"c1\""),
+        "forked child must NOT contain the in-flight Agent ToolUse: {serialized}"
+    );
+    assert!(
+        bricks_agent::compact::find_unanswered_tool_uses(child_msgs).is_empty(),
+        "forked history must have zero unanswered ToolUse blocks"
+    );
+    assert!(
+        bricks_agent::compact::find_orphaned_tool_results(child_msgs).is_empty(),
+        "forked history must have zero orphaned ToolResult blocks"
+    );
+}
+
+#[tokio::test]
+async fn managent_wait_supports_any_and_all_modes() {
+    let mut env = open(
+        vec![
+            Reply::tool(
+                "c1",
+                "Agent",
+                json!({
+                    "missions": [
+                        { "prompt": "slow [hold]", "description": "Slow worker" },
+                        { "prompt": "fast", "description": "Fast worker" }
+                    ]
+                }),
+            ),
+            Reply::tool(
+                "w_any",
+                "Managent",
+                json!({ "action": "wait", "mode": "any", "agent_ids": ["$ID0", "$ID1"], "timeout_ms": 5000 }),
+            ),
+            Reply::text("got any"),
+        ],
+        allow(&["Agent", "Managent"]),
+        true,
+        |_| {},
+    )
+    .await;
+    env.shared.auto_wait.store(false, Ordering::SeqCst);
+    let mut evs = submit(&mut env, "go").await;
+    let sp = spawned(&evs);
+    let (slow_id, fast_id) = (sp[0].agent_id.clone(), sp[1].agent_id.clone());
+
+    let (err, any_out) = tool_out(&evs, "w_any");
+    assert!(!err, "{any_out}");
+    assert!(any_out.contains("mode: any"), "{any_out}");
+    assert!(any_out.contains(&fast_id), "{any_out}");
+    assert!(any_out.contains(&slow_id), "{any_out}");
+    assert!(any_out.contains("Finished (1):"), "{any_out}");
+    assert!(any_out.contains("Pending (1):"), "{any_out}");
+
+    // Now test `mode: "all"` while releasing `slow_id` shortly after.
+    env.shared.push_parent(vec![
+        Reply::tool(
+            "w_all",
+            "Managent",
+            json!({ "action": "wait", "mode": "all", "agent_ids": [slow_id.clone(), fast_id.clone()], "timeout_ms": 10000 }),
+        ),
+        Reply::text("all done"),
+    ]);
+    let shared_rel = Arc::clone(&env.shared);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        shared_rel.release();
+    });
+    evs.extend(submit(&mut env, "wait all").await);
+    let (err, all_out) = tool_out(&evs, "w_all");
+    assert!(!err, "{all_out}");
+    assert!(all_out.contains("mode: all"), "{all_out}");
+    assert!(all_out.contains("Finished (2):"), "{all_out}");
+    assert!(!all_out.contains("Pending ("), "{all_out}");
+    assert!(
+        all_out.contains(&slow_id) && all_out.contains(&fast_id),
+        "{all_out}"
+    );
+}
+
+#[tokio::test]
+async fn managent_rebase_changes_handles_clean_rebase_conflict_and_verify_failure() {
+    let mut env = open(
+        vec![
+            Reply::tool(
+                "c1",
+                "Agent",
+                json!({
+                    "prompt": "edit lines [write:lines.txt=l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8-agent]",
+                    "isolation": "worktree"
+                }),
+            ),
+            Reply::tool(
+                "c2",
+                "Agent",
+                json!({
+                    "prompt": "conflict edit [write:shared.txt=by-agent]",
+                    "isolation": "worktree"
+                }),
+            ),
+            Reply::text("workers finished"),
+        ],
+        allow(&["Agent", "Write", "Managent"]),
+        true,
+        |_| {},
+    )
+    .await;
+    // Seed a multi-line file so HEAD and the agent can edit non-overlapping regions.
+    std::fs::write(
+        env.dir.path().join("lines.txt"),
+        "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\n",
+    )
+    .unwrap();
+    let git_commit = |dir: &Path, msg: &str| {
+        for args in [&["add", "."][..], &["commit", "-q", "-m", msg][..]] {
+            let o = std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "git {args:?}");
+        }
+    };
+    git_commit(env.dir.path(), "seed lines");
+
+    let evs = submit(&mut env, "spawn").await;
+    let ready: Vec<_> = evs
+        .iter()
+        .filter_map(|e| match &e.event {
+            Event::ChangesReady { changeset } => Some((**changeset).clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ready.len(), 2);
+    let cs_lines = ready
+        .iter()
+        .find(|c| c.files.iter().any(|f| f.path == "lines.txt"))
+        .unwrap()
+        .clone();
+    let cs_conflict = ready
+        .iter()
+        .find(|c| c.files.iter().any(|f| f.path == "shared.txt"))
+        .unwrap()
+        .clone();
+
+    // Advance HEAD on top of lines.txt (non-overlapping) and on shared.txt (conflicting).
+    std::fs::write(
+        env.dir.path().join("lines.txt"),
+        "l1-head\nl2\nl3\nl4\nl5\nl6\nl7\nl8\n",
+    )
+    .unwrap();
+    std::fs::write(env.dir.path().join("shared.txt"), "by-head\n").unwrap();
+    git_commit(env.dir.path(), "head moved");
+
+    env.shared.push_parent(vec![
+        Reply::tool(
+            "rb_fail",
+            "Managent",
+            json!({ "action": "rebase_changes", "changeset_id": cs_lines.id, "verify_cmd": "echo check-failed && exit 2" }),
+        ),
+        Reply::tool(
+            "rb_ok",
+            "Managent",
+            json!({ "action": "rebase_changes", "changeset_id": cs_lines.id, "verify_cmd": "true" }),
+        ),
+        Reply::tool(
+            "rb_conflict",
+            "Managent",
+            json!({ "action": "rebase_changes", "changeset_id": cs_conflict.id }),
+        ),
+        Reply::text("rebased"),
+    ]);
+    let rb_evs = submit(&mut env, "rebase").await;
+
+    let (fail_err, fail_out) = tool_out(&rb_evs, "rb_fail");
+    assert!(fail_err, "{fail_out}");
+    assert!(
+        fail_out.contains("exit code 2") && fail_out.contains("check-failed"),
+        "{fail_out}"
+    );
+
+    let (ok_err, ok_out) = tool_out(&rb_evs, "rb_ok");
+    assert!(!ok_err, "{ok_out}");
+    assert!(
+        ok_out.contains("rebased cleanly")
+            && ok_out.contains(&format!("rebased_from {}", cs_lines.id)),
+        "{ok_out}"
+    );
+    let rt = env.ctl.agent_runtime().unwrap();
+    let rebased_cs = rt
+        .workspaces
+        .changesets()
+        .into_iter()
+        .find(|c| c.rebased_from.as_deref() == Some(cs_lines.id.as_str()))
+        .expect("new rebased ChangeSet registered");
+    assert_eq!(
+        rebased_cs.state,
+        bricks_agent::agents::ChangeSetState::Ready
+    );
+
+    let (conf_err, conf_out) = tool_out(&rb_evs, "rb_conflict");
+    assert!(conf_err, "{conf_out}");
+    assert!(
+        conf_out.contains("Rebase conflict") && conf_out.contains("shared.txt"),
+        "{conf_out}"
+    );
+    assert_eq!(
+        rt.workspaces.changeset(&cs_conflict.id).unwrap().state,
+        bricks_agent::agents::ChangeSetState::Conflict
+    );
+
+    // The rebased ChangeSet applies cleanly to the moved HEAD.
+    env.shared.push_parent(vec![
+        Reply::tool(
+            "ap",
+            "Managent",
+            json!({ "action": "apply_changes", "changeset_id": rebased_cs.id }),
+        ),
+        Reply::text("applied"),
+    ]);
+    let ap_evs = submit(&mut env, "apply rebased").await;
+    let (ap_err, ap_out) = tool_out(&ap_evs, "ap");
+    assert!(!ap_err, "{ap_out}");
+    let final_lines = std::fs::read_to_string(env.dir.path().join("lines.txt")).unwrap();
+    assert!(
+        final_lines.contains("l1-head") && final_lines.contains("l8-agent"),
+        "{final_lines}"
+    );
 }

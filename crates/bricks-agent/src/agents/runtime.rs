@@ -341,6 +341,15 @@ pub struct InstanceRecord {
     pub background: bool,
     /// Durable metadata: milliseconds since the Unix epoch.
     pub updated_at_ms: u64,
+    /// When the current execution started (milliseconds since the Unix epoch).
+    #[serde(default)]
+    pub started_at_ms: u64,
+    /// Short label for the agent's task, mirrored from `info.description`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Most recent action recorded for this agent (tool or lifecycle step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_action: Option<String>,
     /// The current execution of this identity: 1 at launch, one more for
     /// each resume. Events, results and waits belong to one execution.
     #[serde(default = "first_execution")]
@@ -354,6 +363,31 @@ pub struct InstanceRecord {
     /// must be asked for explicitly.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stopped: bool,
+}
+
+impl InstanceRecord {
+    /// Short label for the task (`description` or `info.description`).
+    pub fn description(&self) -> Option<&str> {
+        self.description
+            .as_deref()
+            .or(self.info.description.as_deref())
+    }
+
+    /// Elapsed milliseconds for the current execution (`result.duration_ms`
+    /// when finished, otherwise wall-clock time since `started_at_ms`).
+    pub fn elapsed_ms(&self) -> u64 {
+        if let Some(res) = &self.result {
+            return res.duration_ms;
+        }
+        if self.started_at_ms > 0 {
+            now_ms().saturating_sub(self.started_at_ms)
+        } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&self.info.created_at) {
+            let start = dt.timestamp_millis().max(0) as u64;
+            now_ms().saturating_sub(start)
+        } else {
+            0
+        }
+    }
 }
 
 fn first_execution() -> u32 {
@@ -416,6 +450,59 @@ pub enum WaitOutcome {
     Ended(String),
     TimedOut,
     Cancelled,
+}
+
+/// Multi-agent wait mode for [`AgentRuntime::wait_many`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitMode {
+    /// Return as soon as a delivery arrives or at least one target finishes.
+    #[default]
+    Any,
+    /// Wait until all targeted (or active visible) agents finish.
+    All,
+}
+
+/// Terminal condition of a [`AgentRuntime::wait_many`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitStatus {
+    Ready,
+    TimedOut,
+    Cancelled,
+}
+
+/// Snapshot of one agent returned in [`WaitManyOutcome`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WaitAgentStatus {
+    pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub profile: String,
+    pub state: InstanceState,
+    pub elapsed_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changeset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changeset_state: Option<super::workspace::ChangeSetState>,
+}
+
+/// Rich outcome returned by [`AgentRuntime::wait_many`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WaitManyOutcome {
+    pub mode: WaitMode,
+    pub status: WaitStatus,
+    pub delivered: usize,
+    pub finished: Vec<WaitAgentStatus>,
+    pub pending: Vec<WaitAgentStatus>,
 }
 
 /// Usage of one root run: the session agent's own, and its descendants'
@@ -572,6 +659,9 @@ impl AgentRuntime {
             }
         }
         for r in records.iter_mut() {
+            if r.description.is_none() && r.info.description.is_some() {
+                r.description = r.info.description.clone();
+            }
             if !r.state.is_terminal() {
                 r.state = InstanceState::Interrupted;
                 r.reason = Some("the process that ran it ended before it finished".into());
@@ -658,6 +748,149 @@ impl AgentRuntime {
         }
     }
 
+    fn is_record_finished(r: &InstanceRecord) -> bool {
+        r.state.is_terminal() && (r.result.is_some() || r.state == InstanceState::Interrupted)
+    }
+
+    fn wait_agent_status(&self, r: &InstanceRecord) -> WaitAgentStatus {
+        let cs = self.workspaces.changeset_of(&r.info.agent_id).or_else(|| {
+            r.result
+                .as_ref()
+                .and_then(|res| res.changeset.as_deref())
+                .and_then(|id| self.workspaces.changeset(id))
+        });
+        WaitAgentStatus {
+            agent_id: r.info.agent_id.clone(),
+            description: r.description().map(str::to_string),
+            profile: r.info.profile.clone(),
+            state: r.state,
+            elapsed_ms: r.elapsed_ms(),
+            last_action: r.last_action.clone(),
+            status: r.result.as_ref().map(|res| res.status.clone()),
+            error: r.result.as_ref().and_then(|res| res.error.clone()),
+            summary: r.result.as_ref().map(|res| res.summary.clone()),
+            changeset: cs
+                .as_ref()
+                .map(|c| c.id.clone())
+                .or_else(|| r.result.as_ref().and_then(|res| res.changeset.clone())),
+            changeset_state: cs.map(|c| c.state),
+        }
+    }
+
+    fn build_wait_many_outcome(
+        &self,
+        mode: WaitMode,
+        status: WaitStatus,
+        delivered: usize,
+        targets: &[String],
+    ) -> WaitManyOutcome {
+        let mut finished = Vec::new();
+        let mut pending = Vec::new();
+        for id in targets {
+            if let Some(r) = self.record(id) {
+                let summary = self.wait_agent_status(&r);
+                if Self::is_record_finished(&r) {
+                    finished.push(summary);
+                } else {
+                    pending.push(summary);
+                }
+            }
+        }
+        WaitManyOutcome {
+            mode,
+            status,
+            delivered,
+            finished,
+            pending,
+        }
+    }
+
+    /// Multi-agent wait supporting [`WaitMode::Any`] (first delivery or finished
+    /// target) and [`WaitMode::All`] (all targeted or active visible agents
+    /// finish), returning rich completion details.
+    pub async fn wait_many(
+        &self,
+        viewer: &str,
+        ids: &[String],
+        mode: WaitMode,
+        timeout: Duration,
+        cancel: &CancellationToken,
+    ) -> WaitManyOutcome {
+        let viewer_scope = (viewer != super::messagent::MAIN).then_some(viewer);
+        let mut targets: Vec<String> = Vec::new();
+        if !ids.is_empty() {
+            for id in ids {
+                if !targets.contains(id) {
+                    targets.push(id.clone());
+                }
+            }
+        } else {
+            for r in self.records() {
+                if self.visible_to(&r.info.agent_id, viewer_scope) && !Self::is_record_finished(&r)
+                {
+                    targets.push(r.info.agent_id);
+                }
+            }
+        }
+
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut rx = self.wake.subscribe();
+        loop {
+            if ids.is_empty() && mode == WaitMode::Any {
+                for r in self.records() {
+                    if self.visible_to(&r.info.agent_id, viewer_scope)
+                        && !Self::is_record_finished(&r)
+                        && !targets.contains(&r.info.agent_id)
+                    {
+                        targets.push(r.info.agent_id);
+                    }
+                }
+            }
+            let delivered = self.waiting_for(viewer);
+            let ready = match mode {
+                WaitMode::Any => {
+                    delivered > 0
+                        || targets.iter().any(|id| {
+                            self.record(id)
+                                .is_some_and(|r| Self::is_record_finished(&r))
+                        })
+                }
+                WaitMode::All => targets
+                    .iter()
+                    .all(|id| self.record(id).is_none_or(|r| Self::is_record_finished(&r))),
+            };
+            if ready {
+                return self.build_wait_many_outcome(mode, WaitStatus::Ready, delivered, &targets);
+            }
+            tokio::select! {
+                changed = rx.changed() => if changed.is_err() {
+                    return self.build_wait_many_outcome(
+                        mode,
+                        WaitStatus::Cancelled,
+                        self.waiting_for(viewer),
+                        &targets,
+                    );
+                },
+                _ = tokio::time::sleep_until(deadline) => {
+                    return self.build_wait_many_outcome(
+                        mode,
+                        WaitStatus::TimedOut,
+                        self.waiting_for(viewer),
+                        &targets,
+                    );
+                },
+                _ = cancel.cancelled() => {
+                    return self.build_wait_many_outcome(
+                        mode,
+                        WaitStatus::Cancelled,
+                        self.waiting_for(viewer),
+                        &targets,
+                    );
+                },
+            }
+        }
+    }
+
     fn save(&self) {
         let Some(path) = &self.manifest else { return };
         if let Some(dir) = path.parent() {
@@ -674,6 +907,8 @@ impl AgentRuntime {
 
     pub fn register(&self, info: SpawnInfo, background: bool, cancel: CancellationToken) {
         let (done_tx, done) = tokio::sync::watch::channel(false);
+        let now = now_ms();
+        let description = info.description.clone();
         self.live.lock().insert(
             info.agent_id.clone(),
             Live {
@@ -690,7 +925,10 @@ impl AgentRuntime {
             reason: None,
             result: None,
             background,
-            updated_at_ms: now_ms(),
+            updated_at_ms: now,
+            started_at_ms: now,
+            description,
+            last_action: None,
             execution: 1,
             launch: None,
             stopped: false,
@@ -705,6 +943,9 @@ impl AgentRuntime {
             let mut recs = self.records.lock();
             if let Some(r) = recs.iter_mut().find(|r| r.info.agent_id == info.agent_id) {
                 r.info = info.clone();
+                if info.description.is_some() {
+                    r.description = info.description.clone();
+                }
                 if launch.is_some() {
                     r.launch = launch;
                 }
@@ -712,6 +953,79 @@ impl AgentRuntime {
             }
         }
         self.save();
+    }
+
+    /// Record the most recent action performed by `agent_id` (for `list`/`status`).
+    pub fn record_last_action(&self, agent_id: &str, action: String) {
+        let mut recs = self.records.lock();
+        if let Some(r) = recs.iter_mut().find(|r| r.info.agent_id == agent_id) {
+            r.last_action = Some(action);
+            r.updated_at_ms = now_ms();
+        }
+    }
+
+    /// Elapsed milliseconds for `agent_id`'s current execution.
+    pub fn elapsed_ms(&self, agent_id: &str) -> Option<u64> {
+        self.record(agent_id).map(|r| r.elapsed_ms())
+    }
+
+    /// Rebase a [`ChangeSet`] onto current `HEAD`, optionally verifying with
+    /// `verify_cmd` inside a temporary worktree. Registers the new `Ready`
+    /// `ChangeSet` when rebased, or marks the original `ChangeSet` as `Conflict`
+    /// when conflicted.
+    pub async fn rebase_changeset(
+        &self,
+        changeset_id: &str,
+        verify_cmd: Option<&str>,
+    ) -> Result<super::workspace::RebaseOutcome, super::workspace::WsError> {
+        use super::workspace::{ChangeSetState, RebaseOutcome, WsError};
+        let cs = self
+            .workspaces
+            .changeset(changeset_id)
+            .ok_or_else(|| WsError::NotFound(changeset_id.into()))?;
+        if cs.state != ChangeSetState::Ready && cs.state != ChangeSetState::Conflict {
+            return Err(WsError::Unsupported(
+                format!("ChangeSet {changeset_id} is {:?}", cs.state).to_lowercase(),
+            ));
+        }
+        let repo_root = self
+            .workspaces
+            .repo_root_for(&cs)
+            .or_else(|| {
+                self.record(&cs.agent_id)
+                    .map(|r| PathBuf::from(r.info.workspace))
+            })
+            .filter(|p| p.exists())
+            .ok_or_else(|| {
+                WsError::NotFound(format!(
+                    "cannot determine repository root for ChangeSet {changeset_id}"
+                ))
+            })?;
+
+        let outcome = super::workspace::rebase_changeset(&cs, &repo_root, verify_cmd).await?;
+        match &outcome {
+            RebaseOutcome::Rebased(new_cs) => {
+                self.workspaces.register_changeset(new_cs.clone());
+                self.emit(AgentEvent::SubAgent(SubAgentEvent::ChangesReady(Box::new(
+                    new_cs.clone(),
+                ))));
+            }
+            RebaseOutcome::Conflict { files, message } => {
+                self.workspaces.set_changeset_state(
+                    &cs.id,
+                    ChangeSetState::Conflict,
+                    Some(message.clone()),
+                );
+                self.emit(AgentEvent::SubAgent(SubAgentEvent::ChangesUpdated {
+                    changeset_id: cs.id.clone(),
+                    state: ChangeSetState::Conflict,
+                    files: files.clone(),
+                    detail: Some(message.clone()),
+                }));
+            }
+            RebaseOutcome::VerifyFailed { .. } => {}
+        }
+        Ok(outcome)
     }
 
     /// The current execution of an identity.
@@ -769,12 +1083,15 @@ impl AgentRuntime {
             if live.get(id).is_some_and(|l| !*l.done.borrow()) {
                 return Err(ResumeRefusal::Busy);
             }
+            let now = now_ms();
             r.execution += 1;
             r.state = InstanceState::Queued;
             r.reason = None;
             r.result = None;
             r.stopped = false;
-            r.updated_at_ms = now_ms();
+            r.last_action = None;
+            r.started_at_ms = now;
+            r.updated_at_ms = now;
             live.insert(
                 id.to_string(),
                 Live {
@@ -848,7 +1165,7 @@ impl AgentRuntime {
     }
 
     /// The end of a sub-agent, delivered once to the agent that launched
-    /// it (its report, shortened to fit one delivery; `AgentControl result`
+    /// it (its report, shortened to fit one delivery; `Managent result`
     /// gives it whole).
     fn notify_parent(&self, id: &str) {
         let Some(r) = self.record(id) else { return };
@@ -869,7 +1186,7 @@ impl AgentRuntime {
                 cut -= 1;
             }
             format!(
-                "{}\n[report shortened here; AgentControl result {id} gives it whole]",
+                "{}\n[report shortened here; Managent result {id} gives it whole]",
                 &report[..cut]
             )
         } else {
@@ -2286,6 +2603,178 @@ mod tests {
             lines[2], "- sub_0001 · Agent p · running · worktree /wt/sub_0001",
             "{}",
             listed.content
+        );
+    }
+
+    #[test]
+    fn description_last_action_and_elapsed_are_tracked_and_serialized() {
+        let rt = runtime(None);
+        let mut info = info_of("sub_0000");
+        info.description = Some("inspect workspace".into());
+        rt.register(info, true, CancellationToken::new());
+        rt.set_state("sub_0000", InstanceState::Running, None);
+        rt.record_last_action("sub_0000", "Read src/lib.rs".into());
+
+        let r = rt.record("sub_0000").unwrap();
+        assert_eq!(r.description(), Some("inspect workspace"));
+        assert_eq!(r.last_action.as_deref(), Some("Read src/lib.rs"));
+        assert!(r.started_at_ms > 0);
+        assert!(rt.elapsed_ms("sub_0000").is_some());
+
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["description"], "inspect workspace");
+        assert_eq!(json["last_action"], "Read src/lib.rs");
+
+        // When finished, elapsed_ms reflects result.duration_ms.
+        let mut res = AgentResult::lost(&r.info);
+        res.status = "completed".into();
+        res.error = None;
+        res.duration_ms = 4321;
+        rt.set_state("sub_0000", InstanceState::Completed, None);
+        rt.finish("sub_0000", res);
+        assert_eq!(rt.elapsed_ms("sub_0000"), Some(4321));
+    }
+
+    #[tokio::test]
+    async fn wait_many_supports_any_and_all_modes() {
+        use super::super::messagent::MAIN;
+        let rt = runtime(None);
+        let mut i0 = info_of("sub_0000");
+        i0.description = Some("first task".into());
+        let mut i1 = info_of("sub_0001");
+        i1.description = Some("second task".into());
+        rt.register(i0.clone(), true, CancellationToken::new());
+        rt.register(i1.clone(), true, CancellationToken::new());
+        rt.set_state("sub_0000", InstanceState::Running, None);
+        rt.set_state("sub_0001", InstanceState::Running, None);
+        rt.record_last_action("sub_0001", "Bash cargo test".into());
+
+        let cancel = CancellationToken::new();
+        let ids = vec!["sub_0000".to_string(), "sub_0001".to_string()];
+
+        // Finish sub_0000 while sub_0001 is still running (which also delivers to MAIN).
+        let rt_bg = Arc::clone(&rt);
+        let i0_clone = i0.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let mut res = AgentResult::lost(&i0_clone);
+            res.status = "completed".into();
+            res.error = None;
+            res.summary = "done 0".into();
+            rt_bg.set_state("sub_0000", InstanceState::Completed, None);
+            rt_bg.finish("sub_0000", res);
+        });
+
+        // WaitMode::Any wakes on sub_0000 finishing (with sub_0001 still pending).
+        let any = rt
+            .wait_many(MAIN, &ids, WaitMode::Any, Duration::from_secs(2), &cancel)
+            .await;
+        assert_eq!(any.status, WaitStatus::Ready);
+        assert_eq!(any.mode, WaitMode::Any);
+        assert_eq!(any.finished.len(), 1);
+        assert_eq!(any.finished[0].agent_id, "sub_0000");
+        assert_eq!(any.finished[0].description.as_deref(), Some("first task"));
+        assert_eq!(any.pending.len(), 1);
+        assert_eq!(any.pending[0].agent_id, "sub_0001");
+        assert_eq!(
+            any.pending[0].last_action.as_deref(),
+            Some("Bash cargo test")
+        );
+
+        // WaitMode::All does NOT return early even though MAIN already has sub_0000's delivery!
+        let timed_out = rt
+            .wait_many(MAIN, &[], WaitMode::All, Duration::from_millis(30), &cancel)
+            .await;
+        assert_eq!(timed_out.status, WaitStatus::TimedOut);
+        assert_eq!(timed_out.pending.len(), 1);
+        assert_eq!(timed_out.pending[0].agent_id, "sub_0001");
+
+        // Now finish sub_0001: WaitMode::All completes cleanly.
+        let rt_bg = Arc::clone(&rt);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let mut res = AgentResult::lost(&i1);
+            res.status = "completed".into();
+            res.error = None;
+            res.summary = "done 1".into();
+            rt_bg.set_state("sub_0001", InstanceState::Completed, None);
+            rt_bg.finish("sub_0001", res);
+        });
+        let all = rt
+            .wait_many(MAIN, &ids, WaitMode::All, Duration::from_secs(2), &cancel)
+            .await;
+        assert_eq!(all.status, WaitStatus::Ready);
+        assert_eq!(all.mode, WaitMode::All);
+        assert_eq!(all.finished.len(), 2);
+        assert!(all.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn runtime_rebase_changeset_registers_rebased_and_marks_conflicts() {
+        use super::super::workspace::{ChangeSetState, RebaseOutcome, WorkspaceManager};
+        let repo = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let o = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "git {args:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        std::fs::write(repo.path().join("a.txt"), "1\n2\n3\n4\n5\n6\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "init"]);
+
+        let base = tempfile::tempdir().unwrap();
+        let ws = Arc::new(WorkspaceManager::new(
+            Some(base.path().to_path_buf()),
+            Default::default(),
+        ));
+        let rt = AgentRuntime::new(limits(2, 2, 10, 4), Arc::clone(&ws), None);
+
+        let snap = ws.snapshot(repo.path()).await.unwrap();
+        let wt1 = ws.create(&snap, "run_1", "sub_0000").await.unwrap();
+        std::fs::write(wt1.root.join("a.txt"), "1\n2\n3\n4\n5\n6-sub0\n").unwrap();
+        let cs0 = ws
+            .finalize("sub_0000", "clean", vec![])
+            .await
+            .unwrap()
+            .unwrap();
+
+        let wt2 = ws.create(&snap, "run_1", "sub_0001").await.unwrap();
+        std::fs::write(wt2.root.join("a.txt"), "1-sub1\n2\n3\n4\n5\n6\n").unwrap();
+        let cs1 = ws
+            .finalize("sub_0001", "conflict", vec![])
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Advance HEAD on line 1 (conflicts with cs1, clean 3-way merge with cs0).
+        std::fs::write(repo.path().join("a.txt"), "1-head\n2\n3\n4\n5\n6\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "head"]);
+
+        let out0 = rt.rebase_changeset(&cs0.id, None).await.unwrap();
+        let RebaseOutcome::Rebased(new_cs0) = out0 else {
+            panic!("expected Rebased, got {out0:?}");
+        };
+        assert_eq!(new_cs0.rebased_from.as_deref(), Some(cs0.id.as_str()));
+        assert_eq!(
+            ws.changeset(&new_cs0.id).unwrap().state,
+            ChangeSetState::Ready
+        );
+        assert_eq!(ws.changeset_of("sub_0000").unwrap().id, new_cs0.id);
+
+        let out1 = rt.rebase_changeset(&cs1.id, None).await.unwrap();
+        assert!(matches!(out1, RebaseOutcome::Conflict { .. }), "{out1:?}");
+        assert_eq!(
+            ws.changeset(&cs1.id).unwrap().state,
+            ChangeSetState::Conflict
         );
     }
 }

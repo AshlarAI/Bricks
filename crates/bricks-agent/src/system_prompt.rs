@@ -378,8 +378,8 @@ const WEB_BULLET: &str = "- Pour une information incertaine ou susceptible d'avo
 /// The web tools ([`WEB_BULLET`]).
 const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
 
-/// Tools that start a sub-agent. Listing profiles (`AgentProfiles`) or
-/// controlling existing agents (`AgentControl`) is not delegating.
+/// Tools that start a sub-agent. Controlling existing agents (`Managent`) is
+/// not delegating.
 pub const SPAWNING_TOOLS: &[&str] = &["Agent"];
 
 const FOUNDATION_HEAD: &str = "Tu es Bricks, un agent de développement autonome.
@@ -534,8 +534,8 @@ const DELEGATION_SECTION: &str = "
 
 - Délègue lorsque cela améliore le travail ; garde les petites tâches simples. `Agent` lance une mission, ou plusieurs avec `missions`, en arrière-plan et rend aussitôt leurs identifiants (`sub_0000`…).
 - Un sous-agent part d'un contexte neuf : donne-lui l'objectif, le contexte, les fichiers, les contraintes, le résultat et les vérifications attendus.
-- Les rapports t'arrivent entre deux tours ; quand tu n'as plus rien d'utile à faire, `AgentControl wait` attend le prochain au lieu d'interroger. Messagent écrit à un ou plusieurs agents, ou à l'équipe.
-- Avant de répondre, relis les rapports et les preuves. Un ChangeSet ne s'applique jamais seul : examine son diff (`inspect_changes`), vérifie-le (`check_changes`), applique-le (`apply_changes`) puis lance les vérifications adaptées.";
+- Les rapports t'arrivent entre deux tours ; quand tu n'as plus rien d'utile à faire, `Managent wait` attend (mode `any` ou `all`) au lieu d'interroger. Messagent écrit à un ou plusieurs agents, ou à l'équipe.
+- Avant de répondre, relis les rapports et les preuves. Un ChangeSet ne s'applique jamais seul : examine son diff (`inspect_changes`), vérifie-le (`check_changes`), rebase-le si besoin (`rebase_changes`), applique-le (`apply_changes`) puis lance les vérifications adaptées.";
 
 const COORDINATOR_SECTION: &str = r#"
 ## Coordinator Mode
@@ -881,10 +881,9 @@ mod tests {
     #[test]
     fn only_tools_that_start_a_sub_agent_enable_delegation() {
         for names in [
-            vec!["AgentProfiles"],
             vec!["Messagent"],
-            vec!["AgentControl"],
-            vec!["AgentProfiles", "AgentControl", "Messagent"],
+            vec!["Managent"],
+            vec!["Managent", "Messagent"],
         ] {
             let p = build_system_prompt(&SystemPromptOptions {
                 tools_available: tools(&names),
@@ -940,7 +939,7 @@ mod tests {
         let all_tools = tools(&[
             "CodeScout",
             "Agent",
-            "AgentProfiles",
+            "Managent",
             "Messagent",
             "TodoWrite",
             "Skill",
@@ -991,7 +990,7 @@ mod tests {
     fn a_sub_agent_keeps_its_role_and_its_own_tools_decide() {
         for (names, delegates) in [
             (vec!["Read", "Bash", "CodeScout"], false),
-            (vec!["Read", "Agent", "AgentControl"], true),
+            (vec!["Read", "Agent", "Managent"], true),
         ] {
             let prompt = build_system_prompt(&SystemPromptOptions {
                 prefix: Some(SystemPromptPrefix::SubAgent),

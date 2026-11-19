@@ -5,8 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import AgentBranch from '../../src/lib/features/agents/AgentBranch.svelte';
+import AgentLine from '../../src/lib/features/conversation/timeline/AgentLine.svelte';
 import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage.svelte';
-import { Conversation, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type AgentItem, type UserItem } from '../../src/lib/state/conversation.svelte';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -126,6 +127,40 @@ describe('AgentBranch: a running sub-agent', () => {
 
 		expect(text()).toContain('Chercher les occurrences');
 		expect(text()).toContain('Vous ne pouvez pas écrire à un sous-agent !');
+	});
+});
+
+describe('AgentLine: displays profile, description, and live Managent action', () => {
+	it('displays spawn.profile and spawn.description when provided, falling back to task otherwise', () => {
+		const conv = new Conversation(openedSession(), PROJECT_ID);
+		const feed = new EnvelopeFeed({ runId: RUN });
+		conv.apply(feed.next({ type: 'run_started', prompt: 'Cherche', attachments: [], model: 'm' }, { at: T0 }));
+		conv.apply(feed.next({ type: 'tool_started', tool_call_id: 'tc-A', name: 'Agent', input: {} }));
+		conv.apply(
+			feed.next({
+				type: 'agent_spawned',
+				agent: spawnInfo({ agent_id: AGENT, tool_call_id: 'tc-A', profile: 'general', description: 'Lire le code' }),
+			}),
+		);
+		conv.apply(feed.next({ type: 'agent_state', agent_id: AGENT, state: 'running' }));
+		conv.apply(
+			feed.next({
+				type: 'agent_tool_started',
+				agent_id: AGENT,
+				tool_call_id: 'tc-M',
+				name: 'Managent',
+				input: { action: 'wait' },
+			}),
+		);
+
+		const item = conv.items.find((i): i is AgentItem => i.kind === 'agent' && i.agentId === AGENT)!;
+		app = mount(AgentLine, { target, props: { item, conversation: conv } });
+		flushSync();
+
+		const shown = text();
+		expect(shown).toContain('general');
+		expect(shown).toContain('Lire le code');
+		expect(shown).toContain('Suivi de ses sous-agents…');
 	});
 });
 

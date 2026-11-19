@@ -4,7 +4,7 @@
 //!
 //! A message is delivered to its recipients' queues and read between two
 //! turns, after the tool calls of the turn in progress (it never interrupts
-//! a command). An agent waiting (`AgentControl wait`) wakes up; an ended
+//! a command). An agent waiting (`Managent wait`) wakes up; an ended
 //! agent is not restarted by a message. The person never writes here: their
 //! instructions go to `main`.
 //!
@@ -118,9 +118,9 @@ impl DeliveryError {
     pub fn describe(&self, id: &str) -> String {
         match self {
             Self::Unknown => format!("no agent `{id}` in this team"),
-            Self::NotRunning(state) => format!(
-                "{id} is {state}: a message does not restart it (resume it with AgentControl)"
-            ),
+            Self::NotRunning(state) => {
+                format!("{id} is {state}: a message does not restart it (resume it with Managent)")
+            }
             Self::Refused(InjectRefusal::Empty) => "the message is empty".into(),
             Self::Refused(InjectRefusal::TooLarge) => {
                 format!("the message is over {MAX_INJECTED_BYTES} bytes")

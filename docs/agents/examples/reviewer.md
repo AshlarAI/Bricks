@@ -4,11 +4,10 @@ description: >
   Reviews a change for correctness, regressions and missing tests, and
   reports findings with their location and evidence.
 model: inherit
-reasoning: inherit
+effort: inherit
 permissions: inherit
 tools: inherit
-isolation: auto
-background: false
+isolation: shared
 ---
 
 # Reviewer

@@ -49,7 +49,7 @@ The desktop application, command-line interface and Rust SDK share the same engi
   | Commands | `Bash`, `PowerShell`, `Job` |
   | Web | `WebFetch`, `WebSearch` |
   | Planning and skills | `TodoWrite`, `Skill`, `Ask` (interactive sessions) |
-  | Sub-agents | `Agent`, `AgentControl`, `AgentProfiles`, `Messagent` |
+  | Sub-agents | `Agent`, `Managent`, `Messagent` |
 
 - **Concurrent tools.** Independent tool calls can run in parallel. Each
   model has an option to start completed tool calls while the rest of the

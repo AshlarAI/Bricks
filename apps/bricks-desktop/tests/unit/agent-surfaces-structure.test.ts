@@ -162,6 +162,11 @@ describe('the removed inspector, message form and tool names', () => {
 		expect(offendersOf(/SendMessage/)).toEqual([]);
 	});
 
+	it('no file of src/ uses AgentControl or AgentProfiles as a tool name', () => {
+		const OLD_AGENT_TOOLS = /case ['"`](?:AgentControl|AgentProfiles)['"`]|[!=]==? ?['"`](?:AgentControl|AgentProfiles)['"`]|\b(?:AgentControl|AgentProfiles)\s*:/;
+		expect(offendersOf(OLD_AGENT_TOOLS)).toEqual([]);
+	});
+
 	it('no file of src/ uses « Agents » as a tool name (a case, a comparison, a key)', () => {
 		// The labels « Agents » of adkAccess.ts (a group) and of ConfigView.svelte (a section) are text, not the tool.
 		const TOOL_NAME_USE = /case ['"`]Agents['"`]|[!=]==? ?['"`]Agents['"`]|['"`]Agents['"`]\s*:/;

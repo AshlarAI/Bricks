@@ -50,7 +50,7 @@ pub fn announced_tools(bricks: &BricksConfig) -> Vec<String> {
         .collect();
     names.push("TodoWrite".to_string());
     if bricks.agents.enabled && !names.iter().any(|n| n == "Agent") {
-        names.extend(["Agent", "AgentControl", "AgentProfiles", "Messagent"].map(String::from));
+        names.extend(["Agent", "Managent", "Messagent"].map(String::from));
     }
     names
 }
@@ -112,13 +112,7 @@ mod tests {
     fn announced_tools_follow_the_session_agent() {
         let mut b = BricksConfig::default();
         let names = announced_tools(&b);
-        for t in [
-            "CodeScout",
-            "Agent",
-            "AgentControl",
-            "AgentProfiles",
-            "Messagent",
-        ] {
+        for t in ["CodeScout", "Agent", "Managent", "Messagent"] {
             assert!(names.iter().any(|n| n == t), "{t}");
         }
         b.agents.enabled = false;
@@ -126,7 +120,7 @@ mod tests {
         assert!(
             !names
                 .iter()
-                .any(|n| n.starts_with("Agent") || n == "Messagent")
+                .any(|n| n.starts_with("Agent") || n == "Managent" || n == "Messagent")
         );
     }
 }

@@ -14,6 +14,8 @@
 # coding agents
 third-party
 .claude
+.agents/
+.bricks/
 
 bench/runner-*.sh
 

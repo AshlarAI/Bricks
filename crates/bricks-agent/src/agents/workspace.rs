@@ -187,6 +187,18 @@ pub struct ChangeSet {
     pub validations: Vec<super::spawn::CommandRun>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Original ChangeSet id when this ChangeSet was produced by rebasing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebased_from: Option<String>,
+}
+
+/// Outcome of rebasing a [`ChangeSet`] onto current `HEAD`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum RebaseOutcome {
+    Rebased(ChangeSet),
+    Conflict { files: Vec<String>, message: String },
+    VerifyFailed { exit_code: i32, output: String },
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -421,7 +433,16 @@ fn fingerprint(patch: &[u8], captured: &Captured) -> String {
         .collect()
 }
 
-async fn git(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>, WsError> {
+fn worktree_admin() -> &'static tokio::sync::Mutex<()> {
+    static ADMIN: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    ADMIN.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+async fn git_output(
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, &Path)],
+) -> Result<std::process::Output, WsError> {
     let mut cmd = tokio::process::Command::new("git");
     cmd.arg("-c")
         .arg("core.hooksPath=/dev/null")
@@ -436,10 +457,13 @@ async fn git(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let out = cmd
-        .output()
+    cmd.output()
         .await
-        .map_err(|e| WsError::Git(format!("cannot run git: {e}")))?;
+        .map_err(|e| WsError::Git(format!("cannot run git: {e}")))
+}
+
+async fn git(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>, WsError> {
+    let out = git_output(dir, args, env).await?;
     if out.status.success() {
         Ok(out.stdout)
     } else {
@@ -447,6 +471,62 @@ async fn git(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Result<Vec<u8>
             String::from_utf8_lossy(&out.stderr).trim().to_string(),
         ))
     }
+}
+
+async fn tree_of_in(worktree: &Path, idx_dir: &Path, name: &str) -> Result<String, WsError> {
+    std::fs::create_dir_all(idx_dir).map_err(|e| WsError::Io(e.to_string()))?;
+    let idx = idx_dir.join(format!("{name}-{}", short_id()));
+    let r = async {
+        git(
+            worktree,
+            &["add", "-A", "--", "."],
+            &[("GIT_INDEX_FILE", &idx)],
+        )
+        .await?;
+        git(worktree, &["write-tree"], &[("GIT_INDEX_FILE", &idx)])
+            .await
+            .map(text)
+    }
+    .await;
+    let _ = std::fs::remove_file(&idx);
+    r
+}
+
+async fn build_patch_and_files(
+    wt_root: &Path,
+    base_ref: &str,
+    final_tree: &str,
+) -> Result<(Vec<u8>, Vec<ChangedFile>), WsError> {
+    let patch = git(
+        wt_root,
+        &[
+            "diff",
+            "--binary",
+            "--full-index",
+            "-M",
+            base_ref,
+            final_tree,
+        ],
+        &[],
+    )
+    .await?;
+    let numstat = text(
+        git(
+            wt_root,
+            &["diff", "--numstat", "-M", "-z", base_ref, final_tree],
+            &[],
+        )
+        .await?,
+    );
+    let status = text(
+        git(
+            wt_root,
+            &["diff", "--name-status", "-M", base_ref, final_tree],
+            &[],
+        )
+        .await?,
+    );
+    Ok((patch, parse_files(&status, &numstat)))
 }
 
 fn text(b: Vec<u8>) -> String {
@@ -655,23 +735,7 @@ impl WorkspaceManager {
 
     async fn tree_of(&self, worktree: &Path, name: &str) -> Result<String, WsError> {
         let base = self.base()?;
-        let idx_dir = base.join("indexes");
-        std::fs::create_dir_all(&idx_dir).map_err(|e| WsError::Io(e.to_string()))?;
-        let idx = idx_dir.join(format!("{name}-{}", short_id()));
-        let r = async {
-            git(
-                worktree,
-                &["add", "-A", "--", "."],
-                &[("GIT_INDEX_FILE", &idx)],
-            )
-            .await?;
-            git(worktree, &["write-tree"], &[("GIT_INDEX_FILE", &idx)])
-                .await
-                .map(text)
-        }
-        .await;
-        let _ = std::fs::remove_file(&idx);
-        r
+        tree_of_in(worktree, &base.join("indexes"), name).await
     }
 
     /// A worktree for `agent_id`, from `snap`.
@@ -806,19 +870,8 @@ impl WorkspaceManager {
         let id = format!("cs_{}", short_id());
         let dir = base.join("changesets");
         std::fs::create_dir_all(&dir).map_err(|e| WsError::Io(e.to_string()))?;
-        let patch = git(
-            &wt.root,
-            &[
-                "diff",
-                "--binary",
-                "--full-index",
-                "-M",
-                &wt.baseline_tree,
-                &final_tree,
-            ],
-            &[],
-        )
-        .await?;
+        let (patch, files) =
+            build_patch_and_files(&wt.root, &wt.baseline_tree, &final_tree).await?;
         let patch_path = dir.join(format!("{id}.patch"));
         let mut note = None;
         if patch.len() as u64 > self.limits.max_patch_bytes {
@@ -831,36 +884,6 @@ impl WorkspaceManager {
         } else {
             std::fs::write(&patch_path, &patch).map_err(|e| WsError::Io(e.to_string()))?;
         }
-        let numstat = text(
-            git(
-                &wt.root,
-                &[
-                    "diff",
-                    "--numstat",
-                    "-M",
-                    "-z",
-                    &wt.baseline_tree,
-                    &final_tree,
-                ],
-                &[],
-            )
-            .await?,
-        );
-        let status = text(
-            git(
-                &wt.root,
-                &[
-                    "diff",
-                    "--name-status",
-                    "-M",
-                    &wt.baseline_tree,
-                    &final_tree,
-                ],
-                &[],
-            )
-            .await?,
-        );
-        let files = parse_files(&status, &numstat);
         let cs = ChangeSet {
             id,
             agent_id: agent_id.into(),
@@ -877,6 +900,7 @@ impl WorkspaceManager {
             state: ChangeSetState::Ready,
             validations,
             note,
+            rebased_from: None,
         };
         {
             let mut m = self.manifest.lock();
@@ -903,12 +927,35 @@ impl WorkspaceManager {
             .lock()
             .changesets
             .iter()
+            .rev()
             .find(|c| c.agent_id == agent_id)
             .cloned()
     }
 
     pub fn changesets(&self) -> Vec<ChangeSet> {
         self.manifest.lock().changesets.clone()
+    }
+
+    pub(crate) fn register_changeset(&self, cs: ChangeSet) {
+        self.manifest.lock().changesets.push(cs);
+        self.save();
+    }
+
+    pub(crate) fn set_changeset_state(
+        &self,
+        id: &str,
+        state: ChangeSetState,
+        note: Option<String>,
+    ) {
+        self.set_cs_state(id, state, note);
+    }
+
+    pub(crate) fn repo_root_for(&self, cs: &ChangeSet) -> Option<PathBuf> {
+        if let Some(wt) = self.worktree(&cs.agent_id) {
+            return Some(wt.repo_root);
+        }
+        let ws = Path::new(&cs.workspace);
+        ws.exists().then(|| ws.to_path_buf())
     }
 
     fn set_cs_state(&self, id: &str, state: ChangeSetState, note: Option<String>) {
@@ -1089,6 +1136,169 @@ impl WorkspaceManager {
         self.save();
         Ok(())
     }
+}
+
+/// Rebase a [`ChangeSet`] onto current `HEAD` inside a temporary detached
+/// worktree outside the repository, optionally running `verify_cmd` (`sh -c`).
+/// Always removes the temporary worktree before returning.
+pub async fn rebase_changeset(
+    changeset: &ChangeSet,
+    repo_root: &Path,
+    verify_cmd: Option<&str>,
+) -> Result<RebaseOutcome, WsError> {
+    let patch_path = Path::new(&changeset.patch);
+    if !patch_path.exists() {
+        return Err(WsError::NotFound(format!(
+            "patch of {} ({})",
+            changeset.id, changeset.patch
+        )));
+    }
+    let patch_abs = std::fs::canonicalize(patch_path).unwrap_or_else(|_| patch_path.to_path_buf());
+    let patch_bytes = std::fs::read(&patch_abs)
+        .map_err(|e| WsError::Io(format!("{}: {e}", patch_abs.display())))?;
+
+    let top_raw = git(repo_root, &["rev-parse", "--show-toplevel"], &[])
+        .await
+        .map_err(|e| WsError::NotARepo(e.to_string()))?;
+    let top = PathBuf::from(text(top_raw));
+    let top = std::fs::canonicalize(&top).unwrap_or(top);
+    let head_sha = git(
+        &top,
+        &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+        &[],
+    )
+    .await
+    .map(text)
+    .map_err(|_| WsError::NoHead)?;
+    let head_tree = text(
+        git(
+            &top,
+            &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"],
+            &[],
+        )
+        .await?,
+    );
+
+    let temp_dir = tempfile::tempdir().map_err(|e| WsError::Io(e.to_string()))?;
+    let wt_dir = temp_dir.path().join("wt");
+    let wt_str = wt_dir.display().to_string();
+
+    {
+        let _admin = worktree_admin().lock().await;
+        git(
+            &top,
+            &["worktree", "add", "--detach", &wt_str, &head_sha],
+            &[],
+        )
+        .await?;
+    }
+
+    let res = async {
+        if !patch_bytes.is_empty() {
+            let patch_str = patch_abs.display().to_string();
+            let out = git_output(
+                &wt_dir,
+                &[
+                    "apply",
+                    "--3way",
+                    "--binary",
+                    "--whitespace=nowarn",
+                    &patch_str,
+                ],
+                &[],
+            )
+            .await?;
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let message = if !stderr.is_empty() { stderr } else { stdout };
+                let unmerged = git(&wt_dir, &["diff", "--name-only", "--diff-filter=U"], &[])
+                    .await
+                    .map(text)
+                    .unwrap_or_default();
+                let mut files: Vec<String> = unmerged
+                    .lines()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                if files.is_empty() {
+                    files = conflicting_files(&message, changeset);
+                }
+                return Ok(RebaseOutcome::Conflict { files, message });
+            }
+        }
+
+        if let Some(cmd) = verify_cmd.map(str::trim).filter(|s| !s.is_empty()) {
+            let mut proc = tokio::process::Command::new("sh");
+            proc.arg("-c")
+                .arg(cmd)
+                .current_dir(&wt_dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .no_window();
+            let out = proc
+                .output()
+                .await
+                .map_err(|e| WsError::Io(format!("cannot run verify command: {e}")))?;
+            if !out.status.success() {
+                let exit_code = out.status.code().unwrap_or(-1);
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let output = match (stdout.is_empty(), stderr.is_empty()) {
+                    (false, false) => format!("{stdout}\n{stderr}"),
+                    (false, true) => stdout,
+                    (true, false) => stderr,
+                    (true, true) => String::new(),
+                };
+                return Ok(RebaseOutcome::VerifyFailed { exit_code, output });
+            }
+        }
+
+        let idx_dir = temp_dir.path().join("indexes");
+        let final_tree = tree_of_in(&wt_dir, &idx_dir, "rebase").await?;
+        let (fresh_patch, files) = build_patch_and_files(&wt_dir, &head_sha, &final_tree).await?;
+
+        let new_id = format!("cs_{}", short_id());
+        let patch_dir = patch_abs
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| std::env::temp_dir().join("bricks-changesets"));
+        std::fs::create_dir_all(&patch_dir).map_err(|e| WsError::Io(e.to_string()))?;
+        let new_patch_path = patch_dir.join(format!("{new_id}.patch"));
+        std::fs::write(&new_patch_path, &fresh_patch).map_err(|e| WsError::Io(e.to_string()))?;
+
+        Ok(RebaseOutcome::Rebased(ChangeSet {
+            id: new_id,
+            agent_id: changeset.agent_id.clone(),
+            task: changeset.task.clone(),
+            workspace: changeset.workspace.clone(),
+            branch: changeset.branch.clone(),
+            base_sha: head_sha,
+            snapshot_id: changeset.snapshot_id.clone(),
+            baseline_tree: head_tree,
+            final_tree,
+            files,
+            patch: new_patch_path.display().to_string(),
+            patch_bytes: fresh_patch.len() as u64,
+            state: ChangeSetState::Ready,
+            validations: changeset.validations.clone(),
+            note: None,
+            rebased_from: Some(changeset.id.clone()),
+        }))
+    }
+    .await;
+
+    {
+        let _admin = worktree_admin().lock().await;
+        let _ = git(&top, &["worktree", "remove", "--force", &wt_str], &[]).await;
+        let _ = git(&top, &["worktree", "prune"], &[]).await;
+    }
+    let _ = std::fs::remove_dir_all(temp_dir.path());
+
+    res
 }
 
 fn parse_files(status: &str, numstat: &str) -> Vec<ChangedFile> {
@@ -1292,5 +1502,205 @@ mod snapshot_tests {
         let got =
             copy_untracked(d.path(), &files, &listing, &SnapshotLimits::default(), 0).unwrap();
         assert!(got.is_none());
+    }
+}
+
+#[cfg(test)]
+mod rebase_tests {
+    use super::*;
+
+    fn git_sync(dir: &Path, args: &[&str]) -> String {
+        let o = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stdout).to_string()
+    }
+
+    fn init_repo() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        git_sync(d.path(), &["init", "-q", "-b", "main"]);
+        std::fs::write(
+            d.path().join("a.txt"),
+            "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n",
+        )
+        .unwrap();
+        std::fs::write(d.path().join("b.txt"), "b1\nb2\n").unwrap();
+        git_sync(d.path(), &["add", "."]);
+        git_sync(d.path(), &["commit", "-q", "-m", "init"]);
+        d
+    }
+
+    fn worktree_count(repo: &Path) -> usize {
+        git_sync(repo, &["worktree", "list", "--porcelain"])
+            .lines()
+            .filter(|l| l.starts_with("worktree "))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn clean_three_way_rebase_when_head_moved_on_another_region_and_file() {
+        let repo = init_repo();
+        let base = tempfile::tempdir().unwrap();
+        let mgr = WorkspaceManager::new(Some(base.path().to_path_buf()), Default::default());
+
+        let snap = mgr.snapshot(repo.path()).await.unwrap();
+        let wt = mgr.create(&snap, "run_1", "sub_0000").await.unwrap();
+        // Agent edits bottom of a.txt and adds a brand-new untracked file.
+        std::fs::write(
+            wt.root.join("a.txt"),
+            "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8-agent\n",
+        )
+        .unwrap();
+        std::fs::write(wt.root.join("new_by_agent.txt"), "hello\n").unwrap();
+        let cs = mgr
+            .finalize("sub_0000", "agent edit", vec![])
+            .await
+            .unwrap()
+            .unwrap();
+        // Remove agent's worktree so only the main worktree remains before rebase.
+        mgr.remove_worktree("sub_0000", false).await.unwrap();
+        assert_eq!(worktree_count(repo.path()), 1);
+
+        // Move HEAD forward on top of a.txt and b.txt.
+        std::fs::write(
+            repo.path().join("a.txt"),
+            "line1-head\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n",
+        )
+        .unwrap();
+        std::fs::write(repo.path().join("b.txt"), "b1-head\nb2\n").unwrap();
+        git_sync(repo.path(), &["add", "."]);
+        git_sync(repo.path(), &["commit", "-q", "-m", "head moved"]);
+        let new_head = git_sync(repo.path(), &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let outcome = rebase_changeset(&cs, repo.path(), None).await.unwrap();
+        assert_eq!(
+            worktree_count(repo.path()),
+            1,
+            "temp worktree must be cleaned up"
+        );
+        let RebaseOutcome::Rebased(rebased) = outcome else {
+            panic!("expected Rebased, got {outcome:?}");
+        };
+        assert_ne!(rebased.id, cs.id);
+        assert_eq!(rebased.rebased_from.as_deref(), Some(cs.id.as_str()));
+        assert_eq!(rebased.state, ChangeSetState::Ready);
+        assert_eq!(rebased.base_sha, new_head);
+        let patch = std::fs::read_to_string(&rebased.patch).unwrap();
+        assert!(patch.contains("line8-agent"), "{patch}");
+        assert!(patch.contains("new_by_agent.txt"), "{patch}");
+        assert!(!patch.contains("b1-head"), "{patch}");
+
+        // Rebased ChangeSet applies cleanly to the moved HEAD!
+        mgr.register_changeset(rebased.clone());
+        let applied = mgr.apply(&rebased.id, repo.path()).await.unwrap();
+        assert_eq!(applied.state, ChangeSetState::Applied);
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "line1-head\nline2\nline3\nline4\nline5\nline6\nline7\nline8-agent\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("new_by_agent.txt")).unwrap(),
+            "hello\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn conflict_returns_files_and_cleans_up_temp_worktree() {
+        let repo = init_repo();
+        let base = tempfile::tempdir().unwrap();
+        let mgr = WorkspaceManager::new(Some(base.path().to_path_buf()), Default::default());
+
+        let snap = mgr.snapshot(repo.path()).await.unwrap();
+        let wt = mgr.create(&snap, "run_1", "sub_0000").await.unwrap();
+        std::fs::write(
+            wt.root.join("a.txt"),
+            "line1-agent\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n",
+        )
+        .unwrap();
+        let cs = mgr
+            .finalize("sub_0000", "conflict edit", vec![])
+            .await
+            .unwrap()
+            .unwrap();
+        mgr.remove_worktree("sub_0000", false).await.unwrap();
+
+        // HEAD modifies the exact same line in a.txt.
+        std::fs::write(
+            repo.path().join("a.txt"),
+            "line1-head\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n",
+        )
+        .unwrap();
+        git_sync(repo.path(), &["add", "."]);
+        git_sync(repo.path(), &["commit", "-q", "-m", "head conflict"]);
+
+        let outcome = rebase_changeset(&cs, repo.path(), None).await.unwrap();
+        assert_eq!(
+            worktree_count(repo.path()),
+            1,
+            "temp worktree must be cleaned up on conflict"
+        );
+        match outcome {
+            RebaseOutcome::Conflict { files, message } => {
+                assert!(files.contains(&"a.txt".to_string()), "files={files:?}");
+                assert!(!message.is_empty());
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_cmd_passing_vs_failing_and_cleanup() {
+        let repo = init_repo();
+        let base = tempfile::tempdir().unwrap();
+        let mgr = WorkspaceManager::new(Some(base.path().to_path_buf()), Default::default());
+
+        let snap = mgr.snapshot(repo.path()).await.unwrap();
+        let wt = mgr.create(&snap, "run_1", "sub_0000").await.unwrap();
+        std::fs::write(wt.root.join("b.txt"), "b1-agent\nb2\n").unwrap();
+        let cs = mgr
+            .finalize("sub_0000", "verify edit", vec![])
+            .await
+            .unwrap()
+            .unwrap();
+        mgr.remove_worktree("sub_0000", false).await.unwrap();
+
+        let failed = rebase_changeset(&cs, repo.path(), Some("echo boom >&2; false"))
+            .await
+            .unwrap();
+        assert_eq!(
+            worktree_count(repo.path()),
+            1,
+            "temp worktree must be cleaned up when verify_cmd fails"
+        );
+        match failed {
+            RebaseOutcome::VerifyFailed { exit_code, output } => {
+                assert_ne!(exit_code, 0);
+                assert!(output.contains("boom"), "{output}");
+            }
+            other => panic!("expected VerifyFailed, got {other:?}"),
+        }
+
+        let passed = rebase_changeset(&cs, repo.path(), Some("grep -q b1-agent b.txt"))
+            .await
+            .unwrap();
+        assert_eq!(
+            worktree_count(repo.path()),
+            1,
+            "temp worktree must be cleaned up when verify_cmd passes"
+        );
+        assert!(matches!(passed, RebaseOutcome::Rebased(_)), "{passed:?}");
     }
 }
