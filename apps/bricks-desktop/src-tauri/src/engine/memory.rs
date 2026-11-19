@@ -1,7 +1,6 @@
-//! The long-term memory of the desktop: each run's memory, from the
-//! preference, configured providers, and the session's project `bricks.toml`
-//! `[memory]` overrides when active. Reading and clearing work whatever the
-//! preference.
+//! The long-term memory of the desktop: each run's file-backed note memory,
+//! from the preference and configured projects. Reading, editing and clearing
+//! work whatever the preference.
 
 use super::AppState;
 use crate::contract::*;
@@ -11,10 +10,20 @@ use crate::services::prefs::PrefsStore;
 use crate::services::projects::ProjectStore;
 use bricks_agent::control::{MemoryResolver, RunMemory};
 use bricks_config::MemoryService;
-use bricks_memory::MemoryScope as Scope;
-use bricks_memory::structured::{EntryFilter, EntryKind, MemoryError, StoredEntry};
+use bricks_memory::MemoryScope as BackendScope;
 use std::path::Path;
 use std::sync::Arc;
+
+fn to_backend_scope(s: MemoryScope) -> BackendScope {
+    match s {
+        MemoryScope::Project => BackendScope::Project,
+        MemoryScope::Global => BackendScope::Global,
+    }
+}
+
+fn memory_err(e: impl std::fmt::Display) -> IpcError {
+    error(IpcErrorCode::Invalid, e.to_string())
+}
 
 /// The memory of each run of one session of `project_id`.
 pub(crate) struct DesktopMemory {
@@ -43,61 +52,6 @@ impl MemoryResolver for DesktopMemory {
     }
 }
 
-fn scope(s: MemoryScope) -> Scope {
-    match s {
-        MemoryScope::Project => Scope::Project,
-        MemoryScope::Global => Scope::Global,
-    }
-}
-
-fn filter(f: MemoryEntryFilter) -> EntryFilter {
-    match f {
-        MemoryEntryFilter::All => EntryFilter::All,
-        MemoryEntryFilter::Notes => EntryFilter::Notes,
-        MemoryEntryFilter::Exchanges => EntryFilter::Exchanges,
-        MemoryEntryFilter::Facts => EntryFilter::Facts,
-        MemoryEntryFilter::FactHistory => EntryFilter::FactHistory,
-    }
-}
-
-fn ipc_error(e: MemoryError) -> IpcError {
-    match e {
-        MemoryError::InUse(_) => {
-            error(IpcErrorCode::SessionBusy, tr!(msg::THE_MEMORY_IS_IN_USE_BY))
-        }
-        MemoryError::Config(m) => error(IpcErrorCode::Invalid, m),
-        other => error(IpcErrorCode::Io, other.to_string()),
-    }
-}
-
-fn counts(c: bricks_memory::structured::EntryCounts) -> MemoryCounts {
-    let n = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);
-    MemoryCounts {
-        notes: n(c.notes),
-        exchanges: n(c.exchanges),
-        facts: n(c.facts),
-    }
-}
-
-/// Whether the `bricks.toml` of `folder` has a `[memory]` setting that Desktop
-/// does not apply (either `memory_enabled` is off in Desktop preferences, or
-/// `path`/`space`/`recall_spaces` were set where Desktop enforces scoped stores).
-fn toml_section_ignored(folder: &Path, prefs_memory_enabled: bool) -> bool {
-    let Ok(text) = std::fs::read_to_string(folder.join("bricks.toml")) else {
-        return false;
-    };
-    let Ok(parsed) = bricks_memory::structured::MemoryConfig::parse_bricks_toml(&text) else {
-        return false;
-    };
-    if !parsed.has_section {
-        return false;
-    }
-    if !prefs_memory_enabled {
-        return parsed.explicit_enabled != Some(false);
-    }
-    parsed.explicit_path_or_space
-}
-
 impl AppState {
     /// The project id a memory command uses: none for the conversations of
     /// no project.
@@ -124,43 +78,38 @@ impl AppState {
         Ok(project)
     }
 
+    fn note_counts(&self, s: MemoryScope, project_id: Option<&str>) -> IpcResult<MemoryCounts> {
+        let notes = self
+            .memory
+            .count(to_backend_scope(s), project_id)
+            .map_err(memory_err)?;
+        Ok(MemoryCounts {
+            notes: notes.min(u32::MAX as usize) as u32,
+        })
+    }
+
     pub async fn memory_overview(&self, project_id: Option<String>) -> IpcResult<MemoryOverview> {
         let project = self.memory_project(project_id.as_deref())?;
-        let folder = match &project {
-            Some(id) => Some(self.projects.get(id)?.path),
+        let known: Vec<String> = self.projects.list().into_iter().map(|p| p.id).collect();
+        let retired = self
+            .memory
+            .retired(&known)
+            .into_iter()
+            .map(|r| RetiredMemory {
+                project_id: r.project_id,
+                name: r.name,
+            })
+            .collect();
+        let global = self.note_counts(MemoryScope::Global, None)?;
+        let project_counts = match project.as_deref() {
+            Some(pid) => Some(self.note_counts(MemoryScope::Project, Some(pid))?),
             None => None,
         };
-        let known: Vec<String> = self.projects.list().into_iter().map(|p| p.id).collect();
-        let prefs_memory_enabled = self.prefs.get().memory_enabled;
-        let service = Arc::clone(&self.memory);
-        tokio::task::spawn_blocking(move || {
-            let global = service.counts(Scope::Global, None).map_err(ipc_error)?;
-            let project_counts = match &project {
-                Some(id) => Some(counts(
-                    service
-                        .counts(Scope::Project, Some(id))
-                        .map_err(ipc_error)?,
-                )),
-                None => None,
-            };
-            Ok(MemoryOverview {
-                global: counts(global),
-                project: project_counts,
-                legacy_store: service.legacy_store_exists(),
-                toml_section_ignored: folder
-                    .is_some_and(|f| toml_section_ignored(Path::new(&f), prefs_memory_enabled)),
-                retired: service
-                    .retired(&known)
-                    .into_iter()
-                    .map(|r| RetiredMemory {
-                        project_id: r.project_id,
-                        name: r.name,
-                    })
-                    .collect(),
-            })
+        Ok(MemoryOverview {
+            global,
+            project: project_counts,
+            retired,
         })
-        .await
-        .map_err(crate::services::join_error)?
     }
 
     pub async fn memory_counts(
@@ -169,15 +118,7 @@ impl AppState {
         project_id: Option<String>,
     ) -> IpcResult<MemoryCounts> {
         let project = self.scoped_project(s, project_id.as_deref())?;
-        let service = Arc::clone(&self.memory);
-        tokio::task::spawn_blocking(move || {
-            service
-                .counts(scope(s), project.as_deref())
-                .map(counts)
-                .map_err(ipc_error)
-        })
-        .await
-        .map_err(crate::services::join_error)?
+        self.note_counts(s, project.as_deref())
     }
 
     pub async fn memory_entries(
@@ -193,62 +134,69 @@ impl AppState {
             return Err(error(IpcErrorCode::Invalid, tr!(msg::A_PAGE_HOLDS_1_TO_50)));
         }
         let project = self.scoped_project(s, project_id.as_deref())?;
-        let names: std::collections::HashMap<String, String> = self
-            .projects
-            .list()
+        if !matches!(f, MemoryEntryFilter::All | MemoryEntryFilter::Notes) {
+            return Ok(MemoryEntryPage {
+                entries: Vec::new(),
+                total: 0,
+            });
+        }
+        let q = query.trim();
+        let page = self
+            .memory
+            .list_notes(
+                to_backend_scope(s),
+                project.as_deref(),
+                (!q.is_empty()).then_some(q),
+                offset as usize,
+                limit as usize,
+            )
+            .map_err(memory_err)?;
+        let entries = page
+            .notes
             .into_iter()
-            .map(|p| (p.id, p.name))
-            .collect();
-        let service = Arc::clone(&self.memory);
-        tokio::task::spawn_blocking(move || {
-            let page = service
-                .entries(
-                    scope(s),
-                    project.as_deref(),
-                    filter(f),
-                    &query,
-                    offset as usize,
-                    limit as usize,
-                )
-                .map_err(ipc_error)?;
-            let entry = |e: StoredEntry| MemoryEntry {
-                project_name: e
-                    .project_id
-                    .as_ref()
-                    .and_then(|id| names.get(id).cloned().or_else(|| service.known_name(id))),
-                id: e.id,
-                kind: match e.kind {
-                    EntryKind::Note => MemoryEntryKind::Note,
-                    EntryKind::Exchange => MemoryEntryKind::Exchange,
-                    EntryKind::Fact => MemoryEntryKind::Fact,
-                },
-                text: e.text,
-                at: e.at,
-                role: e.role,
-                project_id: e.project_id,
-                session_id: e.session_id,
-                status: e.status.map(|s| s.as_str().to_string()),
-                evidence: e
-                    .evidence
-                    .into_iter()
-                    .map(|v| MemoryEvidence {
-                        quote: v.quote,
-                        role: v.role,
-                        session_id: v.session_id,
-                        occurred_at: v.occurred_at,
-                    })
-                    .collect(),
-            };
-            Ok(MemoryEntryPage {
-                total: u32::try_from(page.total).unwrap_or(u32::MAX),
-                entries: page.entries.into_iter().map(entry).collect(),
+            .map(|n| {
+                let project_name = n.project_id.as_deref().and_then(|pid| {
+                    self.projects
+                        .get(pid)
+                        .ok()
+                        .map(|p| p.name)
+                        .or_else(|| self.memory.known_name(pid))
+                });
+                MemoryEntry {
+                    id: n.id,
+                    kind: MemoryEntryKind::Note,
+                    text: n.text,
+                    at: n.updated_at,
+                    role: Some("note".to_string()),
+                    project_id: n.project_id,
+                    project_name,
+                    session_id: n.session_id,
+                }
             })
+            .collect();
+        Ok(MemoryEntryPage {
+            entries,
+            total: page.total.min(u32::MAX as usize) as u32,
         })
-        .await
-        .map_err(crate::services::join_error)?
     }
 
-    /// Deletes a single stored memory entry (`note`, `exchange`, or `fact`).
+    /// Updates a single stored note in place.
+    pub async fn memory_update_note(
+        &self,
+        s: MemoryScope,
+        project_id: Option<String>,
+        id: String,
+        text: String,
+    ) -> IpcResult<bool> {
+        let project = self.scoped_project(s, project_id.as_deref())?;
+        let updated = self
+            .memory
+            .update_note(to_backend_scope(s), project.as_deref(), &id, &text)
+            .map_err(memory_err)?;
+        Ok(updated.is_some())
+    }
+
+    /// Deletes a single stored note entry.
     pub async fn memory_delete_entry(
         &self,
         s: MemoryScope,
@@ -257,25 +205,21 @@ impl AppState {
         id: String,
     ) -> IpcResult<bool> {
         let project = self.scoped_project(s, project_id.as_deref())?;
-        let entry_kind = match kind {
-            MemoryEntryKind::Note => EntryKind::Note,
-            MemoryEntryKind::Exchange => EntryKind::Exchange,
-            MemoryEntryKind::Fact => EntryKind::Fact,
-        };
+        if kind != MemoryEntryKind::Note {
+            return Ok(false);
+        }
         self.memory
-            .delete_entry(scope(s), project.as_deref(), entry_kind, &id)
-            .await
-            .map_err(ipc_error)
+            .delete_note(to_backend_scope(s), project.as_deref(), &id)
+            .map_err(memory_err)
     }
 
-    /// Clears a scope's store; refused while a run or a maintenance uses it.
+    /// Clears a scope's store.
     pub async fn memory_delete(&self, s: MemoryScope, project_id: Option<String>) -> IpcResult<()> {
         let project = self.scoped_project(s, project_id.as_deref())?;
         self.memory
-            .delete(scope(s), project.as_deref())
-            .await
-            .map(|_| ())
-            .map_err(ipc_error)
+            .clear(to_backend_scope(s), project.as_deref())
+            .map_err(memory_err)?;
+        Ok(())
     }
 
     /// Deletes the store of a project no longer in the list.
@@ -288,41 +232,7 @@ impl AppState {
         }
         self.memory
             .delete_retired(&project_id)
-            .await
-            .map(|_| ())
-            .map_err(ipc_error)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn toml_section_ignored_reflects_effective_overrides() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!toml_section_ignored(dir.path(), true));
-
-        std::fs::write(
-            dir.path().join("bricks.toml"),
-            "[memory]\nembeddings = \"openai\"\n",
-        )
-        .unwrap();
-        assert!(!toml_section_ignored(dir.path(), true));
-        assert!(toml_section_ignored(dir.path(), false));
-
-        std::fs::write(
-            dir.path().join("bricks.toml"),
-            "[memory]\nenabled = false\n",
-        )
-        .unwrap();
-        assert!(!toml_section_ignored(dir.path(), false));
-
-        std::fs::write(
-            dir.path().join("bricks.toml"),
-            "[memory]\nspace = \"project:custom\"\n",
-        )
-        .unwrap();
-        assert!(toml_section_ignored(dir.path(), true));
+            .map_err(memory_err)?;
+        Ok(())
     }
 }

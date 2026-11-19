@@ -496,7 +496,7 @@ fn summarize_tool_input(input: &serde_json::Value) -> String {
 pub(crate) fn summarize_tool_outputs(tool_calls: &[ToolCallRecord]) -> Option<String> {
     let qualifying: Vec<&ToolCallRecord> = tool_calls
         .iter()
-        .filter(|tc| tc.name != "memory_search" && tc.name != "memory_write")
+        .filter(|tc| !bricks_tools::memory_tools::MEMORY_TOOLS.contains(&tc.name.as_str()))
         .collect();
     if qualifying.is_empty() {
         return None;
@@ -1586,7 +1586,9 @@ async fn run_loop(
                     p.result.is_error,
                     p.own_output.clone(),
                 ));
-                if p.name == "memory_write" && !p.result.is_error {
+                if bricks_tools::memory_tools::MEMORY_WRITE_TOOLS.contains(&p.name.as_str())
+                    && !p.result.is_error
+                {
                     agent.mark_needs_memory_maintenance();
                 }
                 capture.tool_calls.push(ToolCallRecord {

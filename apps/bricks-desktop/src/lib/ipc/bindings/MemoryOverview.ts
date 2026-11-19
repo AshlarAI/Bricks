@@ -9,12 +9,4 @@ export type MemoryOverview = { global: MemoryCounts,
 /**
  * The current project's (`None` without a project).
  */
-project: MemoryCounts | null, 
-/**
- * The former single store exists (left as it is).
- */
-legacy_store: boolean, 
-/**
- * The project's `bricks.toml` has a `[memory]` section, not used here.
- */
-toml_section_ignored: boolean, retired: Array<RetiredMemory>, };
+project: MemoryCounts | null, retired: Array<RetiredMemory>, };

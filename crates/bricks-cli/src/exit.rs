@@ -8,8 +8,6 @@ pub const FAILED: i32 = 1;
 pub const USAGE: i32 = 2;
 /// A step needed an approval and nobody could give it (non-interactive).
 pub const APPROVAL: i32 = 3;
-/// The answer was delivered, but the long-term memory maintenance failed.
-pub const MEMORY: i32 = 4;
 /// The run stopped before a final answer (output tokens, no progress,
 /// content filter, empty response); the partial answer was printed.
 pub const INCOMPLETE: i32 = 5;

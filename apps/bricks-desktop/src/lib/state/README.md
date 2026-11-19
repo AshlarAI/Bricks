@@ -14,6 +14,6 @@
   finalText, `files` = summed edit operations per path, `commands` = shell evidence), `agents`
   (spawn info with requested/applied model & reasoning, state, tools, result), `changesets`,
   `approvals` (pending), `skillsTrust`, `running`/`runningRunId`, `model`/`reasoning`/
-  `effectiveReasoning`, `pendingChange`, `context` + `contextStale`, `draft` (composer text and
+  `effectiveReasoning`, `context` + `contextStale`, `draft` (composer text and
   attachments, kept per conversation), `lastRejection`.
 - Engine types: `$lib/ipc/engine`. IPC: `$lib/ipc/client`.

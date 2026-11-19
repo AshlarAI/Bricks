@@ -101,10 +101,6 @@ pub struct RunArgs {
     /// Attach an image (the model must accept images).
     #[arg(long = "image", value_name = "PATH")]
     pub images: Vec<String>,
-    /// Do not wait for the long-term memory maintenance after the answer
-    /// (its work stays pending and resumes next time).
-    #[arg(long)]
-    pub no_wait_memory: bool,
     /// Activate this skill before the prompt (repeatable, in order). Every
     /// one is checked before anything is sent; one that cannot be used
     /// stops the command (exit code 2).

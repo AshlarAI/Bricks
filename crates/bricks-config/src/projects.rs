@@ -11,6 +11,7 @@ use std::sync::Arc;
 /// Reads a project with the existing loaders: `BricksConfig::load`, the
 /// long-term memory of its `bricks.toml`, the system prompt for its folder.
 pub struct Projects {
+    #[allow(dead_code)]
     registry: Arc<ProviderRegistry>,
     /// Whether a person can answer: decides the non-interactive prompt
     /// wording of the system prompt.
@@ -58,7 +59,7 @@ impl ProjectLoader for Projects {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
         let bricks = BricksConfig::load(wd);
         let memory = if self.project_memory {
-            long_term_memory(wd, &self.registry)?
+            long_term_memory(wd)?
         } else {
             None
         };

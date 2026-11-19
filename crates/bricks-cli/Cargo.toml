@@ -19,8 +19,7 @@ bricks-mcp = { workspace = true }
 bricks-types = { workspace = true }
 bricks-provider = { workspace = true }
 bricks-tools = { workspace = true }
-bricks-memory = { workspace = true, features = ["structured"] }
-bricks-embeddings = { workspace = true }
+bricks-memory = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

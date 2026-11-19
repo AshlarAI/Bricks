@@ -13,55 +13,11 @@ readme = "../../README.md"
 bricks-types = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 parking_lot = { workspace = true }
 dirs = { workspace = true }
 tempfile = { workspace = true }
-
-[features]
-default = []
-graph = ["grafeo"]
-embed = ["dep:bricks-embeddings"]
-# Long-term structured memory: episodes, entities, temporal facts, hybrid
-# recall (Grafeo store + vector projection + LLM extraction via providers).
-structured = ["graph", "embed", "dep:bricks-provider", "dep:sha2", "dep:toml", "dep:thiserror"]
-
-[dependencies.bricks-provider]
-workspace = true
-optional = true
-
-[dependencies.tokio-util]
-workspace = true
-
-[dependencies.thiserror]
-workspace = true
-optional = true
-
-[dependencies.sha2]
-workspace = true
-optional = true
-
-[dependencies.toml]
-workspace = true
-optional = true
-
-[dependencies.grafeo]
-version = "=0.6.0"
-optional = true
-default-features = false
-features = ["lpg", "gql", "grafeo-file", "wal", "text-index"]
-
-[dependencies.bricks-embeddings]
-workspace = true
-optional = true
-
-[dev-dependencies]
-serde_json = { workspace = true }
-
-[[example]]
-name = "measure_memory"
-required-features = ["structured"]

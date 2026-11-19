@@ -47,11 +47,7 @@
 	}
 
 	function total(c: MemoryCounts): string {
-		return [
-			t('settings.noteCount', { count: c.notes }),
-			t('settings.exchangeCount', { count: c.exchanges }),
-			t('settings.factCount', { count: c.facts })
-		].join(' · ');
+		return t('settings.noteCount', { count: c.notes });
 	}
 
 	function view(scope: MemoryScope) {
@@ -154,11 +150,6 @@
 				</Button>
 			</ButtonGroup.Root>
 		</div>
-		{#if overview?.toml_section_ignored}
-			<p class="p-3 text-caption text-muted-foreground">
-				{t('settings.theMemorySectionOfBricksToml')}
-			</p>
-		{/if}
 	</SettingsGroup>
 
 	{#if overview && overview.retired.length > 0}

@@ -70,10 +70,11 @@ pub fn run() {
             commands::projects::project_remove,
             commands::projects::project_rename,
             commands::projects::project_relocate,
-            // Memory: counts, entries, clearing
+            // Memory: counts, entries, editing, clearing
             commands::memory::memory_overview,
             commands::memory::memory_counts,
             commands::memory::memory_entries,
+            commands::memory::memory_update_note,
             commands::memory::memory_delete_entry,
             commands::memory::memory_delete,
             commands::memory::memory_delete_retired,

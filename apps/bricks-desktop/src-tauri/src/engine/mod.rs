@@ -122,13 +122,7 @@ impl AppState {
         let prefs = Arc::new(PrefsStore::at(desktop.join("preferences.json")));
         let journal = Arc::new(ChangeJournal::at(desktop.join("changes")));
         let catalog = DesktopCatalog::new(registry);
-        let memory = {
-            let catalog = Arc::clone(&catalog);
-            Arc::new(
-                bricks_config::MemoryService::in_home(&home)
-                    .with_registry(move || catalog.registry().ok()),
-            )
-        };
+        let memory = Arc::new(bricks_config::MemoryService::in_home(&home));
         Self {
             catalog,
             providers_path,

@@ -443,92 +443,10 @@ async fn axis_3_max_concurrent(steps: &[usize]) -> Vec<ConcurrencyPoint> {
     out
 }
 
-// ─── Axis 4 — Graph memory recall under load ───────────────────────────────
+// ─── Axis 4 — Graph memory recall under load (removed) ─────────────────────
 
-#[cfg(feature = "graph-bench")]
 async fn axis_4_graph_under_load() -> ScalingLatency {
-    use bricks_embeddings::HashingEmbeddings;
-    use bricks_memory::structured::{NoteInput, RecallQuery, StructuredMemory};
-
-    async fn measure(n_nodes: usize) -> LatencyStats {
-        let tmp = tempfile::tempdir().unwrap();
-        let graph_path = tmp.path().join("bench.grafeo");
-        let embedder = Arc::new(HashingEmbeddings::new(64));
-        let mem = Arc::new(
-            StructuredMemory::builder(embedder)
-                .path(&graph_path)
-                .open()
-                .expect("open structured memory"),
-        );
-
-        println!("  axis-4  seeding {n_nodes} notes...");
-        for i in 0..n_nodes {
-            mem.write_note(
-                NoteInput {
-                    space: "global".into(),
-                    project_id: None,
-                    session_id: Some("bench".into()),
-                    text: format!("Memory {i}: topic_{} about rust {}", i % 20, i % 7),
-                },
-                false,
-            )
-            .await
-            .expect("write_note");
-        }
-
-        // 10 concurrent "agents" × 100 recalls each.
-        let concurrency = 10usize;
-        let per_agent = 100usize;
-        let mut handles = Vec::with_capacity(concurrency);
-        for a in 0..concurrency {
-            let mem = Arc::clone(&mem);
-            handles.push(tokio::spawn(async move {
-                let mut samples = Vec::with_capacity(per_agent);
-                for q in 0..per_agent {
-                    let query = RecallQuery::new(format!("topic_{} rust", (a + q) % 20));
-                    let t = Instant::now();
-                    let _ = mem.recall(&query).await;
-                    samples.push(us(t.elapsed()));
-                }
-                samples
-            }));
-        }
-        let mut all = Vec::with_capacity(concurrency * per_agent);
-        for h in handles {
-            all.extend(h.await.unwrap());
-        }
-        let stats = summarize(all);
-        println!(
-            "  axis-4  n={n_nodes} p50={:.1}us p95={:.1}us p99={:.1}us",
-            stats.p50, stats.p95, stats.p99
-        );
-        stats
-    }
-
-    // Scale tunable via CERSEI_BENCH_GRAPH_MAX (default 10k; large for 100k).
-    let max = std::env::var("CERSEI_BENCH_GRAPH_MAX")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10_000);
-    ScalingLatency {
-        at_10k: measure(max.min(10_000)).await,
-        at_100k: if max >= 100_000 {
-            measure(100_000).await
-        } else {
-            LatencyStats {
-                p50: 0.0,
-                p95: 0.0,
-                p99: 0.0,
-                mean: 0.0,
-                samples: 0,
-            }
-        },
-    }
-}
-
-#[cfg(not(feature = "graph-bench"))]
-async fn axis_4_graph_under_load() -> ScalingLatency {
-    println!("  axis-4  skipped (build with --features graph-bench)");
+    println!("  axis-4  skipped (graph memory removed)");
     let empty = LatencyStats {
         p50: 0.0,
         p95: 0.0,

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 224 (2026/11/19)
+
+- Replace the Grafeo graph-based structured memory (`crates/bricks-memory/src/structured/`, `graph_migrate.rs`, and the `grafeo` dependency) with a Markdown file-based note store (`FileNoteStore` and `ScopedFileMemory`, with atomic `<id>.md` files and a generated `MEMORY.md` index).
+- Extend `LongTermMemory` with `list_notes`, `update_note`, and `delete_note`, add the `memory_list`, `memory_update`, and `memory_delete` agent tools, simplify `[memory]` config to index limits, and update Bricks Desktop to show notes only with inline editing.
+
 ### Commit 223 (2026/11/19)
 
 - Keep Shiki as the only code highlighter (highlight.js and `syntax.css` removed) in Markdown, streaming code and the reader, read whole files in the reader and show whole diffs (no 400-line windows or paging), replace « go to bottom » with a round arrow button, remove the reply table of contents, reuse the shadcn Switch for keep-awake in the « + » menu, and count only input tokens in the model context badge.

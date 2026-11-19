@@ -58,22 +58,18 @@ describe('the switch', () => {
 });
 
 describe('the counts', () => {
-	it('names each count in French with its singular and plural', () => {
+	it('names the note count in French with its singular and plural', () => {
 		expect(t('settings.noteCount', { count: 1 })).toBe('1 note');
 		expect(t('settings.noteCount', { count: 0 })).toBe('0 note');
-		expect(t('settings.exchangeCount', { count: 2 })).toBe('2 échanges');
-		expect(t('settings.factCount', { count: 1 })).toBe('1 fait');
+		expect(t('settings.noteCount', { count: 2 })).toBe('2 notes');
 	});
 
-	it('lists notes, exchanges and facts in that order', () => {
+	it('renders note counts only', () => {
 		const settings = src(SETTINGS);
 		const body = settings.slice(settings.indexOf('function total('), settings.indexOf('function view('));
-		const notes = body.indexOf("t('settings.noteCount', { count: c.notes })");
-		const exchanges = body.indexOf("t('settings.exchangeCount', { count: c.exchanges })");
-		const facts = body.indexOf("t('settings.factCount', { count: c.facts })");
-		expect(notes).toBeGreaterThan(-1);
-		expect(exchanges).toBeGreaterThan(notes);
-		expect(facts).toBeGreaterThan(exchanges);
+		expect(body).toContain("t('settings.noteCount', { count: c.notes })");
+		expect(body).not.toContain('exchangeCount');
+		expect(body).not.toContain('factCount');
 	});
 });
 
@@ -96,11 +92,6 @@ describe('the global and project memories', () => {
 	it('opens the memory view for the scope chosen', () => {
 		expect(settings).toContain("ui.open('memory', { scope })");
 		expect(settings).toContain("onclick={() => view('global')}");
-	});
-
-	it('says the bricks.toml [memory] section is not used, when it is present', () => {
-		expect(settings).toContain('{#if overview?.toml_section_ignored}');
-		expect(settings).toContain(call('La section [memory] de bricks.toml n’est pas utilisée par l’app.'));
 	});
 });
 

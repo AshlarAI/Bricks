@@ -2377,26 +2377,38 @@ type ChildMemoryTools = (
     Option<Arc<dyn bricks_memory::LongTermMemory>>,
 );
 
-/// Filter or attach `memory_search` / `memory_write` on a child tool list so
-/// neither leaks from inherited parent tools when disallowed, nor stays missing
-/// when the parent's memory was attached dynamically.
+/// Filter or attach memory tools on a child tool list so neither leaks from
+/// inherited parent tools when disallowed, nor stays missing when the parent's
+/// memory was attached dynamically.
 fn apply_child_memory_tools(
     tools: &mut Vec<Box<dyn bricks_tools::Tool>>,
     has_memory: bool,
     access: super::profile::MemoryAccess,
 ) {
-    let allow_search = has_memory && access != super::profile::MemoryAccess::Off;
-    let allow_write = allow_search && access == super::profile::MemoryAccess::ReadWrite;
-    tools.retain(|t| match t.name() {
-        "memory_search" => allow_search,
-        "memory_write" => allow_write,
-        _ => true,
+    let allow_read = has_memory && access != super::profile::MemoryAccess::Off;
+    let allow_write = allow_read && access == super::profile::MemoryAccess::ReadWrite;
+    tools.retain(|t| {
+        if bricks_tools::memory_tools::MEMORY_READ_TOOLS.contains(&t.name()) {
+            allow_read
+        } else if bricks_tools::memory_tools::MEMORY_WRITE_TOOLS.contains(&t.name()) {
+            allow_write
+        } else {
+            true
+        }
     });
-    if allow_search && !tools.iter().any(|t| t.name() == "memory_search") {
-        tools.push(Box::new(bricks_tools::memory_tools::MemorySearchTool));
+    if allow_read {
+        for tool in bricks_tools::memory_tools::memory_read_tools() {
+            if !tools.iter().any(|t| t.name() == tool.name()) {
+                tools.push(tool);
+            }
+        }
     }
-    if allow_write && !tools.iter().any(|t| t.name() == "memory_write") {
-        tools.push(Box::new(bricks_tools::memory_tools::MemoryWriteTool));
+    if allow_write {
+        for tool in bricks_tools::memory_tools::memory_write_tools() {
+            if !tools.iter().any(|t| t.name() == tool.name()) {
+                tools.push(tool);
+            }
+        }
     }
 }
 
@@ -2675,16 +2687,11 @@ mod tests {
 
         // Inherited memory tools from `(self.tools)()` must be stripped when
         // ReadOnly (removes memory_write) or Off / !has_memory (removes both).
-        let inherited = || -> Vec<Box<dyn bricks_tools::Tool>> {
-            vec![
-                Box::new(bricks_tools::memory_tools::MemorySearchTool),
-                Box::new(bricks_tools::memory_tools::MemoryWriteTool),
-            ]
-        };
+        let inherited = bricks_tools::memory_tools::memory_tools;
 
         let mut t = inherited();
         apply_child_memory_tools(&mut t, true, MemoryAccess::ReadOnly);
-        assert_eq!(names(&t), vec!["memory_search"]);
+        assert_eq!(names(&t), vec!["memory_search", "memory_list"]);
 
         let mut t = inherited();
         apply_child_memory_tools(&mut t, true, MemoryAccess::Off);
@@ -2696,15 +2703,33 @@ mod tests {
 
         let mut t = inherited();
         apply_child_memory_tools(&mut t, true, MemoryAccess::ReadWrite);
-        assert_eq!(names(&t), vec!["memory_search", "memory_write"]);
+        assert_eq!(
+            names(&t),
+            vec![
+                "memory_search",
+                "memory_list",
+                "memory_write",
+                "memory_update",
+                "memory_delete",
+            ]
+        );
 
         // Empty parent tool set still adds the allowed memory tools.
         let mut t = Vec::new();
         apply_child_memory_tools(&mut t, true, MemoryAccess::ReadOnly);
-        assert_eq!(names(&t), vec!["memory_search"]);
+        assert_eq!(names(&t), vec!["memory_search", "memory_list"]);
 
         let mut t = Vec::new();
         apply_child_memory_tools(&mut t, true, MemoryAccess::ReadWrite);
-        assert_eq!(names(&t), vec!["memory_search", "memory_write"]);
+        assert_eq!(
+            names(&t),
+            vec![
+                "memory_search",
+                "memory_list",
+                "memory_write",
+                "memory_update",
+                "memory_delete",
+            ]
+        );
     }
 }

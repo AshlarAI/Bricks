@@ -8,8 +8,7 @@
 //! * Approvals are asked on the controlling terminal (`/dev/tty`) when
 //!   there is one and `--non-interactive` is not given; otherwise a step
 //!   that needs one stops the run (exit code 3).
-//! * Ctrl+C cancels the run (or the memory maintenance); a second Ctrl+C
-//!   exits at once.
+//! * Ctrl+C cancels the run; a second Ctrl+C exits at once.
 
 use crate::args::{Global, RunArgs};
 use crate::exit;
@@ -19,8 +18,8 @@ use std::io::{IsTerminal, Read, Write};
 
 /// Starts the drain of the background sub-agents once the main run has
 /// finished: those still running at the deadline (`[agents]
-/// background_drain_ms` after that end, `0`: at once) are cancelled, whatever
-/// the memory maintenance does meanwhile. Returns the deadline.
+/// background_drain_ms` after that end, `0`: at once) are cancelled.
+/// Returns the deadline.
 fn start_background_drain(ctl: &Controller) -> tokio::time::Instant {
     let limit = ctl
         .agent_runtime()
@@ -295,17 +294,6 @@ impl Human {
                     }
                 }
             }
-            Event::MemoryMaintenanceFinished {
-                outcome: MaintenanceOutcome::Failed,
-                error,
-                report,
-            } => {
-                let detail = error
-                    .clone()
-                    .or_else(|| report.as_ref().map(|r| r.errors.join("; ")))
-                    .unwrap_or_default();
-                let _ = writeln!(err, "bricks: long-term memory maintenance failed: {detail}");
-            }
             _ => {}
         }
     }
@@ -425,7 +413,6 @@ pub async fn run(global: &Global, launch: &std::path::Path, args: RunArgs) -> i3
     }
 
     let mut code = exit::OK;
-    let mut finished = false;
     // Set at the end of the main run: the background sub-agents have until
     // then (see `start_background_drain`).
     let mut drain_deadline: Option<tokio::time::Instant> = None;
@@ -452,7 +439,6 @@ pub async fn run(global: &Global, launch: &std::path::Path, args: RunArgs) -> i3
             Event::RunFinished {
                 outcome, failure, ..
             } => {
-                finished = true;
                 code = match (outcome, failure) {
                     (RunOutcome::Succeeded, _) => exit::OK,
                     (RunOutcome::Incomplete, _) => exit::INCOMPLETE,
@@ -464,14 +450,6 @@ pub async fn run(global: &Global, launch: &std::path::Path, args: RunArgs) -> i3
                     drain_deadline = Some(start_background_drain(&ctl));
                 }
                 ctl.wait_idle().await;
-                if args.no_wait_memory || !ctl.snapshot().maintenance_running {
-                    break;
-                }
-            }
-            Event::MemoryMaintenanceFinished { outcome, .. } if finished => {
-                if *outcome == MaintenanceOutcome::Failed && code == exit::OK {
-                    code = exit::MEMORY;
-                }
                 break;
             }
             _ => {}

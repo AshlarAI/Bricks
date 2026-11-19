@@ -63,7 +63,6 @@ export type * from './bindings/MemoryEntry'
 export type * from './bindings/MemoryEntryFilter'
 export type * from './bindings/MemoryEntryKind'
 export type * from './bindings/MemoryEntryPage'
-export type * from './bindings/MemoryEvidence'
 export type * from './bindings/MemoryOverview'
 export type * from './bindings/MemoryScope'
 export type * from './bindings/RetiredMemory'
@@ -185,14 +184,21 @@ export const memoryEntries = (
   offset: number,
   limit: number,
 ) => call<MemoryEntryPage>('memory_entries', { scope, projectId, filter, query, offset, limit })
-/** Deletes a single entry (`note`, `exchange`, or `fact`) from a memory store. */
+/** Updates a single stored note in place. */
+export const memoryUpdateNote = (
+  scope: MemoryScope,
+  projectId: string | null,
+  id: string,
+  text: string,
+) => call<boolean>('memory_update_note', { scope, projectId, id, text })
+/** Deletes a single entry (`note`) from a memory store. */
 export const memoryDeleteEntry = (
   scope: MemoryScope,
   projectId: string | null,
   kind: MemoryEntryKind,
   id: string,
 ) => call<boolean>('memory_delete_entry', { scope, projectId, kind, id })
-/** Clears a memory; refused while a run uses it. */
+/** Clears all notes in a memory scope. */
 export const memoryDelete = (scope: MemoryScope, projectId: string | null) =>
   call<void>('memory_delete', { scope, projectId })
 export const memoryDeleteRetired = (projectId: string) =>

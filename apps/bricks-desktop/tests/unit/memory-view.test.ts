@@ -1,11 +1,9 @@
-// Static checks of the memory view (source read, not rendered): the pages of 50, the filters
-// and their French labels, the search that waits for typing and drops stale answers, the scope
-// rules, the reading that works whether the memory is on or off, and how an entry names its
-// project and conversation. Same approach as context-card-structure.test.ts.
+// Static checks of the memory view (source read, not rendered): pages of 50 notes,
+// debounced search dropping stale answers, scope rules, independent reading, inline
+// editing and deletion with confirmation.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatInt } from '../../src/lib/features/inspect/format';
-import { fr } from '../../src/lib/i18n/messages/fr';
 import { bound, call } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
@@ -14,7 +12,7 @@ const VIEW = 'lib/features/inspect/MemoryView.svelte';
 const view = src(VIEW);
 
 describe('pages', () => {
-	it('reads 50 entries a page, the engine maximum', () => {
+	it('reads 50 notes a page, the engine maximum', () => {
 		expect(view).toContain('const PAGE = 50;');
 		expect(view).toContain('PAGE\n\t\t\t\t);');
 	});
@@ -32,39 +30,9 @@ describe('pages', () => {
 		expect(formatInt(1234.4)).toBe(new Intl.NumberFormat('fr-FR').format(1234));
 	});
 
-	it('goes back to the first page when the scope, the filter or the search changes', () => {
-		expect(view).toContain('function choose(next: () => void) {\n\t\tnext();\n\t\toffset = 0;\n\t}');
+	it('goes back to the first page when the scope or the search changes', () => {
 		expect(view).toContain('choose(() => (query = event.currentTarget.value))');
-		expect(view).toContain('choose(() => (filter = v as MemoryEntryFilter))');
 		expect(view).toContain('choose(() => (scope = v as MemoryScope))');
-	});
-});
-
-describe('filters', () => {
-	it('offers the five filters in order, with their engine values and French labels', () => {
-		// Each label is a catalogue key; its French text is checked against fr.ts.
-		const expected: [string, string, string][] = [
-			["'all'", 'inspect.all', 'Tout'],
-			["'notes'", 'inspect.notes', 'Notes'],
-			["'exchanges'", 'inspect.exchanges', 'Échanges'],
-			["'facts'", 'inspect.facts', 'Faits'],
-			["'fact_history'", 'inspect.factHistory', 'Historique des faits']
-		];
-		const start = view.indexOf('const FILTERS');
-		const block = view.slice(start, view.indexOf('];', start));
-		let at = 0;
-		for (const [value, key, label] of expected) {
-			expect(fr[key as keyof typeof fr], key).toBe(label);
-			const found = block.indexOf(`value: ${value}, get label() { return t('${key}') }`, at);
-			expect(found, `${value} ${label}`).toBeGreaterThan(-1);
-			at = found;
-		}
-	});
-
-	it('explains that no fact is extracted automatically, on the facts filters only', () => {
-		expect(view).toContain("const factsShown = $derived(filter === 'facts' || filter === 'fact_history');");
-		expect(view).toContain('{#if factsShown}');
-		expect(view).toContain(call('Aucun fait n’est extrait automatiquement.'));
 	});
 });
 
@@ -107,38 +75,16 @@ describe('reading is independent of the switch', () => {
 	});
 });
 
-describe('entries', () => {
-	it('names each kind in French', () => {
-		expect(view).toContain(`get note() { return ${call('Note')} }`);
-		expect(view).toContain(`get exchange() { return ${call('Échange')} }`);
-		expect(view).toContain(`get fact() { return ${call('Fait')} }`);
-	});
-
-	it('names the role of an exchange and the status of a fact in French', () => {
-		expect(view).toContain("user: 'message',");
-		expect(view).toContain(`get assistant() { return ${call('réponse')} }`);
-		expect(view).toContain(`get tool() { return ${call('outil')} }`);
-		for (const [status, label] of [
-			['active', 'actif'],
-			['proposed', 'proposé'],
-			['superseded', 'remplacé'],
-			['contested', 'contesté'],
-			['retracted', 'retiré'],
-			['unsupported', 'sans source']
-		]) {
-			expect(view).toContain(`get ${status}() { return ${call(label)} }`);
-		}
-	});
-
-	it('shows the evidence of a fact as quotes, and the time of the entry', () => {
-		expect(view).toContain("t('common.quoted', { text: proof.quote })");
+describe('notes', () => {
+	it('labels notes and shows their timestamp', () => {
+		expect(view).toContain(`<Badge variant="secondary">{${call('Note')}}</Badge>`);
 		expect(view).toContain('<time datetime={new Date(entry.at).toISOString()}>{when(entry.at)}</time>');
 	});
 
-	it('says where a global entry comes from: its project, then its conversation', () => {
+	it('says where a global note comes from: its project, then its conversation', () => {
 		const start = view.indexOf('function source(');
 		const body = view.slice(start, view.indexOf('</script>'));
-		expect(body).toContain("if (scope === 'global' && e.project_id) parts.push(t('inspect.project', { projectId: e.project_name ?? e.project_id }));");
+		expect(body).toContain("parts.push(t('inspect.project', { projectId: e.project_name ?? e.project_id }));");
 		expect(body).toContain(`parts.push(conversation(e.session_id) ?? ${call('Conversation fermée')})`);
 		expect(body.indexOf("t('inspect.project'")).toBeLessThan(body.indexOf("t('inspect.closedConversation'"));
 	});
@@ -160,12 +106,18 @@ describe('empty and failed reads', () => {
 	});
 });
 
-describe('entry deletion', () => {
-	it('offers an easy delete button per entry with inline confirmation via shadcn Button', () => {
+describe('note editing and deletion', () => {
+	it('supports inline editing with 280-char limit and saves via memoryUpdateNote', () => {
+		expect(view).toContain("import Pencil from '@lucide/svelte/icons/pencil';");
+		expect(view).toContain('const NOTE_MAX_CHARS = 280;');
+		expect(view).toContain('await ipc.memoryUpdateNote(targetScope, targetProjectId, entry.id, trimmed);');
+	});
+
+	it('offers an easy delete button per note with inline confirmation via shadcn Button', () => {
 		expect(view).toContain("import Trash2 from '@lucide/svelte/icons/trash-2';");
 		expect(view).toContain(bound('aria-label', 'Supprimer cette entrée mémoire'));
-		expect(view).toContain('await ipc.memoryDeleteEntry(targetScope, targetProjectId, entry.kind, entry.id);');
+		expect(view).toContain("await ipc.memoryDeleteEntry(targetScope, targetProjectId, 'note', entry.id);");
 		expect(view).toContain('<Button\n\t\t\t\t\t\t\t\t\tvariant="destructive"\n\t\t\t\t\t\t\t\t\tsize="sm"');
-		expect(view).toContain('<p role="alert" class="text-ui text-pretty text-destructive">{deleteError}</p>');
+		expect(view).toContain('<p role="alert" class="text-ui text-pretty text-destructive">{actionError}</p>');
 	});
 });

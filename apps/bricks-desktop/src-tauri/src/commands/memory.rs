@@ -39,6 +39,17 @@ pub async fn memory_entries(
 }
 
 #[tauri::command]
+pub async fn memory_update_note(
+    state: State<'_, AppState>,
+    scope: MemoryScope,
+    project_id: Option<String>,
+    id: String,
+    text: String,
+) -> IpcResult<bool> {
+    state.memory_update_note(scope, project_id, id, text).await
+}
+
+#[tauri::command]
 pub async fn memory_delete_entry(
     state: State<'_, AppState>,
     scope: MemoryScope,

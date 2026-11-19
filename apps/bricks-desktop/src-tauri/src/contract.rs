@@ -97,32 +97,14 @@ pub enum MemoryScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryEntryFilter {
-    /// Notes, remembered exchanges and current facts.
     All,
     Notes,
-    Exchanges,
-    /// Current facts.
-    Facts,
-    /// Every version of every fact.
-    FactHistory,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryEntryKind {
     Note,
-    Exchange,
-    Fact,
-}
-
-/// A source of a fact: an episode and its verbatim quote.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct MemoryEvidence {
-    pub quote: String,
-    pub role: String,
-    pub session_id: Option<String>,
-    #[ts(type = "number | null")]
-    pub occurred_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -130,19 +112,15 @@ pub struct MemoryEntry {
     pub id: String,
     pub kind: MemoryEntryKind,
     pub text: String,
-    /// When it happened (exchange, note) or was recorded (fact).
+    /// When the note was last updated (milliseconds since Unix epoch).
     #[ts(type = "number")]
     pub at: i64,
-    /// `user`, `assistant`, `note`… (exchanges and notes).
+    /// `note`.
     pub role: Option<String>,
     /// The project that wrote it, and its name when known.
     pub project_id: Option<String>,
     pub project_name: Option<String>,
     pub session_id: Option<String>,
-    /// Facts: `active`, `proposed`, `superseded`, `contested`, `retracted`,
-    /// `unsupported`.
-    pub status: Option<String>,
-    pub evidence: Vec<MemoryEvidence>,
 }
 
 /// A page of entries, newest first.
@@ -153,12 +131,10 @@ pub struct MemoryEntryPage {
     pub total: u32,
 }
 
-/// What a store holds (a note is never counted as an exchange).
+/// What a store holds.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 pub struct MemoryCounts {
     pub notes: u32,
-    pub exchanges: u32,
-    pub facts: u32,
 }
 
 /// The store of a project no longer in the list.
@@ -169,15 +145,11 @@ pub struct RetiredMemory {
 }
 
 /// The Mémoire section of the settings.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 pub struct MemoryOverview {
     pub global: MemoryCounts,
     /// The current project's (`None` without a project).
     pub project: Option<MemoryCounts>,
-    /// The former single store exists (left as it is).
-    pub legacy_store: bool,
-    /// The project's `bricks.toml` has a `[memory]` section, not used here.
-    pub toml_section_ignored: bool,
     pub retired: Vec<RetiredMemory>,
 }
 

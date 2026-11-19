@@ -44,7 +44,6 @@ fn export_bindings() {
         MemoryScope,
         MemoryEntryFilter,
         MemoryEntryKind,
-        MemoryEvidence,
         MemoryEntry,
         MemoryEntryPage,
         MemoryCounts,

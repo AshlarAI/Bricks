@@ -9,8 +9,7 @@ description = "Engine assembly shared by the Bricks frontends (CLI, terminal int
 bricks-agent = { workspace = true }
 bricks-provider = { workspace = true }
 bricks-tools = { workspace = true }
-bricks-memory = { workspace = true, features = ["structured"] }
-bricks-embeddings = { workspace = true }
+bricks-memory = { workspace = true }
 bricks-mcp = { workspace = true }
 dirs = { workspace = true }
 parking_lot = { workspace = true }

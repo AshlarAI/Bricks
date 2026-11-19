@@ -3,4 +3,4 @@
 /**
  * Which entries a page lists.
  */
-export type MemoryEntryFilter = "all" | "notes" | "exchanges" | "facts" | "fact_history";
+export type MemoryEntryFilter = "all" | "notes";

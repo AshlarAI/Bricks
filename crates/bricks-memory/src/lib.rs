@@ -5,13 +5,14 @@
 //!
 //! ## Modules
 //! - `session_storage` — JSONL transcript persistence
-//! - `graph_migrate` — Schema versioning & legacy `:Memory` migration
-//! - `structured` (`feature = "structured"`) — Long-term structured memory
+//! - `file_store` — Markdown file-based long-term note memory (`MEMORY.md` + per-note `.md` files)
 
-pub mod graph_migrate;
+pub mod file_store;
 pub mod session_storage;
-#[cfg(feature = "structured")]
-pub mod structured;
+
+pub use file_store::{
+    DEFAULT_MAX_INDEX_NOTES, DEFAULT_MAX_INDEX_TOKENS, FileNoteStore, PAGE_MAX, ScopedFileMemory,
+};
 
 /// Maximum length in characters for an explicit memory note, keeping notes
 /// concise and atomic.
@@ -194,9 +195,30 @@ pub struct MaintenanceReport {
     pub errors: Vec<String>,
 }
 
-/// What an agent needs from a long-term memory: recall for a prompt,
-/// remembering an exchange, and processing what was remembered. Implemented
-/// by `structured::StructuredMemory` (feature `structured`).
+/// One durable note stored in long-term memory.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MemoryNote {
+    pub id: String,
+    pub text: String,
+    /// Milliseconds since the Unix epoch when the note was created.
+    pub created_at: i64,
+    /// Milliseconds since the Unix epoch when the note was last updated.
+    pub updated_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+/// A page of stored memory notes, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MemoryNotePage {
+    pub notes: Vec<MemoryNote>,
+    pub total: usize,
+}
+
+/// What an agent needs from a long-term memory: injecting the memory index,
+/// searching/listing notes, and creating/updating/deleting notes.
 #[async_trait]
 pub trait LongTermMemory: Send + Sync {
     /// Context for `query`, within `max_tokens`; `None` when nothing is
@@ -207,9 +229,12 @@ pub trait LongTermMemory: Send + Sync {
         max_tokens: usize,
     ) -> Result<Option<RecalledContext>>;
 
-    /// Store the turns of a session durably. Local and quick: no model or
-    /// embedding call happens here; [`Self::maintain`] does that work.
-    async fn record_turns(&self, session_id: Option<&str>, turns: &[MemoryTurn]) -> Result<()>;
+    /// Store the turns of a session durably. Default is a no-op for note-only
+    /// backends.
+    async fn record_turns(&self, session_id: Option<&str>, turns: &[MemoryTurn]) -> Result<()> {
+        let _ = (session_id, turns);
+        Ok(())
+    }
 
     /// Search one scope for `query`: at most `limit` items, rendered as a
     /// context block; `None` when nothing matches. Memories without that
@@ -227,6 +252,21 @@ pub trait LongTermMemory: Send + Sync {
         )))
     }
 
+    /// List notes in `scope`, optionally filtered by a case/accent-insensitive
+    /// substring `query`.
+    async fn list_notes(
+        &self,
+        scope: MemoryScope,
+        query: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<MemoryNotePage> {
+        let _ = (scope, query, offset, limit);
+        Err(BricksError::Config(
+            "listing memory notes is not supported by this backend".into(),
+        ))
+    }
+
     /// Write a note of the model in `scope`, indexed before this returns
     /// (found by the next search, in the same run). Returns its id.
     async fn write_note(
@@ -242,14 +282,33 @@ pub trait LongTermMemory: Send + Sync {
         )))
     }
 
-    /// Process what was recorded and not processed yet (extraction,
-    /// embeddings). Resumable: a pass that is cancelled or interrupted
-    /// leaves its remaining work for the next pass, and an extraction that
-    /// succeeded is never repeated.
+    /// Update an existing note in place in `scope`, keeping its `id`.
+    /// Returns `true` when the note existed.
+    async fn update_note(&self, scope: MemoryScope, id: &str, text: &str) -> Result<bool> {
+        let _ = (scope, id, text);
+        Err(BricksError::Config(
+            "updating memory notes is not supported by this backend".into(),
+        ))
+    }
+
+    /// Delete an existing note by `id` in `scope`. Returns `true` when the
+    /// note existed.
+    async fn delete_note(&self, scope: MemoryScope, id: &str) -> Result<bool> {
+        let _ = (scope, id);
+        Err(BricksError::Config(
+            "deleting memory notes is not supported by this backend".into(),
+        ))
+    }
+
+    /// Process any deferred maintenance work. Default is a no-op for
+    /// immediately indexed backends.
     async fn maintain(
         &self,
         cancel: &tokio_util::sync::CancellationToken,
-    ) -> Result<MaintenanceReport>;
+    ) -> Result<MaintenanceReport> {
+        let _ = cancel;
+        Ok(MaintenanceReport::default())
+    }
 }
 
 /// Keys under which an agent stores, next to a session `<id>`, its raw

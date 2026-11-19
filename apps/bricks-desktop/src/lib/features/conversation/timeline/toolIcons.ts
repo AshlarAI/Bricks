@@ -91,7 +91,10 @@ const BY_NAME: Record<string, IconComponent> = {
   Skill: ZapIcon,
   LSP: BracesIcon,
   memory_search: DatabaseIcon,
+  memory_list: DatabaseIcon,
   memory_write: DatabaseIcon,
+  memory_update: DatabaseIcon,
+  memory_delete: DatabaseIcon,
 }
 
 /** The step of a run that is reasoning, not calling a tool. */
