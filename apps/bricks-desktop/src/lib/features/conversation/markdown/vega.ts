@@ -10,7 +10,7 @@
 //   in the sandboxed viewer; no tooltip or event handler is installed.
 // Pure parts are unit-tested (tests/unit/vega-chart.test.ts).
 
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import { sanitizeSvg } from './sanitize'
 
 /** A specification larger than this is refused (characters). */

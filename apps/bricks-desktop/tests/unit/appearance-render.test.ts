@@ -1,9 +1,9 @@
 // Appearance: the settings page shows two groups, the theme mode and the app icon, and no colour
 // choice. The component is rendered as the app renders it, so the test reads the markup the user gets.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from 'svelte/server';
-import AppearanceSettings from '../../src/lib/features/settings/AppearanceSettings.svelte';
-import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app.svelte';
+import { renderHtml } from './react-test-utils';
+import AppearanceSettings from '../../src/lib/features/settings/AppearanceSettings';
+import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app';
 
 const ipc = vi.hoisted(() => ({
 	prefsSet: vi.fn(),
@@ -13,7 +13,7 @@ const ipc = vi.hoisted(() => ({
 vi.mock('$lib/ipc/client', () => ipc);
 
 function page(): string {
-	return render(AppearanceSettings).body;
+	return renderHtml(AppearanceSettings);
 }
 
 /** The radio buttons of the page, as [group name, value, checked], in the order they are shown. */

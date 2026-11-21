@@ -2,7 +2,7 @@
 // revision is newer than the one held, whatever the order of the snapshot and of the replayed
 // events; a cleared plan is a newer revision, so it is never resurrected by an older one.
 import { describe, expect, it } from 'vitest';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { Envelope, PlanState, PlanStep, Snapshot } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, PROJECT_ID, SESSION_ID, T0, openedSession, snapshot } from './fixtures';
 

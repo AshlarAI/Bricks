@@ -4,8 +4,8 @@
 // text is the answer and follows the block, then the run's end summary. Items
 // without a run (an older history) stay as they are. Pure: unit-tested
 // (tests/unit/run-blocks.test.ts).
-import { t } from '$lib/i18n/i18n.svelte'
-import type { AssistantItem, RunInfo, TimelineItem } from '$lib/state/conversation.svelte'
+import { t } from '$lib/i18n/i18n'
+import type { AssistantItem, RunInfo, TimelineItem } from '$lib/state/conversation'
 import type { IconComponent } from '$lib/layout/types'
 import { formatToolName } from './format'
 import { MESSAGE_ICON, THINKING_ICON, toolIcon } from './timeline/toolIcons'

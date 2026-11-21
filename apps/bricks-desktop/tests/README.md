@@ -4,9 +4,9 @@
 
 ```bash
 cd apps/bricks-desktop
-npm run check        # svelte-check + TypeScript
+npm run check        # TypeScript (tsc)
 npm run test:unit    # Vitest (tests/unit)
-npm run test:types   # type-check of the tests (svelte-check)
+npm run test:types   # type-check of the tests (tsc)
 cargo test -p bricks-desktop                       # Rust services, IPC, engine bridge
 cargo test -p bricks-agent --test permission_policy  # session permission policy
 ```

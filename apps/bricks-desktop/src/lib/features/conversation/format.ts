@@ -1,5 +1,5 @@
 // Display helpers for the conversation timeline. Pure functions only.
-import { t, numberFormat } from '$lib/i18n/i18n.svelte'
+import { t, numberFormat } from '$lib/i18n/i18n'
 import type { ChangeKind, Decision, DecidedBy, RunOutcome, Termination } from '$lib/ipc/engine'
 
 const decimalFormat = numberFormat({ maximumFractionDigits: 1 })

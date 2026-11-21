@@ -3,7 +3,7 @@
 // aliases Shiki lists, the placeholders of Markdown code bodies, and a fence rendered as a whole.
 // Shiki loads its grammars asynchronously: a test that needs colours waits for the load first.
 import { describe, expect, it, vi } from 'vitest'
-import { codeLanguages, highlightedLines, isHighlightable, plainLines } from '../../src/lib/code-highlight.svelte'
+import { codeLanguages, highlightedLines, isHighlightable, plainLines } from '../../src/lib/code-highlight'
 import { renderReference } from '../../src/lib/features/conversation/markdown/document'
 import { withHighlights } from '../../src/lib/features/conversation/markdown/render'
 import type { RenderedBlock } from '../../src/lib/features/conversation/markdown/types'

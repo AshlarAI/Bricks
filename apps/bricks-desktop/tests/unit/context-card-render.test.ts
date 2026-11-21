@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// The context card (ContextCard.svelte) mounted over a real Conversation: the share and the figures
+// The context card (ContextCard.tsx) mounted over a real Conversation: the share and the figures
 // come from the status; with a breakdown the bar is split by source and a list names each source
 // with its tokens and its share; without one the card keeps a plain bar and no list; a stale
 // measure reads dashes.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import ContextCard from '../../src/lib/features/context/ContextCard.svelte';
+import { mountReact, type MountedComponent } from './react-test-utils';
+import ContextCard from '../../src/lib/features/context/ContextCard';
 import type { ContextChars, ContextStatus } from '../../src/lib/ipc/engine';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import { PROJECT_ID, openedSession, snapshot } from './fixtures';
 
 const NONE: ContextChars = { instructions: 0, conversation: 0, tool_results: 0, tool_definitions: 0, other: 0 };
@@ -30,7 +30,7 @@ function conversationWith(context: ContextStatus, stale = false): Conversation {
 }
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<{ conversation: Conversation }> | null = null;
 
 beforeEach(() => {
 	target = document.createElement('div');
@@ -38,18 +38,22 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 });
 
 function render(conversation: Conversation) {
-	component = mount(ContextCard, { target, props: { conversation } });
-	flushSync();
+	component = mountReact(ContextCard, { target, props: { conversation } });
 }
 
 const meter = () => target.querySelector<HTMLElement>('[role="meter"]')!;
 const list = () => target.querySelector<HTMLElement>('[aria-label="Répartition du contexte"]');
+const rowText = (li: HTMLElement) =>
+	[...li.children]
+		.map((el) => el.textContent?.replace(/\s+/g, ' ').trim())
+		.filter(Boolean)
+		.join(' ');
 
 describe('the share and the figures', () => {
 	it('shows the share of the occupation and the figures in short', () => {
@@ -88,7 +92,7 @@ describe('with a breakdown: the bar is split and the list names each source', ()
 	it('lists each source that counted text, with its figure and its share', () => {
 		render(conversationWith(statusOf({ conversation: 600, tool_results: 400 })));
 		const items = [...target.querySelectorAll<HTMLElement>('[aria-label="Répartition du contexte"] li')];
-		expect(items.map((li) => li.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+		expect(items.map(rowText)).toEqual([
 			'Messages 209.8k 60,0 %',
 			'Sorties d’outils 139.8k 40,0 %',
 			'Espace libre 650.4k'
@@ -113,7 +117,7 @@ describe('with a breakdown: the bar is split and the list names each source', ()
 	it('ends with the room left in the input budget, without a share', () => {
 		render(conversationWith(statusOf({ conversation: 600, tool_results: 400 })));
 		const items = [...target.querySelectorAll<HTMLElement>('[aria-label="Répartition du contexte"] li')];
-		const last = items.at(-1)?.textContent?.replace(/\s+/g, ' ').trim();
+		const last = items.at(-1) ? rowText(items.at(-1)!) : undefined;
 		expect(last).toBe('Espace libre 650.4k');
 		expect(last).not.toContain('%');
 	});

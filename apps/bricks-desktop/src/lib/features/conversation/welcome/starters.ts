@@ -1,19 +1,16 @@
 // The four suggestions of the welcome screen, and what picking one does to the draft:
 // it fills the composer, it never sends.
 
-import type { Component } from 'svelte'
-import Search from '@lucide/svelte/icons/search'
-import Sparkles from '@lucide/svelte/icons/sparkles'
-import GitCompare from '@lucide/svelte/icons/git-compare'
-import FlaskConical from '@lucide/svelte/icons/flask-conical'
-import { t } from '$lib/i18n/i18n.svelte'
+import { FlaskConical, GitCompare, Search, Sparkles } from 'lucide-react'
+import type { IconComponent } from '$lib/layout/types'
+import { t } from '$lib/i18n/i18n'
 import type { MessageKey } from '$lib/i18n/messages/en'
 
 export interface Starter {
   id: string
   label: MessageKey
   prompt: MessageKey
-  icon: Component<{ class?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
+  icon: IconComponent
 }
 
 export const STARTERS: readonly Starter[] = [

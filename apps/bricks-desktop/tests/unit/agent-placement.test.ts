@@ -2,7 +2,7 @@
 // envelopes: after the parent's call that launched it and its siblings, before the run end when
 // it has no call, at the end otherwise; a resume is a second item; a stale execution changes nothing.
 import { describe, expect, it } from 'vitest';
-import { Conversation, type TimelineItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type TimelineItem } from '../../src/lib/state/conversation';
 import type { InstanceRecord } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 

@@ -65,12 +65,12 @@ function declares(block: string, name: string): boolean {
 	return new RegExp(`(^|[;\\s{])${name}\\s*:`, 'm').test(block);
 }
 
-/** Every TypeScript and Svelte source file under src/lib. */
+/** Every TypeScript and React source file under src/lib. */
 function libFiles(dir: string = fileURLToPath(new URL('../../src/lib', import.meta.url))): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
 		const path = join(dir, entry.name);
 		if (entry.isDirectory()) return libFiles(path);
-		return /\.(ts|js|svelte)$/.test(entry.name) ? [path] : [];
+		return /\.(ts|tsx|js)$/.test(entry.name) ? [path] : [];
 	});
 }
 

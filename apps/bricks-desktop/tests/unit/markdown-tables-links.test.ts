@@ -48,14 +48,19 @@ describe('links', () => {
 });
 
 describe('the styles of an answer', () => {
-	const view = readFileSync('src/lib/features/conversation/markdown/MarkdownView.svelte', 'utf8');
+	const view = readFileSync('src/lib/features/conversation/markdown/MarkdownView.tsx', 'utf8');
+	const css = readFileSync('src/lib/features/conversation/markdown/markdown-view.css', 'utf8');
+
+	it('imports the markdown-view stylesheet', () => {
+		expect(view).toContain("import './markdown-view.css'");
+	});
 
 	it('no longer override the alignment or turn tables into blocks', () => {
-		expect(view).not.toContain('text-align: left');
-		expect(view).not.toMatch(/:global\(table\) \{\s*display: block/);
+		expect(css).not.toContain('text-align: left');
+		expect(css).not.toMatch(/\.md table\s*\{\s*display:\s*block/);
 	});
 
 	it('keep words whole in table cells', () => {
-		expect(view).toMatch(/:global\(td\) \{[^}]*overflow-wrap: normal/);
+		expect(css).toMatch(/\.md th,\s*\.md td\s*\{[^}]*overflow-wrap:\s*normal/);
 	});
 });

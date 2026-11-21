@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// The work block (timeline/WorkBlock.svelte): the steps of a run under a thin bar. While the run
-// works, the bar counts its time and shows the steps; folded, it names the current step. When the
-// run ends it reads « A travaillé … », folds by itself, and what asks the person something stays
-// visible while it is folded. Mounted in happy-dom with fake timers, and fed by the reducer.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import WorkBlock from '../../src/lib/features/conversation/timeline/WorkBlock.svelte';
+// The work block (timeline/WorkBlock.tsx): the steps of a run under a thin bar. While the run
+// works, the bar reads « Travaille… » and shows the steps; folded, it names the current step. When the
+// run ends it reads how it ended, folds by itself, and what asks the person something stays
+// visible while it is folded. Mounted in happy-dom and fed by the reducer.
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import WorkBlock, { type WorkBlockProps } from '../../src/lib/features/conversation/timeline/WorkBlock';
 import { timelineBlocks, type WorkBlock as WorkBlockData } from '../../src/lib/features/conversation/runBlocks';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { ApprovalRequest } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, PROJECT_ID, T0, openedSession } from './fixtures';
 
@@ -47,24 +47,29 @@ function barOf(conv: Conversation): Pick<WorkBlockData, 'items' | 'answerReasoni
 }
 
 let target: HTMLDivElement;
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<WorkBlockProps> | null = null;
 
-/** Mounts the block. Its steps are read through getters, so the block follows the run as it goes. */
+/** Mounts the block with the run's current steps and reasoning. */
 function show(conv: Conversation): void {
-	app = mount(WorkBlock, {
+	const { items, answerReasoning } = barOf(conv);
+	app = mountReact(WorkBlock, {
 		target,
 		props: {
 			conversation: conv,
 			runId: RUN,
-			get items() {
-				return barOf(conv).items;
-			},
-			get answerReasoning() {
-				return barOf(conv).answerReasoning;
-			},
+			items,
+			answerReasoning,
 		},
 	});
-	flushSync();
+}
+
+/** Re-renders the mounted block with the latest timeline items from `conv`. */
+function sync(conv: Conversation, mutate?: () => void): void {
+	flushReact(() => {
+		mutate?.();
+	});
+	const { items, answerReasoning } = barOf(conv);
+	app?.rerender({ items, answerReasoning });
 }
 
 /**
@@ -74,7 +79,7 @@ function show(conv: Conversation): void {
  */
 function text(): string {
 	const shown = target.cloneNode(true) as HTMLElement;
-	for (const closed of shown.querySelectorAll('[data-collapsible-content][data-state="closed"], [hidden]')) {
+	for (const closed of shown.querySelectorAll('[data-slot="collapsible-content"][data-state="closed"], [hidden]')) {
 		closed.remove();
 	}
 	return (shown.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -90,57 +95,53 @@ function expanded(): string | null {
 }
 
 function toggle(): void {
-	trigger()!.click();
-	flushSync();
+	flushReact(() => {
+		trigger()!.click();
+	});
 }
 
 beforeEach(() => {
-	vi.useFakeTimers();
-	vi.setSystemTime(T0);
 	target = document.createElement('div');
 	document.body.appendChild(target);
 });
 
 afterEach(() => {
-	if (app) void unmount(app);
+	app?.unmount();
 	app = null;
 	target.remove();
-	vi.useRealTimers();
 });
 
 describe('WorkBlock while the run works', () => {
-	it('is open at first: the bar counts the time and every step is shown', () => {
+	it('is open at first: the bar reads Travaille… and every step is shown', () => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Read');
 		conv.apply(feed.next({ type: 'tool_started', tool_call_id: 'tc-2', name: 'Grep', input: { pattern: 'x' } }));
-		vi.setSystemTime(T0 + 27_000);
 		show(conv);
-		expect(text()).toContain('Travaille depuis 27s');
+		expect(text()).toContain('Travaille…');
 		expect(expanded()).toBe('true');
 		// Open, the steps are in their own lines: the current step is not repeated on the bar.
-		expect(text().split('Grep')).toHaveLength(2);
-		expect(text()).toContain('Read');
+		expect(text()).not.toContain('Grep');
+		expect(text()).toContain('A lu a.ts');
+		expect(text()).toContain('Cherche x');
 	});
 
 	it('folded by its arrow, the bar names the current step and hides the others', () => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Read');
 		conv.apply(feed.next({ type: 'tool_started', tool_call_id: 'tc-2', name: 'Grep', input: { pattern: 'x' } }));
-		vi.setSystemTime(T0 + 27_000);
 		show(conv);
 		toggle();
 		expect(expanded()).toBe('false');
-		expect(text()).toContain('Travaille depuis 27s');
+		expect(text()).toContain('Travaille…');
 		expect(text()).toContain('Grep');
-		expect(text()).not.toContain('Read');
+		expect(text()).not.toContain('A lu a.ts');
 	});
 
-	it('an empty run has no arrow to fold: its bar is the time alone', () => {
+	it('an empty run has no arrow to fold: its bar is the status alone', () => {
 		const { conv } = runningRun();
-		vi.setSystemTime(T0 + 3_000);
 		show(conv);
 		expect(trigger()).toBeNull();
-		expect(text()).toBe('Travaille depuis 3s');
+		expect(text()).toBe('Travaille…');
 	});
 
 	it('a pending approval stays visible when the bar is folded, and goes once it is decided', () => {
@@ -152,44 +153,41 @@ describe('WorkBlock while the run works', () => {
 		toggle();
 		expect(expanded()).toBe('false');
 		expect(text()).toContain('Lancer les tests');
-		// The steps stay folded: the finished call's duration is not on screen.
-		expect(text()).not.toContain('12ms');
+		// The steps stay folded: the finished call is not on screen.
+		expect(text()).not.toContain('A lu a.ts');
 
-		conv.apply(
-			feed.next({ type: 'approval_resolved', approval_id: 'ap-1', tool_call_id: 'tc-9', decision: 'allow', by: 'user' }),
-		);
-		flushSync();
+		sync(conv, () => {
+			conv.apply(
+				feed.next({ type: 'approval_resolved', approval_id: 'ap-1', tool_call_id: 'tc-9', decision: 'allow', by: 'user' }),
+			);
+		});
 		expect(text()).not.toContain('Lancer les tests');
 	});
 });
 
 describe('WorkBlock once the run has ended', () => {
-	it('reads « A travaillé » with the time, and folds by itself', () => {
+	it('reads « Terminé » and folds by itself', () => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Read');
 		show(conv);
 		expect(expanded()).toBe('true');
 
-		vi.setSystemTime(T0 + 6_000);
-		conv.apply(feed.next({ type: 'run_finished', outcome: 'succeeded', text: '', turns: 1 }, { at: T0 + 6_000 }));
-		flushSync();
-		expect(text()).toBe('A travaillé 6s');
+		sync(conv, () => {
+			conv.apply(feed.next({ type: 'run_finished', outcome: 'succeeded', text: '', turns: 1 }, { at: T0 + 6_000 }));
+		});
+		expect(text()).toBe('Terminé');
 		expect(expanded()).toBe('false');
-		// The clock of the bar has stopped: the time it reads is the run's, not the wall clock's.
-		vi.advanceTimersByTime(60_000);
-		flushSync();
-		expect(text()).toBe('A travaillé 6s');
 	});
 
 	it.each([
 		['failed', 'Échec'],
 		['incomplete', 'Incomplet'],
 		['cancelled', 'Annulé'],
-	] as const)('a run that ended as %s says « %s » after its time', (outcome, label) => {
+	] as const)('a run that ended as %s says « %s »', (outcome, label) => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Bash');
 		conv.apply(feed.next({ type: 'run_finished', outcome, text: '', turns: 1 }, { at: T0 + 6_000 }));
 		show(conv);
-		expect(text()).toBe(`A travaillé 6s · ${label}`);
+		expect(text()).toBe(label);
 	});
 });

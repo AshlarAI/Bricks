@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { setLanguage } from '$lib/i18n/i18n.svelte'
+import { setLanguage } from '$lib/i18n/i18n'
 import type { UpdateMetadata, UpdateStatus } from '$lib/ipc/client'
 import {
   downloadPercent,
@@ -77,22 +77,22 @@ describe('updates helpers', () => {
 describe('updater UI placement', () => {
   it('places green ArrowDownToLine button next to Settings in NavigationPanel without border-t', () => {
     const nav = readFileSync(
-      resolve(import.meta.dirname, '../../src/lib/features/navigation/NavigationPanel.svelte'),
+      resolve(import.meta.dirname, '../../src/lib/features/navigation/NavigationPanel.tsx'),
       'utf8',
     )
-    expect(nav).toContain("import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line'")
+    expect(nav).toMatch(/import\s*\{[^}]*\bArrowDownToLineIcon\b[^}]*\}\s*from 'lucide-react'/)
     expect(nav).toContain('bg-emerald-600 text-white')
     expect(nav).toContain('flex-1 justify-start text-ui')
     const footerStart = nav.indexOf('flex items-center gap-1.5')
     expect(footerStart).toBeGreaterThan(-1)
     const footer = nav.slice(footerStart)
-    expect(footer).toContain('ui.settingsOpen = true')
+    expect(footer).toContain('ui.setSettingsOpen(true)')
     expect(footer).not.toContain('border-t')
   })
 
-  it('places a shadcn-svelte update check button in ApplicationSettings', () => {
+  it('places a shadcn/ui update check button in ApplicationSettings', () => {
     const settings = readFileSync(
-      resolve(import.meta.dirname, '../../src/lib/features/settings/ApplicationSettings.svelte'),
+      resolve(import.meta.dirname, '../../src/lib/features/settings/ApplicationSettings.tsx'),
       'utf8',
     )
     expect(settings).toContain("import { Button } from '$lib/components/ui/button'")

@@ -3,7 +3,7 @@
  * first paint use it before the preferences (prefs IPC) are loaded. It is a copy
  * for display only; the preference itself stays in the prefs file.
  */
-import type { ResolvedTheme } from './theme.svelte';
+import type { ResolvedTheme } from './theme';
 
 const KEY = 'bricks.lastTheme';
 

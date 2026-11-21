@@ -7,7 +7,7 @@ import { bound } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const TERMINAL = 'lib/features/terminal/TerminalPanel.svelte';
+const TERMINAL = 'lib/features/terminal/TerminalPanel.tsx';
 
 describe('terminal panel', () => {
 	const text = src(TERMINAL);
@@ -22,7 +22,7 @@ describe('terminal panel', () => {
 
 	it('shows the hide button only when its parent hands it an onHide callback', () => {
 		const hide = text.indexOf(bound('aria-label', 'Masquer le terminal'));
-		expect(text.slice(0, hide)).toContain('{#if onHide}');
-		expect(text).toContain('onclick={onHide}');
+		expect(text.slice(0, hide)).toContain('{onHide && (');
+		expect(text).toContain('onClick={onHide}');
 	});
 });

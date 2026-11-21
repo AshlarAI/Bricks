@@ -1,7 +1,7 @@
 // Unit tests for the context line « 12 374 / 1 000 000 tokens » (contextView.ts), and
 // for the reducer events that make the measure stale. Hand-built envelopes (fixtures.ts).
 import { describe, expect, it } from 'vitest';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { ContextStatus, Provenance } from '../../src/lib/ipc/engine';
 import { contextFigures, contextLine } from '../../src/lib/features/context/contextView';
 import { EnvelopeFeed, MODEL, PROJECT_ID, openedSession, snapshot } from './fixtures';

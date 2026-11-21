@@ -13,7 +13,7 @@
 // Errors are returned, never thrown (throwOnError), and strict warnings are
 // silenced: a formula that KaTeX only finds unusual still renders.
 
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import { sanitizeKatex } from './sanitize'
 import type { MathRenderer } from './types'
 

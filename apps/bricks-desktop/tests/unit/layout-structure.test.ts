@@ -9,28 +9,28 @@ import { bound, call } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const TOPBAR = 'lib/layout/TopBar.svelte';
-const APP = 'App.svelte';
-const PLUS = 'lib/features/context/PlusMenu.svelte';
-const CONTEXT_PANEL = 'lib/features/context/ContextPanel.svelte';
-const ENVIRONMENT = 'lib/features/context/ProjectEnvironment.svelte';
-const RUN_END = 'lib/features/conversation/timeline/RunEndCard.svelte';
+const TOPBAR = 'lib/layout/TopBar.tsx';
+const APP = 'App.tsx';
+const PLUS = 'lib/features/context/PlusMenu.tsx';
+const CONTEXT_PANEL = 'lib/features/context/ContextPanel.tsx';
+const ENVIRONMENT = 'lib/features/context/ProjectEnvironment.tsx';
+const RUN_END = 'lib/features/conversation/timeline/RunEndCard.tsx';
 
 describe('top bar: the « Plus » menu comes after the panel toggles', () => {
 	it('renders the trailing slot after the « Affichage » group', () => {
 		const topbar = src(TOPBAR);
 		const group = topbar.indexOf(bound('aria-label', 'Affichage'));
-		const lastToggle = topbar.indexOf('{#if onToggleReader}');
-		const trailing = topbar.indexOf('{@render trailing()}');
+		const lastToggle = topbar.indexOf('{onToggleReader && (');
+		const trailing = topbar.indexOf('{trailing &&');
 		expect(group).toBeGreaterThan(-1);
 		expect(lastToggle).toBeGreaterThan(group);
 		expect(trailing).toBeGreaterThan(lastToggle);
 	});
 
-	it('App passes PlusMenu as the trailing snippet of the top bar', () => {
+	it('App passes PlusMenu as the trailing prop of the top bar', () => {
 		const app = src(APP);
-		expect(app).toMatch(/\{#snippet trailing\(\)\}\s*<PlusMenu \/>\s*\{\/snippet\}/);
-		expect(app).toContain("import PlusMenu from '$lib/features/context/PlusMenu.svelte'");
+		expect(app).toContain('trailing={<PlusMenu />}');
+		expect(app).toContain("import PlusMenu from '$lib/features/context/PlusMenu'");
 	});
 });
 
@@ -58,15 +58,15 @@ describe('project environment: icons instead of the Projet, Dossier and Git labe
 	const env = src(ENVIRONMENT);
 
 	it('imports the three icons', () => {
-		expect(env).toContain("import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban';");
-		expect(env).toContain("import FolderIcon from '@lucide/svelte/icons/folder';");
-		expect(env).toContain("import GitBranchIcon from '@lucide/svelte/icons/git-branch';");
+		expect(env).toMatch(/import\s*\{[^}]*\bFolderKanbanIcon\b[^}]*\}\s*from 'lucide-react'/);
+		expect(env).toMatch(/import\s*\{[^}]*\bFolderIcon\b[^}]*\}\s*from 'lucide-react'/);
+		expect(env).toMatch(/import\s*\{[^}]*\bGitBranchIcon\b[^}]*\}\s*from 'lucide-react'/);
 	});
 
 	it('names each icon for screen readers with sr-only text', () => {
 		const shown: Record<string, string> = { Projet: `{${call('Projet')}}`, Dossier: `{${call('Dossier')}}`, Git: 'Git' };
 		for (const name of ['Projet', 'Dossier', 'Git']) {
-			expect(env, name).toContain(`<span class="sr-only">${shown[name]}</span>`);
+			expect(env, name).toContain(`<span className="sr-only">${shown[name]}</span>`);
 		}
 	});
 
@@ -79,7 +79,7 @@ describe('project environment: icons instead of the Projet, Dossier and Git labe
 
 describe('run-end card: no cost line', () => {
 	it('the summary of a response shows no cost (it stays in the Consommation view)', () => {
-		const card = readFileSync(new URL('../../src/lib/features/conversation/timeline/RunEndCard.svelte', import.meta.url), 'utf8');
+		const card = src(RUN_END);
 		expect(card).not.toContain('Coût de la réponse');
 		expect(card).not.toContain('formatRunCost');
 	});

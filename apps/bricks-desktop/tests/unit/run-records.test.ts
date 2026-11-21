@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunRecord } from '../../src/lib/ipc/client';
 import type { Envelope, Event as EngineEvent } from '../../src/lib/ipc/engine';
-import { Conversation, type CommandEvidence } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type CommandEvidence } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, snapshot, spawnInfo } from './fixtures';
 
 const RUN_1 = 'run-1';

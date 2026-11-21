@@ -1,7 +1,7 @@
 // Pure helpers shared by the composer components. No Svelte runes here.
 
 /** Extensions sent as `image` blocks; the engine decides what the model accepts. */
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp'])
 

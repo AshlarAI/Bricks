@@ -6,7 +6,7 @@
 // Bounds: MAX_SOURCE_LENGTH characters (checked before Mermaid sees the text),
 // MAX_EDGES edges per diagram (Mermaid's own limit).
 
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import { mermaidSvg } from './svg-viewer'
 import type { MermaidLook, MermaidSecurityLevel, MermaidTheme } from '$lib/features/diagrams/settings'
 

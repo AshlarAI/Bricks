@@ -3,7 +3,7 @@
 // The live path (run_started.prompt) never reads that text.
 import { describe, expect, it } from 'vitest';
 import type { HistoryMessage, RunLabel } from '../../src/lib/ipc/client';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, MODEL, PROJECT_ID, T0, openedSession } from './fixtures';
 
 /** The shape of `render_activation` (crates/bricks-skills/src/service.rs). */

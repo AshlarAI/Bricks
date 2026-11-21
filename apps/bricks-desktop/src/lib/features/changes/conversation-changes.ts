@@ -7,9 +7,9 @@
 // by their full path, so two files of one name in two folders are two files.
 // Counts are sums of edit operations, not a net diff.
 
-import { localeTag } from '$lib/i18n/i18n.svelte'
+import { localeTag } from '$lib/i18n/i18n'
 import type { ChangeRecord } from '$lib/ipc/client'
-import type { TimelineItem } from '$lib/state/conversation.svelte'
+import type { TimelineItem } from '$lib/state/conversation'
 import { operationKey } from '$lib/features/conversation/operations'
 
 export interface OperationView {

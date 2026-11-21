@@ -2,7 +2,7 @@
 // money and times, the cost reading rules, and readers for engine values
 // that the typed IPC keeps loose (`unknown`). Pure functions only.
 
-import { t, numberFormat, dateTimeFormat } from '$lib/i18n/i18n.svelte';
+import { t, numberFormat, dateTimeFormat } from '$lib/i18n/i18n';
 import type { Usage } from '$lib/ipc/engine';
 
 const INTEGER = numberFormat();

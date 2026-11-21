@@ -12,10 +12,10 @@ import type {
 	RunLabel
 } from '../../src/lib/ipc/client';
 import type { Event as EngineEvent, Snapshot } from '../../src/lib/ipc/engine';
-import type { Conversation } from '../../src/lib/state/conversation.svelte';
+import type { Conversation } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, MODEL, PROJECT_ID, SESSION_ID, T0, openedSession, snapshot } from './fixtures';
 
-type AppModule = typeof import('../../src/lib/state/app.svelte');
+type AppModule = typeof import('../../src/lib/state/app');
 
 const ipc = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -44,7 +44,7 @@ async function answer(cmd: string, args: { request?: OpenSessionRequest } | unde
 		case 'app_info':
 			return {};
 		case 'prefs_get': {
-			const { DEFAULT_PREFERENCES } = await import('../../src/lib/state/app.svelte');
+			const { DEFAULT_PREFERENCES } = await import('../../src/lib/state/app');
 			return { ...DEFAULT_PREFERENCES, last_project_id: null };
 		}
 		case 'projects_list':
@@ -81,7 +81,7 @@ beforeEach(async () => {
 	ipc.invoke.mockReset();
 	ipc.invoke.mockImplementation(answer);
 	openAnswer = (request) => openedSession({ snapshot: snapshot({ model: request.model ?? MODEL }) });
-	({ app } = await import('../../src/lib/state/app.svelte'));
+	({ app } = await import('../../src/lib/state/app'));
 	await app.init();
 	app.currentProjectId = PROJECT_ID;
 });

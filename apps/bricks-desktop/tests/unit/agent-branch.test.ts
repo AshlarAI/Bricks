@@ -2,7 +2,7 @@
 // conversation (AgentInfo.log, filled by Conversation.apply and hydrateAgents), replayed as a
 // read-only conversation of its own. Hand-built envelopes, no rendering (see agent-branch-render).
 import { describe, expect, it } from 'vitest';
-import { Conversation, type AgentInfo, type TimelineItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type AgentInfo, type TimelineItem } from '../../src/lib/state/conversation';
 import { agentBranch, agentName, branchRunId, applyAgentSteps } from '../../src/lib/features/agents/branch';
 import type { InstanceRecord, SpawnInfo } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, MODEL, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
@@ -36,8 +36,8 @@ function itemKinds(items: readonly TimelineItem[]): string[] {
 
 describe('the log of a sub-agent', () => {
 	it('starts with its mission, then fills in the order of its events, timed as they came', () => {
-		const { conv, feed, agent } = parentWithAgent();
-		expect(agent.log).toEqual([
+		const { conv, feed, agent: initial } = parentWithAgent();
+		expect(initial.log).toEqual([
 			{ event: expect.objectContaining({ type: 'run_started', prompt: 'Chercher les occurrences' }), at: T0 + 100, execution: 1 },
 		]);
 
@@ -51,6 +51,7 @@ describe('the log of a sub-agent', () => {
 		conv.apply(feed.next({ type: 'agent_text', agent_id: AGENT, text: 'Je regarde.' }, { at: T0 + 240 }));
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT }) }, { at: T0 + 300 }));
 
+		const agent = conv.agents.get(AGENT)!;
 		expect(kinds(agent)).toEqual(['run_started', 'tool_started', 'tool_finished', 'text_delta', 'run_finished']);
 		expect(agent.log.map((step) => step.at)).toEqual([T0 + 100, T0 + 200, T0 + 230, T0 + 240, T0 + 300]);
 		expect(agent.log[2].event).toMatchObject({ type: 'tool_finished', name: 'Read', output: 'const a = 1;', is_error: false });
@@ -59,19 +60,21 @@ describe('the log of a sub-agent', () => {
 	});
 
 	it('gives the report as the answer when no text came before the end', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_tool_started', agent_id: AGENT, tool_call_id: 'tc-1', name: 'Grep', input: {} }));
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, summary: 'Rapport seul.' }) }));
 
+		const agent = conv.agents.get(AGENT)!;
 		expect(kinds(agent)).toEqual(['run_started', 'tool_started', 'text_delta', 'run_finished']);
 		expect(agent.log[2].event).toEqual({ type: 'text_delta', text: 'Rapport seul.' });
 	});
 
 	it('does not repeat the report when the agent already wrote its answer', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_text', agent_id: AGENT, text: 'Réponse écrite.' }));
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, summary: 'Rapport.' }) }));
 
+		const agent = conv.agents.get(AGENT)!;
 		const texts = agent.log.filter((step) => step.event.type === 'text_delta').map((step) => step.event);
 		expect(texts).toEqual([{ type: 'text_delta', text: 'Réponse écrite.' }]);
 	});
@@ -83,35 +86,35 @@ describe('the log of a sub-agent', () => {
 		['interrupted', 'cancelled'],
 		['incomplete', 'incomplete'],
 	])('an agent that ends %s ends its run %s', (status, outcome) => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(
 			feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, status, error: status === 'failed' ? 'boom' : undefined }) }),
 		);
 
-		const end = agent.log.at(-1)!.event;
+		const end = conv.agents.get(AGENT)!.log.at(-1)!.event;
 		expect(end).toMatchObject({ type: 'run_finished', outcome });
 	});
 
 	it('a resume adds a run with its own mission, and an older execution changes nothing', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, summary: 'Premier.' }) }, { at: T0 + 500 }));
 		conv.apply(feed.next({ type: 'agent_state', agent_id: AGENT, state: 'running', execution: 2 }, { at: T0 + 900 }));
 
-		expect(agent.log.at(-1)).toMatchObject({
+		expect(conv.agents.get(AGENT)!.log.at(-1)).toMatchObject({
 			event: { type: 'run_started', prompt: 'Reprise de la mission' },
 			at: T0 + 900,
 			execution: 2,
 		});
 
-		const before = agent.log.length;
+		const before = conv.agents.get(AGENT)!.log.length;
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, execution: 1, summary: 'Ancien.' }) }, { at: T0 + 950 }));
-		expect(agent.log).toHaveLength(before);
+		expect(conv.agents.get(AGENT)!.log).toHaveLength(before);
 	});
 });
 
 describe('agentBranch: the branch is a conversation of its own', () => {
 	it('reads like a conversation: the mission, the tool call with its output, the answer, the end of the run', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_tool_started', agent_id: AGENT, tool_call_id: 'tc-1', name: 'Read', input: { file_path: 'a.ts' } }));
 		conv.apply(
 			feed.next({ type: 'agent_tool_finished', agent_id: AGENT, tool_call_id: 'tc-1', name: 'Read', is_error: false, duration_ms: 30, executed: true, status: 'success', output: 'const a = 1;', output_truncated: false }),
@@ -119,7 +122,7 @@ describe('agentBranch: the branch is a conversation of its own', () => {
 		conv.apply(feed.next({ type: 'agent_text', agent_id: AGENT, text: 'Voilà.' }));
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT }) }));
 
-		const branch = agentBranch(conv, agent);
+		const branch = agentBranch(conv, conv.agents.get(AGENT)!);
 
 		expect(itemKinds(branch.items)).toEqual(['user', 'tool', 'assistant', 'run_end']);
 		expect(branch.items[0]).toMatchObject({ kind: 'user', text: 'Chercher les occurrences', runId: branchRunId(AGENT, 1) });
@@ -144,35 +147,35 @@ describe('agentBranch: the branch is a conversation of its own', () => {
 	});
 
 	it('does not show the parent conversation: its own prompt is not in the branch', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT }) }));
 
-		const branch = agentBranch(conv, agent);
+		const branch = agentBranch(conv, conv.agents.get(AGENT)!);
 		expect(branch.items.some((item) => item.kind === 'user' && item.text === 'Cherche')).toBe(false);
 	});
 
 	it('is running from the start of its run until the end, and not before', () => {
-		const { conv, feed, agent } = parentWithAgent();
-		expect(agentBranch(conv, agent).running).toBe(true);
-		expect(agentBranch(conv, agent).runningRunId).toBe(branchRunId(AGENT, 1));
+		const { conv, feed } = parentWithAgent();
+		expect(agentBranch(conv, conv.agents.get(AGENT)!).running).toBe(true);
+		expect(agentBranch(conv, conv.agents.get(AGENT)!).runningRunId).toBe(branchRunId(AGENT, 1));
 
 		conv.apply(feed.next({ type: 'agent_tool_started', agent_id: AGENT, tool_call_id: 'tc-1', name: 'Read', input: {} }));
-		expect(agentBranch(conv, agent).running).toBe(true);
+		expect(agentBranch(conv, conv.agents.get(AGENT)!).running).toBe(true);
 
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT }) }));
-		const done = agentBranch(conv, agent);
+		const done = agentBranch(conv, conv.agents.get(AGENT)!);
 		expect(done.running).toBe(false);
 		expect(done.runningRunId).toBeNull();
 	});
 
 	it('a resumed agent has a second run in its branch, with the resumption as its mission', () => {
-		const { conv, feed, agent } = parentWithAgent();
+		const { conv, feed } = parentWithAgent();
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, summary: 'Premier.' }) }));
 		conv.apply(feed.next({ type: 'agent_state', agent_id: AGENT, state: 'running', execution: 2 }));
 		conv.apply(feed.next({ type: 'agent_text', agent_id: AGENT, text: 'Je reprends.' }));
 		conv.apply(feed.next({ type: 'agent_finished', result: agentResult({ agent_id: AGENT, execution: 2, summary: 'Nouveau.' }) }));
 
-		const branch = agentBranch(conv, agent);
+		const branch = agentBranch(conv, conv.agents.get(AGENT)!);
 
 		expect(branch.runs.size).toBe(2);
 		expect(branch.runs.has(branchRunId(AGENT, 1))).toBe(true);

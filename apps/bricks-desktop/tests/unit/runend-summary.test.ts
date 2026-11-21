@@ -1,7 +1,7 @@
 // The « bilan » line of a finished run: state, duration from the engine's timestamps,
 // and edit totals only when the structured edit data allows them.
 import { describe, expect, it } from 'vitest';
-import type { FileTotals, RunInfo } from '../../src/lib/state/conversation.svelte';
+import type { FileTotals, RunInfo } from '../../src/lib/state/conversation';
 import { runEndSummary } from '../../src/lib/features/conversation/runend';
 
 const T0 = 1_780_000_000_000;

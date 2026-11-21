@@ -8,13 +8,15 @@ import { call } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const CONFIG = 'lib/features/session-info/ConfigView.svelte';
+const CONFIG = 'lib/features/session-info/ConfigView.tsx';
 
 describe('the model card: one effort line', () => {
 	const config = src(CONFIG);
 
 	it('shows one « Effort » line from the effective effort, or « aucun » when there is none', () => {
-		expect(config).toContain(`{@render field(${call('Effort')}, config.effective_reasoning ?? ${call('aucun')})}`);
+		expect(config).toContain(
+			`<ConfigField label={${call('Effort')}} value={config.effective_reasoning ?? ${call('aucun')}} />`,
+		);
 	});
 
 	it('no longer has « Effort demandé », « Effort appliqué » nor « par défaut du modèle »', () => {
@@ -28,14 +30,16 @@ describe('the other settings', () => {
 	const config = src(CONFIG);
 
 	it('come from the engine rows, one label and one value each', () => {
-		expect(config).toContain('{#each config.settings as entry, i (i)}');
-		expect(config).toContain('<dt class="text-muted-foreground">{entry.label}</dt>');
-		expect(config).toContain('<dd class="min-w-0 break-words">{entry.value}</dd>');
+		expect(config).toContain('{config.settings.map((entry, i) => (');
+		expect(config).toContain('<ConfigField key={i} label={entry.label} value={entry.value} />');
+		expect(config).toContain('<dt className="text-muted-foreground">{label}</dt>');
+		expect(config).toContain('<dd className="min-w-0 break-words">{value}</dd>');
 	});
 
 	it('the permissions card keeps the approval line and the policy editor, and no default-permissions line', () => {
-		expect(config).toContain(`{@render field(${call('Approbations')}, config.interactive ? ${call('demandées')} : ${call('refusées')})}`);
-		expect(config).toContain('<PolicyEditor {policy} tools={toolNames} disabled={saving} onchange={change} />');
-		expect(config).not.toContain("field('Permissions'");
+		expect(config).toContain(`label={${call('Approbations')}}`);
+		expect(config).toContain(`value={config.interactive ? ${call('demandées')} : ${call('refusées')}}`);
+		expect(config).toContain('<PolicyEditor policy={policy} tools={toolNames} disabled={saving} onchange={change} />');
+		expect(config).not.toMatch(/<ConfigField\b[\s\S]{0,80}common\.permissions/);
 	});
 });

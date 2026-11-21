@@ -2,8 +2,8 @@
 // The API key field of the provider form: masked by default (muted, spaced), and the lock toggle
 // shows it in clear and back. Mounted in happy-dom.
 import { afterEach, describe, expect, it } from 'vitest';
-import { flushSync, mount, tick, unmount } from 'svelte';
-import ProviderFormDialog from '../../src/lib/features/settings/ProviderFormDialog.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import ProviderFormDialog, { type ProviderFormDialogProps } from '../../src/lib/features/settings/ProviderFormDialog';
 import type { ProviderView } from '../../src/lib/ipc/bindings/ProviderView';
 
 const PROVIDER: ProviderView = {
@@ -21,21 +21,25 @@ const PROVIDER: ProviderView = {
 	models: []
 };
 
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<ProviderFormDialogProps> | null = null;
+let target: HTMLDivElement | null = null;
 afterEach(() => {
-	if (app) unmount(app);
+	app?.unmount();
 	app = null;
+	target?.remove();
+	target = null;
 	document.body.innerHTML = '';
 });
 
 describe('provider key toggle', () => {
 	it('masks the key, then shows it in clear', async () => {
-		app = mount(ProviderFormDialog, {
-			target: document.body,
+		target = document.createElement('div');
+		document.body.appendChild(target);
+		app = mountReact(ProviderFormDialog, {
+			target,
 			props: { provider: PROVIDER, onSave: async () => ({ ok: true }) as never, onClose: () => {} }
 		});
-		flushSync();
-		await tick();
+		await tickReact();
 		const input = document.querySelector<HTMLInputElement>('input[id$="-key"]')!;
 		const toggle = document.querySelector<HTMLButtonElement>('[data-slot="toggle"]')!;
 		expect(input.type).toBe('password');
@@ -44,16 +48,18 @@ describe('provider key toggle', () => {
 		expect(toggle.getAttribute('aria-label')).toBe('Afficher la clé');
 		expect(toggle.querySelector('.lucide-lock-keyhole')).not.toBeNull();
 
-		toggle.click();
-		flushSync();
+		flushReact(() => {
+			toggle.click();
+		});
 		expect(input.type).toBe('text');
 		expect(input.className).toContain('text-foreground');
 		expect(input.className).not.toContain('tracking-');
 		expect(toggle.getAttribute('data-state')).toBe('on');
 		expect(toggle.querySelector('.lucide-lock-keyhole-open')).not.toBeNull();
 
-		toggle.click();
-		flushSync();
+		flushReact(() => {
+			toggle.click();
+		});
 		expect(input.type).toBe('password');
 	});
 });

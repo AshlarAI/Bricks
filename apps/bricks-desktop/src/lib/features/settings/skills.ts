@@ -2,7 +2,7 @@
 // the engine reports. No state, no IPC: the calls live in SkillsSettings.svelte.
 
 /** Page size of the engine's skills listing. */
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 
 export const SKILLS_PER_PAGE = 20;
 

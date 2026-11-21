@@ -9,8 +9,8 @@
 // - Labels are the titles the inspector dialog shows, so the user recognises them.
 // - Every entry reads the shown conversation: the menu is disabled without one.
 
-import { t } from '$lib/i18n/i18n.svelte';
-import type { InspectorView } from '$lib/state/ui.svelte';
+import { t } from '$lib/i18n/i18n';
+import type { InspectorView } from '$lib/state/ui';
 
 export interface AdkAccessItem {
 	view: InspectorView;

@@ -1,5 +1,5 @@
 import type { UpdateMetadata, UpdateStatus } from '$lib/ipc/client'
-import { dateTimeFormat, t } from '$lib/i18n/i18n.svelte'
+import { dateTimeFormat, t } from '$lib/i18n/i18n'
 
 const pubDateFormatter = dateTimeFormat({ dateStyle: 'medium' })
 

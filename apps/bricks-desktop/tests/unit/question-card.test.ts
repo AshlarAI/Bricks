@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// The card of a question of `Ask` (QuestionCard.svelte), mounted in happy-dom with the IPC
+// The card of a question of `Ask` (QuestionCard.tsx), mounted in happy-dom with the IPC
 // boundary recorded: the header, the recommended choice preselected, « Passer » and « Envoyer »
 // (⌘↩ too), « Autre » with its text, the refusal of the engine, the countdown and its colours
 // (fake clock), and the one line that says how a closed question ended.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import QuestionCard from '../../src/lib/features/conversation/timeline/QuestionCard.svelte';
-import ToolRow from '../../src/lib/features/conversation/timeline/ToolRow.svelte';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import QuestionCard, { type QuestionCardProps } from '../../src/lib/features/conversation/timeline/QuestionCard';
+import ToolRow, { type ToolRowProps } from '../../src/lib/features/conversation/timeline/ToolRow';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { QuestionOutcome, QuestionRequest } from '../../src/lib/ipc/engine';
 import { PROJECT_ID, SESSION_ID, T0, openedSession } from './fixtures';
 
@@ -35,7 +35,7 @@ const TIMED: QuestionRequest = { ...QUESTION, timeout_seconds: 60, deadline_at: 
 let refusal: { code: string; message: string } | null = null;
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<QuestionCardProps> | MountedComponent<ToolRowProps> | null = null;
 let conversation: Conversation;
 
 beforeEach(() => {
@@ -56,21 +56,19 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 	vi.useRealTimers();
 });
 
 function show(question: QuestionRequest) {
-	component = mount(QuestionCard, { target, props: { question, conversation } });
-	flushSync();
+	component = mountReact(QuestionCard, { target, props: { question, conversation } });
 }
 
 /** Lets the pending answers of the card settle, then renders what they changed. */
 async function settle() {
-	for (let i = 0; i < 10; i++) await Promise.resolve();
-	flushSync();
+	for (let i = 0; i < 10; i++) await tickReact();
 }
 
 /** The answers the engine received, in order. */
@@ -92,9 +90,9 @@ function radios(): HTMLInputElement[] {
 
 function choose(index: number) {
 	const radio = radios()[index];
-	radio.checked = true;
-	radio.dispatchEvent(new Event('change', { bubbles: true }));
-	flushSync();
+	flushReact(() => {
+		radio.click();
+	});
 }
 
 function countdown(): HTMLElement | null {
@@ -131,7 +129,9 @@ describe('a waiting question', () => {
 
 	it('« Envoyer » sends the preselected choice without another click', async () => {
 		show(QUESTION);
-		button('Envoyer').click();
+		flushReact(() => {
+			button('Envoyer').click();
+		});
 		await settle();
 		expect(answers()).toEqual([{ kind: 'choice', choice: 1 }]);
 	});
@@ -139,14 +139,18 @@ describe('a waiting question', () => {
 	it('« Envoyer » sends the option the person picked', async () => {
 		show(QUESTION);
 		choose(0);
-		button('Envoyer').click();
+		flushReact(() => {
+			button('Envoyer').click();
+		});
 		await settle();
 		expect(answers()).toEqual([{ kind: 'choice', choice: 0 }]);
 	});
 
 	it('« Passer » sends a skip', async () => {
 		show(QUESTION);
-		button('Passer').click();
+		flushReact(() => {
+			button('Passer').click();
+		});
 		await settle();
 		expect(answers()).toEqual([{ kind: 'skip' }]);
 	});
@@ -154,11 +158,15 @@ describe('a waiting question', () => {
 	it('⌘↩ sends the choice, and a plain Enter does nothing', async () => {
 		show(QUESTION);
 		const section = target.querySelector('section') as HTMLElement;
-		section.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		flushReact(() => {
+			section.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		});
 		await settle();
 		expect(answers()).toEqual([]);
 
-		section.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+		flushReact(() => {
+			section.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+		});
 		await settle();
 		expect(answers()).toEqual([{ kind: 'choice', choice: 1 }]);
 	});
@@ -166,20 +174,25 @@ describe('a waiting question', () => {
 	it('« Autre » asks for a text, and « Envoyer » waits for a non-blank one', async () => {
 		show(QUESTION);
 		choose(2);
-		const input = target.querySelector<HTMLInputElement>('input[aria-label="Votre réponse"]');
+		const input = target.querySelector<HTMLInputElement>('input[aria-label="Votre réponse"]')!;
 		expect(input).not.toBeNull();
 		expect(button('Envoyer').disabled).toBe(true);
 
-		input!.value = '   ';
-		input!.dispatchEvent(new Event('input', { bubbles: true }));
-		flushSync();
+		const setInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+		flushReact(() => {
+			setInputValue.call(input, '   ');
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		});
 		expect(button('Envoyer').disabled).toBe(true);
 
-		input!.value = '  Ni l’un ni l’autre  ';
-		input!.dispatchEvent(new Event('input', { bubbles: true }));
-		flushSync();
+		flushReact(() => {
+			setInputValue.call(input, '  Ni l’un ni l’autre  ');
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		});
 		expect(button('Envoyer').disabled).toBe(false);
-		button('Envoyer').click();
+		flushReact(() => {
+			button('Envoyer').click();
+		});
 		await settle();
 		expect(answers()).toEqual([{ kind: 'other', text: 'Ni l’un ni l’autre' }]);
 	});
@@ -187,7 +200,9 @@ describe('a waiting question', () => {
 	it('shows the engine’s refusal, and offers the buttons again', async () => {
 		refusal = { code: 'invalid', message: 'Cette question n’est plus en attente.' };
 		show(QUESTION);
-		button('Passer').click();
+		flushReact(() => {
+			button('Passer').click();
+		});
 		await settle();
 		const alert = target.querySelector('[role="alert"]');
 		expect(alert?.textContent).toContain('Cette question n’est plus en attente.');
@@ -210,19 +225,22 @@ describe('the countdown of a timed question', () => {
 		show(TIMED);
 		expect(countdown()!.className).toContain('text-muted-foreground');
 
-		vi.advanceTimersByTime(30_000);
-		flushSync();
+		flushReact(() => {
+			vi.advanceTimersByTime(30_000);
+		});
 		expect(countdown()!.textContent?.trim()).toBe('0:30');
 		expect(countdown()!.className).toContain('text-muted-foreground');
 
-		vi.advanceTimersByTime(1_000);
-		flushSync();
+		flushReact(() => {
+			vi.advanceTimersByTime(1_000);
+		});
 		expect(countdown()!.textContent?.trim()).toBe('0:29');
 		expect(countdown()!.className).toContain('text-warning');
 		expect(countdown()!.className).not.toContain('text-muted-foreground');
 
-		vi.advanceTimersByTime(20_000);
-		flushSync();
+		flushReact(() => {
+			vi.advanceTimersByTime(20_000);
+		});
 		expect(countdown()!.textContent?.trim()).toBe('0:09');
 		expect(countdown()!.className).toContain('text-destructive');
 		expect(countdown()!.className).not.toContain('text-warning');
@@ -230,8 +248,9 @@ describe('the countdown of a timed question', () => {
 
 	it('stops at 0:00 once the deadline has passed', () => {
 		show(TIMED);
-		vi.advanceTimersByTime(75_000);
-		flushSync();
+		flushReact(() => {
+			vi.advanceTimersByTime(75_000);
+		});
 		expect(countdown()!.textContent?.trim()).toBe('0:00');
 	});
 });
@@ -243,8 +262,7 @@ describe('the Ask line once its question is closed', () => {
 			{ kind: 'tool', id: 't-1', toolCallId: 'tc-1', name: 'Ask', input: {}, status: 'ok', durationMs: 1200 },
 			{ kind: 'question', id: 'qi-1', question: QUESTION, outcome },
 		);
-		component = mount(ToolRow, { target, props: { item: conversation.items[0] as never, conversation } });
-		flushSync();
+		component = mountReact(ToolRow, { target, props: { item: conversation.items[0] as never, conversation } });
 	}
 
 	it('counts the answered questions over the total, and shows no card', () => {
@@ -257,12 +275,12 @@ describe('the Ask line once its question is closed', () => {
 	it('counts a skip as unanswered', () => {
 		showLine({ state: 'skipped', reason: 'timeout' });
 		expect(target.textContent).toContain('0/1');
-		expect(target.querySelector('.text-destructive')).toBeNull();
+		expect(target.querySelector('[data-slot="trace-line"][data-status="error"]')).toBeNull();
 	});
 
-	it('marks the call failed with a red cross when the run was cancelled', () => {
+	it('marks the call failed with an error status when the run was cancelled', () => {
 		showLine({ state: 'skipped', reason: 'cancelled' });
-		expect(target.querySelector('.text-destructive')).not.toBeNull();
+		expect(target.querySelector('[data-slot="trace-line"][data-status="error"]')).not.toBeNull();
 		expect(target.textContent).toContain('Échec');
 	});
 });

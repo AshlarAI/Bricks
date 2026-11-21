@@ -1,10 +1,13 @@
-import type { Component } from 'svelte';
+import type { ComponentType } from 'react';
 
 /** Heading level a component renders its title with. Pick the level that fits the page outline. */
 export type HeadingLevel = 2 | 3 | 4 | 5 | 6;
 
-/** A lucide icon component (or any component taking class and aria-hidden). */
-export type IconComponent = Component<{ class?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
+/** Status indicator state used across StatusDot and feature labels. */
+export type StatusState = 'idle' | 'running' | 'waiting' | 'success' | 'error' | 'cancelled';
+
+/** A lucide icon component (or any component taking className and aria-hidden). */
+export type IconComponent = ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>;
 
 /** Layout state that the caller may persist (prefs IPC). Emitted by AppShell after user changes. */
 export interface ShellLayout {

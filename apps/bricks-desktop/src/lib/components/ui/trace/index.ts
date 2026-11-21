@@ -1,29 +1,29 @@
-import CollapsibleContent from "./trace-collapsible-content.svelte";
-import CollapsibleTrigger from "./trace-collapsible-trigger.svelte";
-import Collapsible from "./trace-collapsible.svelte";
-import Description from "./trace-description.svelte";
-import Icon from "./trace-icon.svelte";
-import Title from "./trace-title.svelte";
-import Root from "./trace.svelte";
-import Line, { type TraceLineStatus } from "./trace-line.svelte";
+import { TraceCollapsibleContent } from "./trace-collapsible-content"
+import { TraceCollapsibleTrigger } from "./trace-collapsible-trigger"
+import { TraceCollapsible } from "./trace-collapsible"
+import { TraceDescription } from "./trace-description"
+import { TraceIcon } from "./trace-icon"
+import { TraceLine, type TraceLineStatus } from "./trace-line"
+import { TraceTitle } from "./trace-title"
+import { Trace } from "./trace"
 
 export {
-	Root,
-	Line,
-	Icon,
-	Title,
-	Description,
-	Collapsible,
-	CollapsibleTrigger,
-	CollapsibleContent,
-	type TraceLineStatus,
-	//
-	Root as Trace,
-	Line as TraceLine,
-	Icon as TraceIcon,
-	Title as TraceTitle,
-	Description as TraceDescription,
-	Collapsible as TraceCollapsible,
-	CollapsibleTrigger as TraceCollapsibleTrigger,
-	CollapsibleContent as TraceCollapsibleContent,
-};
+  Trace as Root,
+  TraceLine as Line,
+  TraceIcon as Icon,
+  TraceTitle as Title,
+  TraceDescription as Description,
+  TraceCollapsible as Collapsible,
+  TraceCollapsibleTrigger as CollapsibleTrigger,
+  TraceCollapsibleContent as CollapsibleContent,
+  type TraceLineStatus,
+  //
+  Trace,
+  TraceLine,
+  TraceIcon,
+  TraceTitle,
+  TraceDescription,
+  TraceCollapsible,
+  TraceCollapsibleTrigger,
+  TraceCollapsibleContent,
+}

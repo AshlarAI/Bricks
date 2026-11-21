@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// The branch of a sub-agent mounted (AgentBranch.svelte): the mission, the tool call and its output,
+// The branch of a sub-agent mounted (AgentBranch.tsx): the mission, the tool call and its output,
 // the answer, and the fixed bar that says nothing can be written to a sub-agent (no field, no form).
-// The user message of a branch offers no revision (UserMessage.svelte), where a conversation does.
+// The user message of a branch offers no revision (UserMessage.tsx), where a conversation does.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import AgentBranch from '../../src/lib/features/agents/AgentBranch.svelte';
-import AgentLine from '../../src/lib/features/conversation/timeline/AgentLine.svelte';
-import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage.svelte';
-import { Conversation, type AgentItem, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import AgentBranch from '../../src/lib/features/agents/AgentBranch';
+import AgentLine from '../../src/lib/features/conversation/timeline/AgentLine';
+import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage';
+import { Conversation, type AgentItem, type UserItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -51,7 +51,7 @@ function finishedParent(): { conv: Conversation } {
 }
 
 let target: HTMLDivElement;
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<object> | null = null;
 
 beforeEach(() => {
 	vi.stubGlobal(
@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (app) void unmount(app);
+	app?.unmount();
 	app = null;
 	target.remove();
 	vi.unstubAllGlobals();
@@ -83,20 +83,23 @@ describe('AgentBranch: the branch of a finished sub-agent', () => {
 	it('shows its mission, its tool call, its answer, and the fixed bar in place of a composer', () => {
 		const { conv } = finishedParent();
 		const agent = conv.agents.get(AGENT)!;
-		app = mount(AgentBranch, { target, props: { conversation: conv, agent } });
-		flushSync();
+		app = mountReact(AgentBranch, { target, props: { conversation: conv, agent } }) as MountedComponent<object>;
 
 		const shown = text();
 		expect(shown).toContain('Chercher les occurrences');
-		expect(shown).toContain('Read');
 		expect(shown).toContain('La constante vaut un.');
 		expect(shown).toContain('Vous ne pouvez pas écrire à un sous-agent !');
+
+		// The work block folds once the agent finishes; opening it shows the tool call.
+		const workToggle = target.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]');
+		expect(workToggle).not.toBeNull();
+		flushReact(() => workToggle!.click());
+		expect(text()).toContain('A lu a.ts');
 	});
 
 	it('has no field and no form to write to', () => {
 		const { conv } = finishedParent();
-		app = mount(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } });
-		flushSync();
+		app = mountReact(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } }) as MountedComponent<object>;
 
 		expect(target.querySelector('textarea')).toBeNull();
 		expect(target.querySelector('input')).toBeNull();
@@ -106,8 +109,7 @@ describe('AgentBranch: the branch of a finished sub-agent', () => {
 
 	it('offers no revision on the mission, but still offers a copy', () => {
 		const { conv } = finishedParent();
-		app = mount(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } });
-		flushSync();
+		app = mountReact(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } }) as MountedComponent<object>;
 
 		expect(target.querySelector('[aria-label="Modifier le message"]')).toBeNull();
 		expect(target.querySelector('[aria-label="Copier le message"]')).not.toBeNull();
@@ -122,8 +124,7 @@ describe('AgentBranch: a running sub-agent', () => {
 		conv.apply(feed.next({ type: 'tool_started', tool_call_id: 'tc-A', name: 'Agent', input: {} }));
 		conv.apply(feed.next({ type: 'agent_spawned', agent: spawnInfo({ agent_id: AGENT, tool_call_id: 'tc-A' }) }));
 
-		app = mount(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } });
-		flushSync();
+		app = mountReact(AgentBranch, { target, props: { conversation: conv, agent: conv.agents.get(AGENT)! } }) as MountedComponent<object>;
 
 		expect(text()).toContain('Chercher les occurrences');
 		expect(text()).toContain('Vous ne pouvez pas écrire à un sous-agent !');
@@ -154,13 +155,12 @@ describe('AgentLine: displays profile, description, and live Managent action', (
 		);
 
 		const item = conv.items.find((i): i is AgentItem => i.kind === 'agent' && i.agentId === AGENT)!;
-		app = mount(AgentLine, { target, props: { item, conversation: conv } });
-		flushSync();
+		app = mountReact(AgentLine, { target, props: { item, conversation: conv } }) as MountedComponent<object>;
 
 		const shown = text();
 		expect(shown).toContain('general');
 		expect(shown).toContain('Lire le code');
-		expect(shown).toContain('Suivi de ses sous-agents…');
+		expect(shown).toContain('Managent');
 	});
 });
 
@@ -170,8 +170,7 @@ describe('UserMessage: a read-only conversation offers no revision', () => {
 	function mountWith(readOnly: boolean) {
 		const conv = new Conversation(openedSession(), PROJECT_ID);
 		conv.readOnly = readOnly;
-		app = mount(UserMessage, { target, props: { item, conversation: conv } });
-		flushSync();
+		app = mountReact(UserMessage, { target, props: { item, conversation: conv } }) as MountedComponent<object>;
 	}
 
 	it('a conversation offers « Modifier le message » on its messages', () => {

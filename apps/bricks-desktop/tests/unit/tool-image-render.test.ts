@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// The picture of an image call (ToolImage.svelte, under ToolRow.svelte): a `Read` whose output says
+// The picture of an image call (ToolImage.tsx, under ToolRow.tsx): a `Read` whose output says
 // it is an image, or a `ViewImage` call from former conversations. Mounted in happy-dom with the IPC
 // client replaced by a fake. A finished call with status ok asks the session for the image it showed
 // and shows it when there is one; nothing else asks, and nothing is shown when the session has none.
 // The question is asked again as the timeline grows, until an image is found.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import ToolRow from '../../src/lib/features/conversation/timeline/ToolRow.svelte';
-import { Conversation, type ToolItem } from '../../src/lib/state/conversation.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import ToolRow, { type ToolRowProps } from '../../src/lib/features/conversation/timeline/ToolRow';
+import { Conversation, type ToolItem } from '../../src/lib/state/conversation';
 import type { HistoryMessage } from '../../src/lib/ipc/client';
 import { EnvelopeFeed, PROJECT_ID, SESSION_ID, openedSession } from './fixtures';
 
@@ -44,17 +44,17 @@ function toolOf(conv: Conversation): ToolItem {
 }
 
 let target: HTMLDivElement;
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<ToolRowProps> | null = null;
 
 function show(conv: Conversation): void {
-	app = mount(ToolRow, { target, props: { item: toolOf(conv), conversation: conv } });
-	flushSync();
+	app = mountReact(ToolRow, { target, props: { item: toolOf(conv), conversation: conv } });
 }
 
 /** Lets the pending IPC answers settle, then renders what they changed. */
 async function settle(): Promise<void> {
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	flushSync();
+	for (let i = 0; i < 5; i++) {
+		await tickReact();
+	}
 }
 
 function picture(): HTMLImageElement | null {
@@ -68,7 +68,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (app) void unmount(app);
+	app?.unmount();
 	app = null;
 	target.remove();
 });
@@ -77,8 +77,9 @@ describe('ViewImage: the picture the model was shown', () => {
 	it('shows the image the session returns for the call, named by its file', async () => {
 		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
 		show(reopened('ViewImage'));
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
 		const img = picture()!;
+		expect(img).not.toBeNull();
 		expect(img.getAttribute('src')).toBe(PNG_URL);
 		expect(img.getAttribute('alt')).toBe('shot.png');
 		expect(img.getAttribute('title')).toBe('/work/shot.png');
@@ -88,16 +89,16 @@ describe('ViewImage: the picture the model was shown', () => {
 	it('shows nothing when the session has no image for the call', async () => {
 		ipc.sessionToolImage.mockResolvedValue(null);
 		show(reopened('ViewImage'));
-		await vi.waitFor(() => expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1));
 		await settle();
+		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1);
 		expect(picture()).toBeNull();
 	});
 
 	it('shows nothing and does not fail when the lookup fails', async () => {
 		ipc.sessionToolImage.mockRejectedValue(new Error('session fermée'));
 		show(reopened('ViewImage'));
-		await vi.waitFor(() => expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1));
 		await settle();
+		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1);
 		expect(picture()).toBeNull();
 	});
 
@@ -133,20 +134,22 @@ describe('ViewImage: the picture the model was shown', () => {
 		expect(ipc.sessionToolImage).not.toHaveBeenCalled();
 		expect(picture()).toBeNull();
 
-		conv.apply(
-			feed.next({
-				type: 'tool_finished',
-				tool_call_id: CALL,
-				name: 'ViewImage',
-				is_error: false,
-				duration_ms: 12,
-				output: 'Image /work/shot.png: image/png, 1×1, 70 bytes.',
-				executed: true,
-				status: 'success'
-			})
-		);
-		flushSync();
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		flushReact(() => {
+			conv.apply(
+				feed.next({
+					type: 'tool_finished',
+					tool_call_id: CALL,
+					name: 'ViewImage',
+					is_error: false,
+					duration_ms: 12,
+					output: 'Image /work/shot.png: image/png, 1×1, 70 bytes.',
+					executed: true,
+					status: 'success'
+				})
+			);
+		});
+		await settle();
+		expect(picture()).not.toBeNull();
 		expect(picture()!.getAttribute('src')).toBe(PNG_URL);
 		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1);
 	});
@@ -155,14 +158,16 @@ describe('ViewImage: the picture the model was shown', () => {
 		ipc.sessionToolImage.mockResolvedValueOnce(null).mockResolvedValueOnce(PNG_URL);
 		const conv = reopened('ViewImage');
 		show(conv);
-		await vi.waitFor(() => expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1));
 		await settle();
+		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1);
 		expect(picture()).toBeNull();
 
 		const feed = new EnvelopeFeed({ runId: 'run-later' });
-		conv.apply(feed.next({ type: 'run_started', prompt: 'Encore', attachments: [], model: 'm' }));
-		flushSync();
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		flushReact(() => {
+			conv.apply(feed.next({ type: 'run_started', prompt: 'Encore', attachments: [], model: 'm' }));
+		});
+		await settle();
+		expect(picture()).not.toBeNull();
 		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(2);
 	});
 });
@@ -213,8 +218,9 @@ describe('Read: an image is shown, a text file is not', () => {
 	it('a reopened Read of an image shows the picture the session returns, named by its file', async () => {
 		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
 		show(reopenedRead(IMAGE_OUTPUT));
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
 		const img = picture()!;
+		expect(img).not.toBeNull();
 		expect(img.getAttribute('src')).toBe(PNG_URL);
 		expect(img.getAttribute('alt')).toBe('shot.png');
 		expect(img.getAttribute('title')).toBe('/work/shot.png');
@@ -227,7 +233,8 @@ describe('Read: an image is shown, a text file is not', () => {
 	it('a reopened Read of an image shows the picture when the history keeps the report header', async () => {
 		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
 		show(reopenedRead(`✓ [Read] Success (3 ms)\n${IMAGE_OUTPUT}`));
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
+		expect(picture()).not.toBeNull();
 		expect(ipc.sessionToolImage).toHaveBeenCalledWith(SESSION_ID, CALL);
 	});
 
@@ -235,7 +242,8 @@ describe('Read: an image is shown, a text file is not', () => {
 		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
 		const conv = finishedRead(IMAGE_OUTPUT);
 		show(conv);
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
+		expect(picture()).not.toBeNull();
 		expect(picture()!.getAttribute('src')).toBe(PNG_URL);
 		expect(ipc.sessionToolImage).toHaveBeenCalledTimes(1);
 		expect(ipc.sessionToolImage).toHaveBeenCalledWith(SESSION_ID, CALL);
@@ -304,8 +312,9 @@ describe('MCP & Computer Use screenshots', () => {
 	it('mounts <img> and calls sessionToolImage for mcp__computer-use__get_desktop_state', async () => {
 		ipc.sessionToolImage.mockResolvedValue(PNG_URL);
 		show(finishedMcp('mcp__computer-use__get_desktop_state', {}, '[image image/png, 803660 bytes]\nDisplay 1920x1080'));
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
 		const img = picture()!;
+		expect(img).not.toBeNull();
 		expect(img.getAttribute('src')).toBe(PNG_URL);
 		expect(img.getAttribute('alt')).toBe('Computer Use · get_desktop_state');
 		expect(img.getAttribute('title')).toBe('Computer Use · get_desktop_state');
@@ -321,8 +330,9 @@ describe('MCP & Computer Use screenshots', () => {
 				'[image image/jpeg, 120400 bytes]\nWindow snapshot'
 			)
 		);
-		await vi.waitFor(() => expect(picture()).not.toBeNull());
+		await settle();
 		const img = picture()!;
+		expect(img).not.toBeNull();
 		expect(img.getAttribute('alt')).toBe('Computer Use · get_window_state · Safari — Bricks');
 		expect(img.getAttribute('title')).toBe('Computer Use · get_window_state · Safari — Bricks');
 	});
@@ -344,7 +354,7 @@ describe('MCP & Computer Use screenshots', () => {
 
 /** Unmounts the rendered row between two renders in one test. */
 function unmountCurrent(): void {
-	if (app) void unmount(app);
+	app?.unmount();
 	app = null;
 	target.innerHTML = '';
 }

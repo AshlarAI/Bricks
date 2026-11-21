@@ -1,11 +1,10 @@
-// Sub-agent presentation: state mapping, durations and French labels.
+// Sub-agent presentation: state mapping and labels.
 // Pure helpers, no component state.
 
-import { t, numberFormat, dateTimeFormat } from '$lib/i18n/i18n.svelte';
+import { t, numberFormat, dateTimeFormat } from '$lib/i18n/i18n';
 import type { ChangeSetState, InstanceState, Termination } from '$lib/ipc/engine';
 import { TERMINAL_AGENT_STATES } from '$lib/ipc/engine';
-import type { AgentInfo } from '$lib/state/conversation.svelte';
-import type { StatusState } from '$lib/layout/StatusDot.svelte';
+import type { StatusState } from '$lib/layout/types';
 import type { BadgeVariant } from '$lib/components/ui/badge';
 
 export interface AgentStateView {
@@ -41,79 +40,8 @@ export function canCancel(state: InstanceState): boolean {
 	return isLive(state) && state !== 'cancelling';
 }
 
-export function agentDurationMs(agent: AgentInfo, now: number): number {
-	return Math.max(0, (agent.endedAt ?? now) - agent.spawnedAt);
-}
-
-import { formatToolName } from '../conversation/format';
 
 export { formatDuration } from '../conversation/format';
-
-function baseName(path: unknown): string | null {
-	if (typeof path !== 'string' || path.trim() === '') return null;
-	return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
-function field(input: unknown, ...keys: string[]): unknown {
-	if (typeof input !== 'object' || input === null) return undefined;
-	const record = input as Record<string, unknown>;
-	for (const key of keys) if (record[key] !== undefined) return record[key];
-	return undefined;
-}
-
-/** What one running tool call is doing, from its name and input only. */
-function toolAction(name: string, input: unknown): string {
-	const file = baseName(field(input, 'file_path', 'path'));
-	switch (name) {
-		case 'Read':
-			return file ? t('agents.reading', { file }) : t('common.reading');
-		case 'Write':
-		case 'Edit':
-		case 'ApplyPatch':
-			return file ? t('agents.editing', { file }) : t('agents.editing2');
-		case 'Glob':
-		case 'Grep':
-		case 'Search':
-			return t('common.codeSearch');
-		case 'Bash': {
-			const command = field(input, 'command');
-			return typeof command === 'string' && command.trim() !== '' ? t('agents.command', { command: command.trim() }) : t('agents.command2');
-		}
-		case 'WebFetch':
-		case 'WebSearch':
-			return t('agents.webSearch');
-		case 'Agent':
-			return t('agents.delegatingToASubAgent');
-		case 'Messagent':
-			return t('agents.messageToTheTeam');
-		case 'Managent':
-			return t('agents.followingItsSubAgents');
-		default:
-			return formatToolName(name);
-	}
-}
-
-/**
- * The second line of an agent in the thread: what it is doing now, from the
- * tool calls the engine reported as running (nothing is guessed or counted
- * beyond them), or what it waits for. `null` when there is nothing to say.
- */
-export function agentAction(agent: AgentInfo, awaitingApproval: boolean): string | null {
-	if (!isLive(agent.state)) return null;
-	if (awaitingApproval) return t('common.waitingForApproval');
-	if (agent.state === 'queued' || agent.state === 'waiting_admission' || agent.state === 'created') {
-		return agent.reason === 'preparing its worktree' ? t('agents.preparingItsWorkspace') : null;
-	}
-	const running = agent.tools.filter((t) => t.status === 'running');
-	if (running.length === 0) return null;
-	if (running.length === 1) return `${toolAction(running[0].name, running[0].input)}…`;
-	const names = new Set(running.map((t) => t.name));
-	if (names.size === 1 && (names.has('Read') || names.has('Edit') || names.has('Write'))) {
-		const verb = names.has('Read') ? t('common.reading') : t('agents.editing2');
-		return t('agents.files', { verb, running: running.length });
-	}
-	return t('agents.toolsRunning', { running: running.length });
-}
 
 const TIME = dateTimeFormat({
 	hour: '2-digit',

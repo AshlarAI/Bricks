@@ -2,7 +2,7 @@
 // apart by their full path, kept per session, closed by the user, and never
 // fed by a late answer.
 import { describe, expect, it } from 'vitest';
-import { ReaderStore } from '../../src/lib/state/reader.svelte';
+import { ReaderStore } from '../../src/lib/state/reader';
 import { PROJECT, SESSION, WORKTREE, diskRead, manualRead, numbered, settle } from './reader-fixtures';
 
 const target = { sessionId: SESSION, projectId: 'p1' };

@@ -1,6 +1,6 @@
 # Global state (owner: orchestrator)
 
-- `app` (`app.svelte.ts`): `info`, `models` (catalog), `prefs` + `setPrefs(patch)`, `projects`,
+- `app` (`app.ts`): `info`, `models` (catalog), `prefs` + `setPrefs(patch)`, `projects`,
   `sessions` (of the current project), `currentProject`, `current` (the shown `Conversation`),
   `rightView`, `lastError`. Actions: `addProject()` (native picker), `selectProject`,
   `removeProject`, `renameProject`, `newConversation()` (local project draft, no session, bumps
@@ -8,7 +8,7 @@
   concurrent callers), `draftFor` / `clearProjectDraft` / `draftModel` / `setDraftModel`, `openSession(id)`,
   `renameSession`, `deleteSession` (caller confirms first), `closeSession`, `search(query, all?)`,
   `command(sessionId, Command, display?)` → `null` or the refusal message (`display`: typed command label of a submit). `onChangeRecorded(listener)`.
-- `Conversation` (`conversation.svelte.ts`), one per open session, fed even when not shown:
+- `Conversation` (`conversation.ts`), one per open session, fed even when not shown:
   `items` (timeline: `user`, `assistant` {text, thinking, streaming}, `tool`, `approval`, `edit`,
   `notice`, `run_end`), `runs` (RunInfo: startedAt/finishedAt from engine timestamps, outcome,
   finalText, `files` = summed edit operations per path, `commands` = shell evidence), `agents`

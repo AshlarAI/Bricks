@@ -1,8 +1,7 @@
 // Delegated clicks of a rendered message. Copies code, opens external links through the
 // system (never while streaming), jumps to in-page anchors (headings, footnotes) inside the
 // conversation, and reports file references. Nothing here executes content.
-import { t } from '$lib/i18n/i18n.svelte'
-import type { Action } from 'svelte/action'
+import { t } from '$lib/i18n/i18n'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { isOpenableUrl } from '../links'
 import type { FileReference } from './types'
@@ -43,11 +42,19 @@ function fileReferenceOf(button: HTMLButtonElement): FileReference | null {
   return Number.isInteger(endLine) ? { path, line, endLine } : { path, line }
 }
 
+export interface MarkdownClicksHandle {
+  update: (next: MarkdownClickOptions | undefined) => void
+  destroy: () => void
+}
+
 /**
  * Delegated clicks for a rendered message: copy buttons of code blocks, links, in-page
  * anchors and file references. Anchors never navigate the webview.
  */
-export const markdownClicks: Action<HTMLElement, MarkdownClickOptions | undefined> = (node, options) => {
+export function markdownClicks(
+  node: HTMLElement,
+  options?: MarkdownClickOptions,
+): MarkdownClicksHandle {
   let current = options
 
   const anchorIn = (target: EventTarget | null): HTMLAnchorElement | null => {

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { HistoryMessage } from '../../src/lib/ipc/client';
 import { summarizeInput } from '../../src/lib/features/conversation/format';
 import { approvalTrace, toolLineState } from '../../src/lib/features/conversation/timeline/toolLine';
-import { Conversation, type ToolItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type ToolItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, openedSession } from './fixtures';
 
 const PATH = 'src/lib/features/a.ts';

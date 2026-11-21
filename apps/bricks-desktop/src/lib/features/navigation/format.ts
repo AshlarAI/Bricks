@@ -1,6 +1,6 @@
 // Pure helpers for the navigation feature: dates, folder labels and search
 // highlighting. No Svelte or IPC imports, so they stay easy to test.
-import { t, relativeTimeFormat } from '$lib/i18n/i18n.svelte';
+import { t, relativeTimeFormat } from '$lib/i18n/i18n';
 
 
 const MINUTE = 60_000;

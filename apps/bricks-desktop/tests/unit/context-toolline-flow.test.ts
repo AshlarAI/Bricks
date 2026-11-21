@@ -2,7 +2,7 @@
 // and the context line across a compaction that changed nothing and a clear that is followed
 // by a new measure. Hand-built envelopes (fixtures.ts); complements the files it does not repeat.
 import { describe, expect, it } from 'vitest';
-import { Conversation, type ToolItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type ToolItem } from '../../src/lib/state/conversation';
 import { contextLine } from '../../src/lib/features/context/contextView';
 import { approvalTrace, formatToolDuration, toolLineState } from '../../src/lib/features/conversation/timeline/toolLine';
 import type { ApprovalRequest } from '../../src/lib/ipc/engine';

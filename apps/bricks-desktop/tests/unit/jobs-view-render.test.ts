@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
-// « Tâches de fond » (JobsView.svelte), mounted over the app store with a real Conversation: the
+// « Tâches de fond » (JobsView.tsx), mounted over the app store with a real Conversation: the
 // section is folded by default and its summary states the jobs in one line; each job opens on
 // demand; « Arrêter » is offered for a running job only; the refresh says it is pending, then reads
 // the empty list or the engine's refusal.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import JobsView from '../../src/lib/features/catalog/JobsView.svelte';
-import { app } from '../../src/lib/state/app.svelte';
-import { Conversation, type JobInfo } from '../../src/lib/state/conversation.svelte';
-import { PROJECT_ID, SESSION_ID, T0, openedSession } from './fixtures';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import JobsView from '../../src/lib/features/catalog/JobsView';
+import { app } from '../../src/lib/state/app';
+import { Conversation, type JobInfo } from '../../src/lib/state/conversation';
+import { EnvelopeFeed, PROJECT_ID, SESSION_ID, T0, openedSession } from './fixtures';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => {
@@ -20,7 +20,7 @@ vi.mock('@tauri-apps/api/core', () => {
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<object> | null = null;
 
 beforeEach(() => {
 	ipc.invoke.mockReset();
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 	app.conversations.clear();
@@ -60,20 +60,18 @@ function job(jobId: string, state: string, command: string): JobInfo {
 }
 
 function render() {
-	component = mount(JobsView, { target, props: { args: {} } });
-	flushSync();
+	component = mountReact(JobsView, { target, props: { args: {} } }) as MountedComponent<object>;
 }
 
 const section = () => target.querySelector<HTMLElement>('section[aria-label="Tâches de fond"]')!;
 const trigger = () => section().querySelector<HTMLButtonElement>('button')!;
 const summary = () => target.querySelector<HTMLElement>('section[aria-label="Tâches de fond"] button')?.textContent?.trim();
 const rows = () => [...section().querySelectorAll<HTMLElement>('ul > li')];
-/** The body of the section: bits-ui keeps it in the DOM and marks it `hidden` while folded. */
-const body = () => section().querySelector<HTMLElement>('[data-collapsible-content]')!;
+/** The body of the section: Radix Collapsible keeps it in the DOM and marks it `hidden` while folded. */
+const body = () => section().querySelector<HTMLElement>('[data-slot="collapsible-content"]')!;
 
 function open() {
-	trigger().click();
-	flushSync();
+	flushReact(() => trigger().click());
 }
 
 describe('folded by default', () => {
@@ -103,10 +101,9 @@ describe('folded by default', () => {
 		current().jobs.set('j1', job('j1', 'completed', 'npm test'));
 		render();
 		open();
-		const details = rows()[0].querySelector<HTMLElement>('[data-collapsible-content]')!;
+		const details = rows()[0].querySelector<HTMLElement>('[data-slot="collapsible-content"]')!;
 		expect(details.hasAttribute('hidden')).toBe(true);
-		rows()[0].querySelector<HTMLElement>('button')!.click();
-		flushSync();
+		flushReact(() => rows()[0].querySelector<HTMLElement>('button')!.click());
 		expect(details.hasAttribute('hidden')).toBe(false);
 		expect(details.textContent).toContain('Terminée');
 		expect(details.textContent).toContain('/work/demo');
@@ -132,17 +129,23 @@ describe('the refresh', () => {
 	});
 
 	it('reads « Aucune tâche » once the engine answered with no job, and the section has nothing to open', () => {
+		const feed = new EnvelopeFeed();
 		render();
-		current().lastAgentControl = { action: 'jobs', ok: true, text: '', at: T0 };
-		flushSync();
+		flushReact(() => {
+			current().apply(feed.next({ type: 'agent_control_result', action: 'jobs', ok: true, text: '' }, { at: T0 }));
+		});
 		expect(summary()).toBe('Aucune tâche');
 		expect(trigger().hasAttribute('disabled')).toBe(true);
 	});
 
 	it('says why the engine refused the refresh, as an alert', () => {
+		const feed = new EnvelopeFeed();
 		render();
-		current().lastAgentControl = { action: 'jobs', ok: false, text: 'moteur occupé', at: T0 };
-		flushSync();
+		flushReact(() => {
+			current().apply(
+				feed.next({ type: 'agent_control_result', action: 'jobs', ok: false, text: 'moteur occupé' }, { at: T0 })
+			);
+		});
 		expect(target.querySelector('[role="alert"]')?.textContent).toContain('Actualisation impossible : moteur occupé');
 	});
 });

@@ -7,21 +7,28 @@ import { describe, expect, it } from 'vitest';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const DETAIL = 'lib/features/settings/ProviderDetail.svelte';
-const ROW = 'lib/features/settings/ModelRow.svelte';
-const USAGE = 'lib/features/settings/UsageSettings.svelte';
-const PICKER = 'lib/features/settings/ProviderTemplatePicker.svelte';
+const DETAIL = 'lib/features/settings/ProviderDetail.tsx';
+const ROW = 'lib/features/settings/ModelRow.tsx';
+const USAGE = 'lib/features/settings/UsageSettings.tsx';
+const PICKER = 'lib/features/settings/ProviderTemplatePicker.tsx';
 
 describe('provider detail: shared UI parts, the model test and the field patch', () => {
 	const detail = src(DETAIL);
 
-	it('imports the shared UI parts as namespaces or named components', () => {
-		expect(detail).toContain("import * as Field from '$lib/components/ui/field'");
-		expect(detail).toContain("import * as InputGroup from '$lib/components/ui/input-group'");
-		expect(detail).toContain("import * as Select from '$lib/components/ui/select'");
-		expect(detail).toContain("import * as DropdownMenu from '$lib/components/ui/dropdown-menu'");
+	it('imports the shared UI parts as named components', () => {
+		expect(detail).toContain("from '$lib/components/ui/field'");
+		expect(detail).toContain('Field,');
+		expect(detail).toContain('FieldGroup,');
+		expect(detail).toContain('FieldLabel');
+		expect(detail).toContain("from '$lib/components/ui/input-group'");
+		expect(detail).toContain('InputGroup,');
+		expect(detail).toContain("from '$lib/components/ui/select'");
+		expect(detail).toContain('Select,');
+		expect(detail).toContain("from '$lib/components/ui/dropdown-menu'");
+		expect(detail).toContain('DropdownMenu,');
 		expect(detail).toContain("import { Toggle } from '$lib/components/ui/toggle'");
-		expect(detail).toContain("import * as Item from '$lib/components/ui/item'");
+		expect(detail).toContain("from '$lib/components/ui/item'");
+		expect(detail).toContain('ItemGroup,');
 	});
 
 	it('tests a model and saves a single field through the field patch', () => {
@@ -40,7 +47,7 @@ describe('model row: shared parts, catalogue labels and icon sizes', () => {
 	it('imports the Switch and Badge components and the Item parts', () => {
 		expect(row).toContain("import { Switch } from '$lib/components/ui/switch'");
 		expect(row).toContain("import { Badge } from '$lib/components/ui/badge'");
-		expect(row).toContain("import * as Item from '$lib/components/ui/item'");
+		expect(row).toContain("import { Item, ItemActions, ItemContent, ItemFooter, ItemTitle } from '$lib/components/ui/item'");
 	});
 
 	it('labels the vision badge and the token limits with catalogue keys', () => {
@@ -50,7 +57,7 @@ describe('model row: shared parts, catalogue labels and icon sizes', () => {
 	});
 
 	it('gives no icon of its buttons a size class', () => {
-		const icons = ['<Pencil', '<Trash', '<Plug', '<CircleCheck', '<CircleX'];
+		const icons = ['<PencilIcon', '<TrashIcon', '<PlugIcon', '<CircleCheckIcon', '<CircleXIcon'];
 		const lines = row.split('\n').filter((line) => icons.some((icon) => line.includes(icon)));
 		expect(lines.length).toBeGreaterThan(0);
 		for (const line of lines) expect(line).not.toContain('size-');
@@ -60,8 +67,8 @@ describe('model row: shared parts, catalogue labels and icon sizes', () => {
 describe('usage section: the empty state and the type scale', () => {
 	const usage = src(USAGE);
 
-	it('imports the empty state as a namespace', () => {
-		expect(usage).toContain("import * as Empty from '$lib/components/ui/empty'");
+	it('imports the empty state parts', () => {
+		expect(usage).toContain("import { Empty, EmptyHeader, EmptyTitle } from '$lib/components/ui/empty'");
 	});
 
 	it('has no 10px or 11px text class', () => {
@@ -73,9 +80,9 @@ describe('usage section: the empty state and the type scale', () => {
 describe('template picker: the key label comes from Field', () => {
 	const picker = src(PICKER);
 
-	it('labels its key field with Field.Label', () => {
-		expect(picker).toContain("import * as Field from '$lib/components/ui/field'");
-		expect(picker).toContain('Field.Label');
+	it('labels its key field with FieldLabel', () => {
+		expect(picker).toContain("import { Field, FieldLabel } from '$lib/components/ui/field'");
+		expect(picker).toContain('FieldLabel');
 	});
 
 	it('no longer imports the plain label component', () => {

@@ -2,7 +2,7 @@
 // Pure helpers: which distinct changesets a file's edits belong to, and the label
 // of the link.
 
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 import { shortId } from '$lib/features/changes/format';
 
 /** The distinct changesets of some operations, in order of first appearance. */

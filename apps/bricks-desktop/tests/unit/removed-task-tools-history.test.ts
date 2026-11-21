@@ -4,7 +4,7 @@
 // tools they name, with their results and errors, and they make no user message.
 import { describe, expect, it } from 'vitest';
 import type { HistoryMessage } from '../../src/lib/ipc/client';
-import { Conversation, type ToolItem, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type ToolItem, type UserItem } from '../../src/lib/state/conversation';
 import { PROJECT_ID, openedSession } from './fixtures';
 
 const history: HistoryMessage[] = [

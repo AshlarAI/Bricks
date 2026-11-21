@@ -1,5 +1,5 @@
 // Start path and project/conversation sidebar. Skeleton: selectors follow the accessible
-// names in src/lib/features/navigation/*.svelte at the time of writing. Run only on Linux/Windows.
+// names in src/lib/features/navigation/*.tsx at the time of writing. Run only on Linux/Windows.
 import { $, browser, expect } from '@wdio/globals';
 
 const LOADING_TEXT = 'Démarrage de Bricks';

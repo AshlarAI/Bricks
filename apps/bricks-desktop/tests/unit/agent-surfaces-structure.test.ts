@@ -1,5 +1,5 @@
 // Static checks (sources read, not rendered) of the sub-agent surfaces: the line in the thread, the
-// branch that replaces the former inspector (its component, its title bar, App.svelte mounting it),
+// branch that replaces the former inspector (its component, its title bar, App.tsx mounting it),
 // the removed inspector, message form and tool names, and the one dispatch that opens a branch.
 // Same approach as copy-inspector-terminal-structure.test.ts.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -11,10 +11,10 @@ import { bound, call } from './french-keys';
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
 const src = (path: string) => readFileSync(join(SRC, path), 'utf8');
 
-const LINE = 'lib/features/conversation/timeline/AgentLine.svelte';
-const BRANCH = 'lib/features/agents/AgentBranch.svelte';
-const TITLE = 'lib/features/conversation/ConversationTitle.svelte';
-const APP = 'App.svelte';
+const LINE = 'lib/features/conversation/timeline/AgentLine.tsx';
+const BRANCH = 'lib/features/agents/AgentBranch.tsx';
+const TITLE = 'lib/features/conversation/ConversationTitle.tsx';
+const APP = 'App.tsx';
 const DISPATCH = 'lib/features/commands/dispatch.ts';
 
 /** Every text file under src/, as paths relative to src/. */
@@ -22,7 +22,7 @@ function textFiles(dir = SRC, prefix = ''): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
 		const rel = prefix + entry.name;
 		if (entry.isDirectory()) return textFiles(join(dir, entry.name), `${rel}/`);
-		return /\.(svelte|ts|js|json|md|html|css)$/.test(entry.name) ? [rel] : [];
+		return /\.(tsx|ts|js|json|md|html|css)$/.test(entry.name) ? [rel] : [];
 	});
 }
 
@@ -45,16 +45,17 @@ describe('the sub-agent line in the thread', () => {
 		}
 	});
 
-	it('shows the dot, the profile, the description and the duration, and a second action line', () => {
-		expect(line).toContain('<StatusDot');
+	it('is a trace task: state icon, profile and description, its steps folded under it, no time', () => {
+		expect(line).toContain('<Trace.Collapsible');
 		expect(line).toContain('{agent.spawn.profile}');
-		expect(line).toContain('{description}');
-		expect(line).toContain('formatDuration(agentDurationMs(agent, now))');
-		expect(line).toContain('agentAction(agent, awaitingApproval)');
+		expect(line).toContain('<Trace.Title>{description}</Trace.Title>');
+		expect(line).toContain('{shown.map((step) => (');
+		expect(line).toContain('key={step.id}');
+		expect(line).not.toMatch(/formatDuration|agentDurationMs|setInterval/);
 	});
 
 	it('opens the branch of its agent on click', () => {
-		expect(line).toContain('onclick={() => ui.openAgent(agent.id)}');
+		expect(line).toContain('onClick={() => ui.openAgent(agent.id)}');
 	});
 
 	it('shows a resumed agent once, where it was resumed', () => {
@@ -62,18 +63,18 @@ describe('the sub-agent line in the thread', () => {
 	});
 });
 
-describe('the branch of a sub-agent (AgentBranch.svelte)', () => {
+describe('the branch of a sub-agent (AgentBranch.tsx)', () => {
 	const text = src(BRANCH);
 
 	it('renders the same timeline as the conversation, on the branch built from the agent steps', () => {
-		expect(text).toContain("import ConversationTimeline from '$lib/features/conversation/ConversationTimeline.svelte'");
+		expect(text).toContain("import ConversationTimeline from '$lib/features/conversation/ConversationTimeline'");
 		expect(text).toContain('<ConversationTimeline conversation={branch} />');
-		expect(text).toContain('agentBranch(conversation, agent)');
+		expect(text).toContain('agentBranch(conversation, liveAgent)');
 	});
 
 	it('builds the branch once and feeds it the steps as the agent log grows', () => {
-		expect(text).toContain('agentBranch(conversation, agent)');
-		expect(text).toContain('applyAgentSteps(branch, agent, applied)');
+		expect(text).toContain('agentBranch(conversation, liveAgent)');
+		expect(text).toContain('applyAgentSteps(state.branch, liveAgent, state.applied)');
 	});
 
 	it('has nothing to write to: a fixed bar says so, and there is no field, form or command', () => {
@@ -84,19 +85,19 @@ describe('the branch of a sub-agent (AgentBranch.svelte)', () => {
 	});
 });
 
-describe('the title bar in a branch (ConversationTitle.svelte)', () => {
+describe('the title bar in a branch (ConversationTitle.tsx)', () => {
 	const text = src(TITLE);
 
 	it('reads the agent of the open branch, and names it after the conversation title', () => {
 		expect(text).toContain("import { agentName } from '$lib/features/agents/branch'");
-		expect(text).toContain('const branch = $derived(ui.agentId ? (conversation?.agents.get(ui.agentId) ?? null) : null)');
+		expect(text).toContain('useConversation(conversation, (c) => (agentId ? (c.agents.get(agentId) ?? null) : null)) ?? null');
 		expect(text).toContain('{agentName(branch)}');
 	});
 
 	it('leads back to the conversation: its title is a button that closes the branch, then a slash', () => {
-		expect(text).toContain('onclick={() => ui.closeAgent()}>{title}</button');
-		const SLASH = '<Breadcrumb.Separator class="text-muted-foreground/60">/</Breadcrumb.Separator>';
-		const back = text.indexOf('onclick={() => ui.closeAgent()}');
+		expect(text).toMatch(/onClick=\{\(\) => ui\.closeAgent\(\)\}>\s*\{title\}\s*<\/button/);
+		const SLASH = '<BreadcrumbSeparator className="text-muted-foreground/60">/</BreadcrumbSeparator>';
+		const back = text.indexOf('onClick={() => ui.closeAgent()}');
 		const slash = text.indexOf(SLASH, back);
 		const name = text.indexOf('{agentName(branch)}');
 		expect(back).toBeGreaterThan(-1);
@@ -107,30 +108,30 @@ describe('the title bar in a branch (ConversationTitle.svelte)', () => {
 	it('hides the rename pencil in a branch, and the running dot follows the branch', () => {
 		const pencil = text.indexOf(bound('aria-label', 'Modifier le titre'));
 		expect(pencil).toBeGreaterThan(-1);
-		expect(text.slice(0, pencil)).toContain('{#if conversation && !editing && !branch}');
-		expect(text).toContain('{#if branch ? !branch.endedAt : conversation?.running}');
+		expect(text.slice(0, pencil)).toContain('{conversation && !editing && !branch && (');
+		expect(text).toContain('{(branch ? !branch.endedAt : convRunning) && <StatusDot');
 	});
 });
 
-describe('App.svelte: the branch is mounted in the centre', () => {
+describe('App.tsx: the branch is mounted in the centre', () => {
 	const text = src(APP);
 
 	it('mounts AgentBranch for the agent of the open branch, above the conversation', () => {
-		expect(text).toContain("import AgentBranch from '$lib/features/agents/AgentBranch.svelte'");
-		const branch = text.indexOf('{#if app.current && branchAgent}');
+		expect(text).toContain("import AgentBranch from '$lib/features/agents/AgentBranch'");
+		const branch = text.indexOf('{current && branchAgent && (');
 		expect(branch).toBeGreaterThan(-1);
-		expect(text.indexOf('<AgentBranch conversation={app.current} agent={branchAgent} />')).toBeGreaterThan(branch);
+		expect(text.indexOf('<AgentBranch key={branchAgent.id} conversation={current} agent={branchAgent} />')).toBeGreaterThan(branch);
 	});
 
 	it('keeps the conversation mounted but hidden while a branch is open', () => {
-		expect(text).toContain("branchAgent && 'hidden'");
+		expect(text).toContain("branchAgent ? 'hidden' : ''");
 		expect(text).toContain('Kept mounted under a branch');
 		const branch = text.indexOf('<AgentBranch');
-		expect(text.indexOf("branchAgent && 'hidden'")).toBeGreaterThan(branch);
+		expect(text.indexOf("branchAgent ? 'hidden' : ''")).toBeGreaterThan(branch);
 	});
 
 	it('closes the branch when the session changes', () => {
-		expect(text).toContain('if (id !== branchSession) {');
+		expect(text).toContain('if (id !== branchSessionRef.current) {');
 		expect(text).toContain('ui.closeAgent()');
 	});
 
@@ -141,12 +142,16 @@ describe('App.svelte: the branch is mounted in the centre', () => {
 
 describe('the removed inspector, message form and tool names', () => {
 	it('the inspector and its host are gone from the tree', () => {
+		expect(existsSync(join(SRC, 'lib/features/agents/AgentInspector.tsx'))).toBe(false);
 		expect(existsSync(join(SRC, 'lib/features/agents/AgentInspector.svelte'))).toBe(false);
+		expect(existsSync(join(SRC, 'lib/features/agents/AgentInspectorHost.tsx'))).toBe(false);
 		expect(existsSync(join(SRC, 'lib/features/agents/AgentInspectorHost.svelte'))).toBe(false);
 	});
 
 	it('the agent list and the instances view are gone from the tree', () => {
+		expect(existsSync(join(SRC, 'lib/features/agents/AgentList.tsx'))).toBe(false);
 		expect(existsSync(join(SRC, 'lib/features/agents/AgentList.svelte'))).toBe(false);
+		expect(existsSync(join(SRC, 'lib/features/catalog/AgentInstancesView.tsx'))).toBe(false);
 		expect(existsSync(join(SRC, 'lib/features/catalog/AgentInstancesView.svelte'))).toBe(false);
 	});
 
@@ -168,7 +173,7 @@ describe('the removed inspector, message form and tool names', () => {
 	});
 
 	it('no file of src/ uses « Agents » as a tool name (a case, a comparison, a key)', () => {
-		// The labels « Agents » of adkAccess.ts (a group) and of ConfigView.svelte (a section) are text, not the tool.
+		// The labels « Agents » of adkAccess.ts (a group) and of ConfigView.tsx (a section) are text, not the tool.
 		const TOOL_NAME_USE = /case ['"`]Agents['"`]|[!=]==? ?['"`]Agents['"`]|['"`]Agents['"`]\s*:/;
 		expect(TOOL_NAME_USE.test("case 'Agents':")).toBe(true);
 		expect(TOOL_NAME_USE.test("label: 'Agents'")).toBe(false);

@@ -1,28 +1,33 @@
 // Guard: French text must not be written in the source of the interface. Every visible text of
-// src/lib goes through t() and the catalogues (src/lib/i18n/messages); what stays in the code is
-// either a technical value or a proper noun. The scan looks for French-specific characters (accents,
-// « », ’) in string literals and in the markup. Comments are not checked. The catalogues and the
-// generated IPC bindings are not scanned. ALLOWED lists the few justified exceptions, one by one.
+// src/lib (and src/App.tsx) goes through t() and the catalogues (src/lib/i18n/messages); what
+// stays in the code is either a technical value or a proper noun. The scan walks TypeScript/TSX
+// ASTs for string literals, template literals, and JSX text nodes (skipping comments and regex
+// literals). Every static t('...') key call is also checked against both catalogues. The
+// catalogues and generated IPC bindings are not scanned.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { en } from '../../src/lib/i18n/messages/en';
+import { fr } from '../../src/lib/i18n/messages/fr';
 
-const LIB = fileURLToPath(new URL('../../src/lib', import.meta.url));
+const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+const LIB = join(SRC, 'lib');
+const APP = join(SRC, 'App.tsx');
 const EXCLUDED = [join(LIB, 'i18n'), join(LIB, 'ipc', 'bindings')];
 const FRENCH = /[àâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ’«»]/;
 
 /**
- * Exceptions: a file, a fragment of the line that holds the text, and the reason. The first is a
- * false positive (a regular expression's character class). The others are known defects of
- * src/lib, listed here until they are fixed: each one is a French text the English interface would
- * show as it is, and each must leave this list when it is moved to the catalogues.
+ * Exceptions: a file (relative to src/lib or src/App.tsx), a fragment of the literal text, and
+ * the reason. Each one must stay justified (non-user-visible technical value) or be moved to the
+ * catalogues.
  */
 const ALLOWED: { file: string; text: string; why: string }[] = [
 	{
 		file: 'features/conversation/links.ts',
-		text: '«»“”',
-		why: 'false positive: a character class of a regular expression'
+		text: ".,;:!?'’",
+		why: 'technical punctuation characters stripped from the end of URLs (not user-visible text)'
 	}
 ];
 
@@ -37,77 +42,94 @@ function walk(dir: string): string[] {
 		const path = join(dir, entry.name);
 		if (EXCLUDED.some((excluded) => path === excluded || path.startsWith(excluded + '/'))) return [];
 		if (entry.isDirectory()) return walk(path);
-		return /\.(ts|svelte)$/.test(entry.name) && !/\.test\.ts$/.test(entry.name) ? [path] : [];
+		return /\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
 	});
 }
 
-/** The line (1-based) of a character offset. */
-function lineOf(text: string, offset: number): number {
-	return text.slice(0, offset).split('\n').length;
+function parseFile(file: string, source: string): ts.SourceFile {
+	return ts.createSourceFile(
+		file,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
 }
 
-/** The content of each string literal of a script, with its line; comments are skipped. */
-function stringsOf(code: string): { line: number; text: string }[] {
-	const found: { line: number; text: string }[] = [];
-	let i = 0;
-	while (i < code.length) {
-		const char = code[i];
-		const next = code[i + 1];
-		if (char === '/' && next === '/') {
-			const end = code.indexOf('\n', i);
-			i = end < 0 ? code.length : end;
-		} else if (char === '/' && next === '*') {
-			const end = code.indexOf('*/', i + 2);
-			i = end < 0 ? code.length : end + 2;
-		} else if (char === "'" || char === '"' || char === '`') {
-			const start = i + 1;
-			let j = start;
-			while (j < code.length && code[j] !== char) j += code[j] === '\\' ? 2 : 1;
-			found.push({ line: lineOf(code, start), text: code.slice(start, j) });
-			i = j + 1;
-		} else {
-			i += 1;
-		}
-	}
-	return found;
-}
-
-function scan(file: string, source: string): Finding[] {
-	const rel = relative(LIB, file);
-	if (!file.endsWith('.svelte')) {
-		return stringsOf(source)
-			.filter((s) => FRENCH.test(s.text))
-			.map((s) => ({ file: rel, line: s.line, text: s.text.trim().slice(0, 120) }));
-	}
-	// A component: its scripts are read as code, its style is skipped, the rest is markup.
-	const withoutStyle = source.replace(/<style[\s\S]*?<\/style>/g, (block) => block.replace(/[^\n]/g, ' '));
+function scanHardcoded(file: string, source: string, base: string): Finding[] {
+	const rel = relative(base, file);
+	const sf = parseFile(file, source);
 	const findings: Finding[] = [];
-	for (const match of withoutStyle.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
-		const body = match[1];
-		const bodyStart = (match.index ?? 0) + match[0].indexOf('>') + 1;
-		for (const s of stringsOf(body)) {
-			if (FRENCH.test(s.text)) {
-				findings.push({ file: rel, line: lineOf(source, bodyStart) + s.line - 1, text: s.text.trim().slice(0, 120) });
+
+	const visit = (node: ts.Node) => {
+		if (
+			ts.isStringLiteral(node) ||
+			ts.isNoSubstitutionTemplateLiteral(node) ||
+			ts.isTemplateHead(node) ||
+			ts.isTemplateMiddle(node) ||
+			ts.isTemplateTail(node) ||
+			ts.isJsxText(node)
+		) {
+			if (FRENCH.test(node.text)) {
+				const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+				findings.push({ file: rel, line, text: node.text.trim().slice(0, 120) });
 			}
 		}
-	}
-	const markup = withoutStyle
-		.replace(/<script[^>]*>[\s\S]*?<\/script>/g, (block) => block.replace(/[^\n]/g, ' '))
-		.replace(/<!--[\s\S]*?-->/g, (block) => block.replace(/[^\n]/g, ' '))
-		.replace(/\{\/\*[\s\S]*?\*\/\}/g, (block) => block.replace(/[^\n]/g, ' '));
-	markup.split('\n').forEach((line, index) => {
-		if (FRENCH.test(line)) findings.push({ file: rel, line: index + 1, text: line.trim().slice(0, 120) });
-	});
+		ts.forEachChild(node, visit);
+	};
+
+	visit(sf);
+	return findings;
+}
+
+function scanMissingKeys(file: string, source: string, base: string): Finding[] {
+	const rel = relative(base, file);
+	const sf = parseFile(file, source);
+	const findings: Finding[] = [];
+
+	const visit = (node: ts.Node) => {
+		if (
+			ts.isCallExpression(node) &&
+			ts.isIdentifier(node.expression) &&
+			node.expression.text === 't' &&
+			node.arguments.length >= 1
+		) {
+			const arg = node.arguments[0];
+			if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+				const key = arg.text;
+				if (!(key in en) || !(key in fr)) {
+					const line = sf.getLineAndCharacterOfPosition(arg.getStart(sf)).line + 1;
+					findings.push({ file: rel, line, text: key });
+				}
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+
+	visit(sf);
 	return findings;
 }
 
 describe('no French text is written in the source of src/lib', () => {
 	it('finds no hardcoded French outside the catalogues, and no unlisted exception', () => {
-		const findings = walk(LIB).flatMap((file) => scan(file, readFileSync(file, 'utf8')));
+		const findings = walk(LIB).flatMap((file) => scanHardcoded(file, readFileSync(file, 'utf8'), LIB));
 		const unexpected = findings.filter(
-			(f) => !ALLOWED.some((a) => a.file === f.file && f.text.includes(a.text))
+			(f) => !ALLOWED.some((a) => a.file === f.file && f.text.includes(a.text)),
 		);
 		const report = unexpected.map((f) => `${f.file}:${f.line}  ${f.text}`);
+		expect(report).toEqual([]);
+	});
+
+	it('finds no hardcoded French in App.tsx', () => {
+		const findings = scanHardcoded(APP, readFileSync(APP, 'utf8'), SRC);
+		const report = findings.map((f) => `${f.file}:${f.line}  ${f.text}`);
+		expect(report).toEqual([]);
+	});
+
+	it('checks that every static t() key used in .ts and .tsx sources exists in both catalogues', () => {
+		const files = [...walk(LIB), APP];
+		const missing = files.flatMap((file) => scanMissingKeys(file, readFileSync(file, 'utf8'), SRC));
+		const report = missing.map((f) => `${f.file}:${f.line}  missing i18n key '${f.text}'`);
 		expect(report).toEqual([]);
 	});
 });

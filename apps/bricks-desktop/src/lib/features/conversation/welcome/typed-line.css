@@ -1,0 +1,26 @@
+.welcome-typed-line .caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: welcome-caret-blink 1s steps(1) infinite;
+}
+
+.welcome-typed-line .caret.still {
+  visibility: hidden;
+  animation: none;
+}
+
+@keyframes welcome-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-typed-line .caret {
+    animation: none;
+  }
+}

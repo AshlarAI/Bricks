@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Extensions (ExtensionsSettings.svelte), mounted in happy-dom with the Computer Use IPC functions
+// Extensions (ExtensionsSettings.tsx), mounted in happy-dom with the Computer Use IPC functions
 // replaced: the built-in row carries its badge and its switch; the switch saves the choice and tells
 // the app; each permission reads granted, missing or unknown, with « Ouvrir les Réglages » only for a
 // missing one; the switch is off while the driver is missing or unsupported; the state is read again
@@ -7,11 +7,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import ExtensionsSettings from '../../src/lib/features/settings/ExtensionsSettings.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import ExtensionsSettings from '../../src/lib/features/settings/ExtensionsSettings';
 import * as ipc from '../../src/lib/ipc/client';
 import type { ComputerUseStatus } from '../../src/lib/ipc/bindings/ComputerUseStatus';
-import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app.svelte';
+import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app';
 import { call } from './french-keys';
 
 vi.mock('@tauri-apps/api/core', () => {
@@ -45,18 +45,19 @@ function status(over: Partial<ComputerUseStatus> = {}): ComputerUseStatus {
 }
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<object> | null = null;
 let noteSpy: MockInstance<typeof app.noteComputerUse>;
 
 // Lets the pending IPC promises and the component's updates settle.
 async function settle() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	flushSync();
+	for (let i = 0; i < 3; i++) {
+		await tickReact();
+	}
 }
 
 async function open(first: ComputerUseStatus = status()) {
 	vi.mocked(ipc.computerUseStatus).mockResolvedValue(first);
-	component = mount(ExtensionsSettings, { target });
+	component = mountReact(ExtensionsSettings, { target });
 	await settle();
 }
 
@@ -86,7 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	noteSpy.mockRestore();
 	app.info = null;
@@ -128,7 +129,7 @@ describe('the Computer Use row', () => {
 		await open(status({ enabled: false, state: 'off' }));
 		vi.mocked(ipc.computerUseSetEnabled).mockResolvedValue(status({ enabled: true, state: 'ready', tools: 2 }));
 
-		switchControl().click();
+		flushReact(() => switchControl().click());
 		await settle();
 
 		expect(ipc.computerUseSetEnabled).toHaveBeenCalledTimes(1);
@@ -142,7 +143,7 @@ describe('the Computer Use row', () => {
 		await open(status({ enabled: false, state: 'off' }));
 		vi.mocked(ipc.computerUseSetEnabled).mockRejectedValue(new Error('refusé par le système'));
 
-		switchControl().click();
+		flushReact(() => switchControl().click());
 		await settle();
 
 		expect(ipc.computerUseSetEnabled).toHaveBeenCalledWith(true);
@@ -183,7 +184,7 @@ describe('the permissions of the driver', () => {
 
 	it('opens the Réglages for the permission chosen', async () => {
 		await open(status({ state: 'ready', enabled: true, accessibility: 'granted', screen_recording: 'missing' }));
-		buttonIn(row('screen_recording'), 'Ouvrir les Réglages')!.click();
+		flushReact(() => buttonIn(row('screen_recording'), 'Ouvrir les Réglages')!.click());
 		await settle();
 		expect(ipc.computerUseRequestPermission).toHaveBeenCalledTimes(1);
 		expect(ipc.computerUseRequestPermission).toHaveBeenCalledWith('screen_recording');
@@ -211,7 +212,7 @@ describe('the grants read again when the window comes back', () => {
 		expect(ipc.computerUseStatus).toHaveBeenCalledTimes(1);
 
 		vi.mocked(ipc.computerUseStatus).mockResolvedValue(status({ state: 'ready', enabled: true, accessibility: 'granted' }));
-		window.dispatchEvent(new Event('focus'));
+		flushReact(() => window.dispatchEvent(new Event('focus')));
 		await settle();
 
 		expect(ipc.computerUseStatus).toHaveBeenCalledTimes(2);
@@ -222,23 +223,23 @@ describe('the grants read again when the window comes back', () => {
 	it('stops reading it once unmounted', async () => {
 		await open(status());
 		const calls = vi.mocked(ipc.computerUseStatus).mock.calls.length;
-		if (component) void unmount(component);
+		component?.unmount();
 		component = null;
-		window.dispatchEvent(new Event('focus'));
+		flushReact(() => window.dispatchEvent(new Event('focus')));
 		await settle();
 		expect(vi.mocked(ipc.computerUseStatus).mock.calls.length).toBe(calls);
 	});
 });
 
 describe('the Extensions section of the settings', () => {
-	const page = src('lib/features/settings/SettingsPage.svelte');
+	const page = src('lib/features/settings/SettingsPage.tsx');
 	const agentGroup = page.slice(page.indexOf("t('settings.groupAgent')"), page.indexOf("t('settings.groupData')"));
 
 	it('is a section named Extensions, showing ExtensionsSettings', () => {
 		expect(page).toContain(
-			`{ id: 'extensions', get label() { return ${call('Extensions')} }, icon: Plug, content: ExtensionsSettings }`
+			`{ id: 'extensions', get label() { return ${call('Extensions')} }, icon: PlugIcon, content: ExtensionsSettings }`
 		);
-		expect(page).toContain("import ExtensionsSettings from './ExtensionsSettings.svelte'");
+		expect(page).toContain("import ExtensionsSettings from './ExtensionsSettings'");
 	});
 
 	it('sits in the agent group, after Skills', () => {

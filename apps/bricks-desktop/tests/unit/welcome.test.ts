@@ -4,11 +4,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
+import { renderHtml } from './react-test-utils';
 import { BAYER, GLYPHS, glyphAt, hollow, noise } from '../../src/lib/features/conversation/welcome/dither';
 import { STARTERS, prefillDraft, starterText } from '../../src/lib/features/conversation/welcome/starters';
-import WelcomeView from '../../src/lib/features/conversation/welcome/WelcomeView.svelte';
-import { setLanguage } from '../../src/lib/i18n/i18n.svelte';
+import WelcomeView from '../../src/lib/features/conversation/welcome/WelcomeView';
+import { setLanguage } from '../../src/lib/i18n/i18n';
 
 const source = (path: string) => readFileSync(fileURLToPath(new URL(`../../src/${path}`, import.meta.url)), 'utf8');
 
@@ -74,7 +74,7 @@ describe('the suggestions', () => {
 describe('the welcome view', () => {
 	it('shows the name, the line and four buttons in a named group, and a decorative field', () => {
 		setLanguage('fr');
-		const html = render(WelcomeView, { props: { onPick: () => {} } }).body;
+		const html = renderHtml(WelcomeView, { onPick: () => {} });
 		expect(html).toContain('Bricks');
 		expect(html).toContain('Bienvenue sur Bricks.');
 		expect(html).toContain('aria-label="Suggestions"');
@@ -84,15 +84,15 @@ describe('the welcome view', () => {
 	});
 
 	it('is shown only for a project with no open conversation, and the provider message stays', () => {
-		const app = source('App.svelte');
-		expect(app).toMatch(/\{:else if !app\.hasProviders\}[^]*app\.noProviderConfigured[^]*\{:else if app\.currentProject\}\s*<WelcomeView onPick=\{pickStarter\}[^>]*\/>/);
+		const app = source('App.tsx');
+		expect(app).toMatch(/!hasProviders\s*\?[^]*app\.noProviderConfigured[^]*currentProject\s*\?\s*\(\s*<WelcomeView onPick=\{pickStarter\}[^>]*\/>/);
 	});
 
 	it('picking a suggestion fills the composer and focuses it, without sending', () => {
-		const app = source('App.svelte');
-		const pick = app.slice(app.indexOf('function pickStarter'), app.indexOf('function toggleReader'));
+		const app = source('App.tsx');
+		const pick = app.slice(app.indexOf('const pickStarter'), app.indexOf('const toggleReader'));
 		expect(pick).toContain('prefillDraft(draft, text)');
-		expect(pick).toContain('app.composerFocus += 1');
+		expect(pick).toContain('app.bumpComposerFocus()');
 		expect(pick).not.toMatch(/send|newConversation/);
 	});
 });

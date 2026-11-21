@@ -1,10 +1,10 @@
 // Labels and pure helpers of the catalog views (French, no state).
 
-import { t, type MessageKey, numberFormat } from '$lib/i18n/i18n.svelte';
+import { t, type MessageKey, numberFormat } from '$lib/i18n/i18n';
 import type { BadgeVariant } from '$lib/components/ui/badge';
-import type { StatusState } from '$lib/layout/StatusDot.svelte';
-import type { InspectorState } from '$lib/state/ui.svelte';
-import type { JobInfo } from '$lib/state/conversation.svelte';
+import type { StatusState } from '$lib/layout/types';
+import type { InspectorState } from '$lib/state/ui';
+import type { JobInfo } from '$lib/state/conversation';
 
 /** Entries per page of the engine's `list_agent_profiles` and `list_skills` answers. */
 export const ENGINE_PAGE_SIZE = 20;

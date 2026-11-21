@@ -1,7 +1,7 @@
 // The copy button of a Markdown code block follows the interface language (it was hard-coded
 // « Copier »), and the label changes when the language does.
 import { afterEach, describe, expect, it } from 'vitest';
-import { setLanguage } from '../../src/lib/i18n/i18n.svelte';
+import { setLanguage } from '../../src/lib/i18n/i18n';
 import { codeBlockHtml } from '../../src/lib/features/conversation/markdown/render';
 
 afterEach(() => setLanguage('fr'));

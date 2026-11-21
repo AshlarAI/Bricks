@@ -5,11 +5,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from 'svelte/server';
+import { renderHtml } from './react-test-utils';
 import type { SessionItem } from '../../src/lib/ipc/bindings/SessionItem';
-import MessageRail from '../../src/lib/features/conversation/MessageRail.svelte';
-import { initTheme, setTheme } from '../../src/lib/theme/theme.svelte';
-import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app.svelte';
+import MessageRail from '../../src/lib/features/conversation/MessageRail';
+import { initTheme, setTheme } from '../../src/lib/theme/theme';
+import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app';
 
 const ipc = vi.hoisted(() => ({
 	prefsSet: vi.fn(),
@@ -50,9 +50,10 @@ beforeEach(() => {
 	ipc.prefsSet.mockResolvedValue(undefined);
 	ipc.sessionDelete.mockReset();
 	ipc.sessionDelete.mockResolvedValue(undefined);
-	app.prefs = { ...DEFAULT_PREFERENCES, pinned_sessions: [] };
 	app.sessionsByProject.clear();
 	app.sessionsByProject.set(PROJECT, [session('s_1'), session('s_2'), session('s_3')]);
+	app.setPrefs({ ...DEFAULT_PREFERENCES, pinned_sessions: [] });
+	vi.clearAllTimers();
 });
 
 afterEach(() => {
@@ -83,12 +84,12 @@ describe('pinned conversations', () => {
 	});
 
 	it('pinnedSessions keeps the pin order, not the update order', () => {
-		app.prefs = { ...app.prefs, pinned_sessions: ['s_3', 's_1'] };
+		app.setPrefs({ pinned_sessions: ['s_3', 's_1'] });
 		expect(ids(app.pinnedSessions)).toEqual(['s_3', 's_1']);
 	});
 
 	it('pinnedSessions skips the ids that have no conversation', () => {
-		app.prefs = { ...app.prefs, pinned_sessions: ['ghost', 's_2', 'gone'] };
+		app.setPrefs({ pinned_sessions: ['ghost', 's_2', 'gone'] });
 		expect(ids(app.pinnedSessions)).toEqual(['s_2']);
 	});
 
@@ -113,39 +114,42 @@ describe('pinned conversations', () => {
 
 describe('navigation and title markup', () => {
 	it('the new-project button is an icon labelled by its name, beside the Projects heading', () => {
-		const nav = source('lib/features/navigation/NavigationPanel.svelte');
+		const nav = source('lib/features/navigation/NavigationPanel.tsx');
 		expect(nav).toContain("aria-label={t('navigation.newProject')}");
 		expect(nav).not.toMatch(/>\s*\{t\('navigation\.newProject'\)\}/);
 		expect(nav.indexOf("t('navigation.projects')")).toBeLessThan(nav.indexOf('<FolderPlus'));
 	});
 
 	it('the pinned section comes before the projects', () => {
-		const nav = source('lib/features/navigation/NavigationPanel.svelte');
-		expect(nav.indexOf('app.pinnedSessions.length > 0')).toBeGreaterThan(-1);
-		expect(nav.indexOf('app.pinnedSessions.length > 0')).toBeLessThan(nav.indexOf("t('navigation.projects')"));
+		const nav = source('lib/features/navigation/NavigationPanel.tsx');
+		expect(nav.indexOf('pinnedSessions.length > 0')).toBeGreaterThan(-1);
+		expect(nav.indexOf('pinnedSessions.length > 0')).toBeLessThan(nav.indexOf("t('navigation.projects')"));
 	});
 
 	it('the settings footer has no top border', () => {
-		const nav = source('lib/features/navigation/NavigationPanel.svelte');
+		const nav = source('lib/features/navigation/NavigationPanel.tsx');
 		const footer = nav.slice(nav.indexOf('</ScrollArea>'));
-		expect(footer).toContain('ui.settingsOpen = true');
+		expect(footer).toContain('ui.setSettingsOpen(true)');
 		expect(footer).not.toContain('border-t');
 	});
 
 	it('the project name in the title opens a new conversation in that project', () => {
-		expect(source('lib/features/conversation/ConversationTitle.svelte')).toContain('app.newConversation(project.id)');
+		expect(source('lib/features/conversation/ConversationTitle.tsx')).toContain('app.newConversation(project.id)');
 	});
 });
 
 describe('the streaming caret is gone', () => {
 	it('the markdown view has no caret rule or keyframes', () => {
-		const md = source('lib/features/conversation/markdown/MarkdownView.svelte');
+		const md =
+			source('lib/features/conversation/markdown/MarkdownView.tsx') +
+			'\n' +
+			source('lib/features/conversation/markdown/markdown-view.css');
 		expect(md).not.toContain('::after');
 		expect(md).not.toContain('@keyframes caret');
 	});
 
 	it('the assistant message has no pulsing bar', () => {
-		expect(source('lib/features/conversation/timeline/AssistantMessage.svelte')).not.toContain('animate-pulse');
+		expect(source('lib/features/conversation/timeline/AssistantMessage.tsx')).not.toContain('animate-pulse');
 	});
 });
 
@@ -155,14 +159,14 @@ describe('the message rail', () => {
 
 	it('renders nothing for fewer than two messages', () => {
 		for (const count of [0, 1]) {
-			const html = render(MessageRail, { props: { marks: marks(count), scroller: null } }).body;
+			const html = renderHtml(MessageRail, { marks: marks(count), scroller: null });
 			expect(html).not.toContain('<nav');
 			expect(html).not.toContain('<button');
 		}
 	});
 
 	it('renders one button per message, named by the message start', () => {
-		const html = render(MessageRail, { props: { marks: marks(3), scroller: null } }).body;
+		const html = renderHtml(MessageRail, { marks: marks(3), scroller: null });
 		expect(html).toContain('<nav');
 		expect(html.match(/<button/g)).toHaveLength(3);
 		expect(html).toContain('aria-label="Message 1 · 1 sur');

@@ -1,25 +1,26 @@
-import Content from "./bubble-content.svelte";
-import Group from "./bubble-group.svelte";
-import Reactions, {
-	bubbleReactionsVariants,
-	type BubbleReactionsAlign,
-	type BubbleReactionsSide,
-} from "./bubble-reactions.svelte";
-import Root, { bubbleVariants, type BubbleVariant } from "./bubble.svelte";
+import { Bubble, bubbleVariants, type BubbleVariant } from "./bubble"
+import { BubbleContent } from "./bubble-content"
+import { BubbleGroup } from "./bubble-group"
+import {
+  BubbleReactions,
+  bubbleReactionsVariants,
+  type BubbleReactionsAlign,
+  type BubbleReactionsSide,
+} from "./bubble-reactions"
 
 export {
-	Root,
-	Group,
-	Content,
-	Reactions,
-	bubbleVariants,
-	bubbleReactionsVariants,
-	type BubbleVariant,
-	type BubbleReactionsSide,
-	type BubbleReactionsAlign,
-	//
-	Root as Bubble,
-	Group as BubbleGroup,
-	Content as BubbleContent,
-	Reactions as BubbleReactions,
-};
+  Bubble as Root,
+  BubbleGroup as Group,
+  BubbleContent as Content,
+  BubbleReactions as Reactions,
+  bubbleVariants,
+  bubbleReactionsVariants,
+  type BubbleVariant,
+  type BubbleReactionsSide,
+  type BubbleReactionsAlign,
+  //
+  Bubble,
+  BubbleGroup,
+  BubbleContent,
+  BubbleReactions,
+}

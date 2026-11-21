@@ -1,7 +1,7 @@
 // Unit tests for the one-line tool call (timeline ToolRow / ToolLine) and the resolved
 // approval trace: state, interruption, duration in ms. Reducer cases use hand-built envelopes.
 import { describe, expect, it } from 'vitest';
-import { Conversation, type ToolItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type ToolItem } from '../../src/lib/state/conversation';
 import {
 	TOOL_LINE_LABEL,
 	approvalTrace,

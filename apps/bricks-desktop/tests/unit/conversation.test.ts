@@ -1,6 +1,6 @@
 // Unit tests for the conversation reducer (Conversation.apply) with hand-built envelopes.
 import { describe, expect, it } from 'vitest';
-import { Conversation, type AssistantItem, type TimelineItem, type ToolItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type AssistantItem, type TimelineItem, type ToolItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 
 const RUN_1 = 'run-1';
@@ -62,7 +62,7 @@ describe('Conversation.apply: text streaming', () => {
 			})
 		);
 
-		expect(assistant.streaming).toBe(false);
+		expect(itemOfKind(conv.items, 1, 'assistant').streaming).toBe(false);
 		expect(conv.running).toBe(false);
 		expect(conv.items.at(-1)?.kind).toBe('run_end');
 	});
@@ -181,7 +181,7 @@ describe('Conversation.apply: approvals', () => {
 		conv.apply(feed.next({ type: 'approval_resolved', approval_id: 'ap-1', tool_call_id: 'tc-4', decision: 'deny', by: 'user' }));
 
 		expect(conv.pendingApprovals).toHaveLength(0);
-		expect(pending.resolved).toEqual({ decision: 'deny', by: 'user' });
+		expect(itemOfKind(conv.items, 1, 'approval').resolved).toEqual({ decision: 'deny', by: 'user' });
 	});
 });
 

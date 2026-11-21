@@ -1,29 +1,31 @@
 // The icon of each tool, by its real name (timeline/toolIcons.ts). The icons are compared with
-// the components of @lucide/svelte by identity, so a wrong mapping fails here, not by eye.
+// the components of lucide-react by identity, so a wrong mapping fails here, not by eye.
 import { describe, expect, it } from 'vitest';
-import AppWindowIcon from '@lucide/svelte/icons/app-window';
-import BinocularsIcon from '@lucide/svelte/icons/binoculars';
-import BookOpenCheckIcon from '@lucide/svelte/icons/book-open-check';
-import BotIcon from '@lucide/svelte/icons/bot';
-import BrainIcon from '@lucide/svelte/icons/brain';
-import CameraIcon from '@lucide/svelte/icons/camera';
-import ChartLineIcon from '@lucide/svelte/icons/chart-line';
-import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-import CodeIcon from '@lucide/svelte/icons/code';
-import CpuIcon from '@lucide/svelte/icons/cpu';
-import GlobeIcon from '@lucide/svelte/icons/globe';
-import KeyboardIcon from '@lucide/svelte/icons/keyboard';
-import ListChecksIcon from '@lucide/svelte/icons/list-checks';
-import MailIcon from '@lucide/svelte/icons/mail';
-import MessageSquareIcon from '@lucide/svelte/icons/message-square';
-import PenIcon from '@lucide/svelte/icons/pen';
-import PenLineIcon from '@lucide/svelte/icons/pen-line';
-import PlayIcon from '@lucide/svelte/icons/play';
-import PlugIcon from '@lucide/svelte/icons/plug';
-import ScanEyeIcon from '@lucide/svelte/icons/scan-eye';
-import SearchIcon from '@lucide/svelte/icons/search';
-import SquareDashedMousePointerIcon from '@lucide/svelte/icons/square-dashed-mouse-pointer';
-import WrenchIcon from '@lucide/svelte/icons/wrench';
+import {
+	AppWindowIcon,
+	BinocularsIcon,
+	BookOpenCheckIcon,
+	BotIcon,
+	BrainIcon,
+	CameraIcon,
+	ChartLineIcon,
+	CodeIcon,
+	CpuIcon,
+	GlobeIcon,
+	KeyboardIcon,
+	ListChecksIcon,
+	MailIcon,
+	MessageSquareIcon,
+	PenIcon,
+	PenLineIcon,
+	PlayIcon,
+	PlugIcon,
+	ScanEyeIcon,
+	SearchIcon,
+	SquareDashedMousePointerIcon,
+	TerminalIcon,
+	WrenchIcon,
+} from 'lucide-react';
 import {
 	MESSAGE_ICON,
 	THINKING_ICON,
@@ -32,7 +34,7 @@ import {
 
 describe('toolIcon: the icon says what the tool does', () => {
 	it.each([
-		['Bash', ChevronRightIcon],
+		['Bash', TerminalIcon],
 		['Read', BookOpenCheckIcon],
 		['Grep', SearchIcon],
 		['CodeSearch', SearchIcon],
@@ -57,8 +59,8 @@ describe('toolIcon: the icon says what the tool does', () => {
 	});
 
 	it('the shell tools share the chevron, whatever their spelling', () => {
-		expect(toolIcon('bash')).toBe(ChevronRightIcon);
-		expect(toolIcon('PowerShell')).toBe(ChevronRightIcon);
+		expect(toolIcon('bash')).toBe(TerminalIcon);
+		expect(toolIcon('PowerShell')).toBe(TerminalIcon);
 	});
 
 	it('a computer-use tool shows the pointer for pointer actions and fallback, and action-specific icons otherwise', () => {

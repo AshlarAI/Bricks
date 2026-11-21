@@ -79,7 +79,7 @@ describe('the composer sentences in the catalogue', () => {
 });
 
 describe('the composer shows the sentence picked from the conversation', () => {
-	const composer = src('lib/features/composer/Composer.svelte');
+	const composer = src('lib/features/composer/Composer.tsx');
 
 	it('imports hintIndex from the hints module', () => {
 		expect(composer).toContain("import { hintIndex } from './hints'");

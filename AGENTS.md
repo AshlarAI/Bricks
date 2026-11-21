@@ -13,9 +13,9 @@
 
 ## Frontend UI (`apps/bricks-desktop`)
 
-- Agents must use the `shadcn-svelte` skill and the `svelte-autofixer` MCP tool when working on Svelte or desktop UI code.
-- Use official `shadcn-svelte` components and `@lucide/svelte` icons strictly across the desktop UI, including buttons and animations. Do not introduce custom UI primitives when a `shadcn-svelte` component exists.
-- Validate Svelte changes with `svelte-autofixer` and run `npm run check && npm run test:types` in `apps/bricks-desktop`.
+- Agents must use official React `shadcn/ui` components and consult the `shadcn` MCP server when adding or modifying desktop UI components.
+- Use official `shadcn/ui` components (`$lib/components/ui/*`) and `lucide-react` icons strictly across the desktop UI, including buttons and animations. Do not introduce custom UI primitives when a `shadcn/ui` component exists.
+- Run `npm run check && npm run test:types && npm run test:unit` in `apps/bricks-desktop` to verify React, TypeScript, and unit tests.
 
 ## Documentation and Release Notes Style
 

@@ -2,7 +2,7 @@
 // one waiting question; question_resolved closes both with the outcome; a snapshot restores the
 // waiting ones (they have no item until a card is shown for them). Hand-built envelopes.
 import { describe, expect, it } from 'vitest';
-import { Conversation, type AssistantItem, type QuestionItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type AssistantItem, type QuestionItem } from '../../src/lib/state/conversation';
 import type { QuestionRequest } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, PROJECT_ID, T0, openedSession, snapshot } from './fixtures';
 

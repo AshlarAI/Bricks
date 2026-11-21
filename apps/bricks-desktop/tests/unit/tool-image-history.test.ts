@@ -3,7 +3,7 @@
 // message, with its attachments, still does. The ViewImage call keeps its own item.
 import { describe, expect, it } from 'vitest';
 import type { HistoryMessage } from '../../src/lib/ipc/client';
-import { Conversation, type ToolItem, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type ToolItem, type UserItem } from '../../src/lib/state/conversation';
 import { PROJECT_ID, openedSession } from './fixtures';
 
 const CALL = 'toolu_view_1';

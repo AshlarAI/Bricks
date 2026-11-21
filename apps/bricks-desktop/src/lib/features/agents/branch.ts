@@ -2,9 +2,9 @@
 // (its mission, its steps and tool calls, its answer), so it reads exactly like
 // the main conversation with the same components. Built from the steps the
 // parent conversation keeps for it (`AgentInfo.log`); nothing is sent from it.
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import type { Envelope, Snapshot } from '$lib/ipc/engine'
-import { Conversation, type AgentInfo } from '$lib/state/conversation.svelte'
+import { Conversation, type AgentInfo } from '$lib/state/conversation'
 import { SCHEMA_VERSION } from '$lib/ipc/engine'
 
 /** The run of one execution of a sub-agent, in its branch. */
@@ -58,6 +58,7 @@ export function agentBranch(parent: Conversation, agent: AgentInfo): Conversatio
     parent.projectId,
   )
   branch.readOnly = true
+  branch.ownAgentId = agent.id
   applyAgentSteps(branch, agent, 0)
   return branch
 }

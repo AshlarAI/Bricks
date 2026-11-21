@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HistoryMessage, RunRecord } from '../../src/lib/ipc/client';
 import type { Envelope, Event as EngineEvent } from '../../src/lib/ipc/engine';
-import { Conversation, type AssistantItem, type TimelineItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type AssistantItem, type TimelineItem } from '../../src/lib/state/conversation';
 import { isCopyable, responseByAnchor, responseGroups } from '../../src/lib/features/conversation/responses';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 

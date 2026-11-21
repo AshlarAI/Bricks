@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OpenedSession, OpenSessionRequest, Project, SessionItem } from '../../src/lib/ipc/client';
 import { openedSession, snapshot } from './fixtures';
 
-type AppStore = (typeof import('../../src/lib/state/app.svelte'))['app'];
+type AppStore = (typeof import('../../src/lib/state/app'))['app'];
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
@@ -94,7 +94,7 @@ let app: AppStore;
 beforeEach(async () => {
 	vi.useFakeTimers();
 	vi.resetModules();
-	({ app } = await import('../../src/lib/state/app.svelte'));
+	({ app } = await import('../../src/lib/state/app'));
 	ipc.invoke.mockReset();
 	ipc.invoke.mockImplementation(answer);
 	dialog.open.mockReset();

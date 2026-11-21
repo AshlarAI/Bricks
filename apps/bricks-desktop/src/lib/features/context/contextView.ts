@@ -13,7 +13,7 @@
 //   clear) shows `—` for both figures until the next `context` event.
 // - Cumulative billed totals are never a numerator.
 
-import { t, numberFormat } from '$lib/i18n/i18n.svelte';
+import { t, numberFormat } from '$lib/i18n/i18n';
 import type { ContextChars, ContextStatus } from '$lib/ipc/engine';
 
 const NUMBER = numberFormat();

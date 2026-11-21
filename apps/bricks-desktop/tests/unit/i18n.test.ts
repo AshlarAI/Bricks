@@ -4,12 +4,12 @@
 // the reactivity of a mounted component, and the version label. The setup file has set French;
 // the default (English) is checked last, on a fresh module.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
 import { en, type Message } from '../../src/lib/i18n/messages/en';
 import { fr } from '../../src/lib/i18n/messages/fr';
-import * as i18n from '../../src/lib/i18n/i18n.svelte';
+import * as i18n from '../../src/lib/i18n/i18n';
 import { versionLabel } from '../../src/lib/features/settings/format';
-import SvgViewer from '../../src/lib/features/conversation/markdown/SvgViewer.svelte';
+import SvgViewer from '../../src/lib/features/conversation/markdown/SvgViewer';
 
 // The sanitiser is replaced by the identity: this file checks the labels, not the cleaning.
 vi.mock('../../src/lib/features/conversation/markdown/sanitize', async (importOriginal) => ({
@@ -127,26 +127,25 @@ describe('a mounted component follows a change of language', () => {
 	const DRAWING =
 		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10"><rect width="10" height="10"/></svg>';
 	let target: HTMLDivElement;
-	let app: ReturnType<typeof mount> | null = null;
+	let app: MountedComponent<object> | null = null;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		setLanguage('fr');
 		target = document.createElement('div');
 		document.body.appendChild(target);
-		app = mount(SvgViewer, { target, props: { svg: DRAWING, title: 'Dessin', fileName: 'dessin.svg', variant: 'drawing' } });
-		flushSync();
+		app = mountReact(SvgViewer, { target, props: { svg: DRAWING, title: 'Dessin', fileName: 'dessin.svg', variant: 'drawing' } }) as MountedComponent<object>;
+		await settle();
 	});
 
 	/** The drawing is prepared asynchronously: its toolbar appears a few turns after the mount. */
 	async function settle() {
 		for (let i = 0; i < 5; i++) {
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			flushSync();
+			await tickReact();
 		}
 	}
 
 	afterEach(() => {
-		if (app) void unmount(app);
+		app?.unmount();
 		app = null;
 		target.remove();
 		setLanguage('fr');
@@ -157,7 +156,7 @@ describe('a mounted component follows a change of language', () => {
 		expect(target.querySelector('button[aria-label="Exporter en PNG"]')).not.toBeNull();
 		expect(target.querySelector('button[aria-label="Export as PNG"]')).toBeNull();
 
-		setLanguage('en');
+		flushReact(() => setLanguage('en'));
 		await settle();
 
 		expect(target.querySelector('button[aria-label="Export as PNG"]')).not.toBeNull();
@@ -178,7 +177,7 @@ describe('without a saved choice, the interface starts in English', () => {
 	it('a fresh module, with no saved language, shows English', async () => {
 		vi.resetModules();
 		localStorage.clear();
-		const fresh = await import('../../src/lib/i18n/i18n.svelte');
+		const fresh = await import('../../src/lib/i18n/i18n');
 		expect(fresh.currentLanguage()).toBe('en');
 		expect(fresh.t('common.noValue')).toBe('none');
 		expect(document.documentElement.lang).toBe('en');

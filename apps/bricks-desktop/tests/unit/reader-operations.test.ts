@@ -2,9 +2,9 @@
 // their recorded edits (each on its own, in order), and a patch that was not
 // recorded or was cut stays unavailable instead of being rebuilt.
 import { describe, expect, it } from 'vitest';
-import { ReaderStore } from '../../src/lib/state/reader.svelte';
+import { ReaderStore } from '../../src/lib/state/reader';
 import { PROJECT, SESSION, WORKTREE, diskRead, editItem, settle } from './reader-fixtures';
-import { timeline } from './reader-timeline.svelte';
+import { timeline } from './reader-timeline';
 
 const target = { sessionId: SESSION, projectId: 'p1' };
 const DIFF_A = '@@ -1 +1 @@\n-a\n+b\n';
@@ -15,7 +15,7 @@ function setup(files: Record<string, string[]>) {
 	const { read } = diskRead(files);
 	const items = timeline();
 	const reader = new ReaderStore(read);
-	reader.connect(() => items);
+	reader.connect(() => [...items]);
 	return { reader, items };
 }
 

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChangeRecord } from '../../src/lib/ipc/client';
 import { conversationChanges } from '../../src/lib/features/changes/conversation-changes';
-import type { EditItem, TimelineItem } from '../../src/lib/state/conversation.svelte';
+import type { EditItem, TimelineItem } from '../../src/lib/state/conversation';
 
 const file = (path: string, added: number, removed: number, absolute?: string) => ({
 	path,

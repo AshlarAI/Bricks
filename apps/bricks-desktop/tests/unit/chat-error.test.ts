@@ -3,7 +3,7 @@
 // fallback, the refused-command prefix, and the clipboard text of « Copier ». The setup file has
 // set French; the English cases switch and switch back.
 import { afterEach, describe, expect, it } from 'vitest';
-import { setLanguage } from '../../src/lib/i18n/i18n.svelte';
+import { setLanguage } from '../../src/lib/i18n/i18n';
 import { chatErrorCopyText, resolveChatError, type ChatErrorView } from '../../src/lib/features/conversation/chat-error';
 
 afterEach(() => setLanguage('fr'));

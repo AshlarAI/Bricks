@@ -1,8 +1,8 @@
 // The summary line of a finished run (the « bilan » card): outcome, duration from
 // the engine's own timestamps, and the edit totals when the structured edit data
 // allows them. Pure: unit-tested (tests/unit/runend-summary.test.ts).
-import { t } from '$lib/i18n/i18n.svelte'
-import type { RunInfo } from '$lib/state/conversation.svelte'
+import { t } from '$lib/i18n/i18n'
+import type { RunInfo } from '$lib/state/conversation'
 import type { RunOutcome } from '$lib/ipc/engine'
 import { OUTCOME_LABEL, terminationLabel, formatDuration } from './format'
 import { formatToolDuration } from './timeline/toolLine'

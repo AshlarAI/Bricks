@@ -35,14 +35,14 @@ describe('theme: light and dark surface hierarchy', () => {
 
 describe('folders and Git', () => {
 	it('lists three conversations per folder before « Afficher plus »', () => {
-		expect(source('lib/features/navigation/ProjectList.svelte')).toContain('const SHOWN_PER_PROJECT = 3;');
+		expect(source('lib/features/navigation/ProjectList.tsx')).toContain('const SHOWN_PER_PROJECT = 3');
 	});
 
 	it('says Git is not installed in the folder, without a final period', () => {
-		const env = source('lib/features/context/ProjectEnvironment.svelte');
+		const env = source('lib/features/context/ProjectEnvironment.tsx');
 		expect(env).toContain(`{${call('Git n’est pas installé dans ce dossier')}}</span>`);
 		expect(env).not.toContain('n’est pas un dépôt Git');
-		expect(source('lib/features/changes/GitChanges.svelte')).toContain(
+		expect(source('lib/features/changes/GitChanges.tsx')).toContain(
 			bound('title', 'Git n’est pas installé dans ce dossier')
 		);
 	});

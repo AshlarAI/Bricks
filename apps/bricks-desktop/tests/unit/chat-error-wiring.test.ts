@@ -10,15 +10,15 @@ import { fr } from '../../src/lib/i18n/messages/fr';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const COMPOSER = 'lib/features/composer/Composer.svelte';
-const RUN_END = 'lib/features/conversation/timeline/RunEndCard.svelte';
-const BANNER = 'lib/features/conversation/ChatErrorBanner.svelte';
+const COMPOSER = 'lib/features/composer/Composer.tsx';
+const RUN_END = 'lib/features/conversation/timeline/RunEndCard.tsx';
+const BANNER = 'lib/features/conversation/ChatErrorBanner.tsx';
 
 describe('composer: the banner is placed above the editor card', () => {
 	const composer = src(COMPOSER);
 
 	it('renders the banner under the chatError condition, before the editor card', () => {
-		const condition = composer.indexOf('{#if chatError}');
+		const condition = composer.indexOf('{chatError && (');
 		const banner = composer.indexOf('<ChatErrorBanner');
 		const editorCard = composer.indexOf('relative z-10 mx-1 mt-1 flex flex-col rounded-xl');
 		expect(condition).toBeGreaterThan(-1);
@@ -27,7 +27,7 @@ describe('composer: the banner is placed above the editor card', () => {
 	});
 
 	it('imports the banner and the view resolver from the conversation feature', () => {
-		expect(composer).toContain("import ChatErrorBanner from '$lib/features/conversation/ChatErrorBanner.svelte'");
+		expect(composer).toContain("import ChatErrorBanner from '$lib/features/conversation/ChatErrorBanner'");
 		expect(composer).toContain("import { resolveChatError, type ChatErrorView } from '$lib/features/conversation/chat-error'");
 	});
 
@@ -37,7 +37,7 @@ describe('composer: the banner is placed above the editor card', () => {
 
 	it('« Réessayer » runs the failed user message again through app.reviseMessage', () => {
 		expect(composer).toMatch(/onRetry=\{retryItem \? \(\) => void retryRun\(\) : undefined\}/);
-		expect(composer).toContain('refusal = await app.reviseMessage(conversation, item, item.text)');
+		expect(composer).toContain('setRefusal(await app.reviseMessage(conversation, item, item.text))');
 	});
 
 	it('retry is disabled while a retry is in flight or a run is running', () => {
@@ -46,7 +46,7 @@ describe('composer: the banner is placed above the editor card', () => {
 
 	it('a refusal that repeats the engine refusal of the same command is shown once', () => {
 		expect(composer).toContain('refusal !== conversation?.lastRejection?.reason');
-		expect(composer).toContain('if (refusal === rejection.reason) refusal = null');
+		expect(composer).toContain('if (refusal === rejection.reason) setRefusal(null)');
 	});
 
 	it('the close button hides the shown error through dismissChatError', () => {
@@ -74,7 +74,7 @@ describe('run-end card: no raw error line', () => {
 	});
 
 	it('still shows the incomplete reason from the run summary', () => {
-		expect(runEnd).toContain("const reason = $derived(summary.outcome === 'incomplete' ? summary.reason : null)");
+		expect(runEnd).toContain("const reason = summary.outcome === 'incomplete' ? summary.reason : null");
 	});
 });
 

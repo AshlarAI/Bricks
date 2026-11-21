@@ -1,5 +1,5 @@
 // Pure display helpers for the settings dialog (no state, no IPC).
-import { t, numberFormat } from '$lib/i18n/i18n.svelte';
+import { t, numberFormat } from '$lib/i18n/i18n';
 
 
 const integer = numberFormat();

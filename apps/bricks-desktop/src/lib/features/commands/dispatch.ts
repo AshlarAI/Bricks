@@ -3,11 +3,11 @@
 // desktop side effects go through a `SlashHost`, so the mapping is unit-tested
 // with a fake host.
 
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import type { SlashAction } from '$lib/ipc/bindings/SlashAction'
 import type { SlashPresent } from '$lib/ipc/bindings/SlashPresent'
 import type { Command, PromptBlock } from '$lib/ipc/engine'
-import type { InspectorState, InspectorView } from '$lib/state/ui.svelte'
+import type { InspectorState, InspectorView } from '$lib/state/ui'
 
 export type AttachKind = 'file' | 'folder' | 'image'
 

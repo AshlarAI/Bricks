@@ -1,11 +1,11 @@
-// The questions of `Ask` in the timeline (ConversationTimeline.svelte), rendered to a string over a
+// The questions of `Ask` in the timeline (ConversationTimeline.tsx), rendered to a string over a
 // conversation: a question the timeline has an item for is shown once, in its place; a waiting
 // question it has no item for (a reload, a snapshot) is shown after the items, once; a closed
 // question with no item shows nothing.
 import { describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
-import ConversationTimeline from '../../src/lib/features/conversation/ConversationTimeline.svelte';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { renderHtml } from './react-test-utils';
+import ConversationTimeline from '../../src/lib/features/conversation/ConversationTimeline';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { QuestionRequest } from '../../src/lib/ipc/engine';
 import { EnvelopeFeed, PROJECT_ID, T0, openedSession, snapshot } from './fixtures';
 
@@ -26,7 +26,7 @@ function count(html: string, needle: string): number {
 }
 
 function renderTimeline(conv: Conversation): string {
-	return render(ConversationTimeline, { props: { conversation: conv } }).body;
+	return renderHtml(ConversationTimeline, { conversation: conv });
 }
 
 describe('a question the timeline shows', () => {

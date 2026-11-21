@@ -4,13 +4,13 @@
 // Same approach as context-card-structure.test.ts.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { t } from '../../src/lib/i18n/i18n.svelte';
+import { t } from '../../src/lib/i18n/i18n';
 import { bound, call, tkey } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const SETTINGS = 'lib/features/settings/MemorySettings.svelte';
-const PAGE = 'lib/features/settings/SettingsPage.svelte';
+const SETTINGS = 'lib/features/settings/MemorySettings.tsx';
+const PAGE = 'lib/features/settings/SettingsPage.tsx';
 
 const KEPT = 'L’historique des conversations est conservé.';
 
@@ -19,8 +19,8 @@ describe('the settings section', () => {
 	const agentGroup = page.slice(page.indexOf("t('settings.groupAgent')"), page.indexOf("t('settings.groupData')"));
 
 	it('is one section of the settings, named Mémoire, showing MemorySettings', () => {
-		expect(page).toContain(`{ id: 'memory', get label() { return ${call('Mémoire')} }, icon: Brain, content: MemorySettings }`);
-		expect(page).toContain("import MemorySettings from './MemorySettings.svelte'");
+		expect(page).toContain(`{ id: 'memory', get label() { return ${call('Mémoire')} }, icon: BrainIcon, content: MemorySettings }`);
+		expect(page).toContain("import MemorySettings from './MemorySettings'");
 	});
 
 	it('sits in the agent group, before Skills', () => {
@@ -30,8 +30,9 @@ describe('the settings section', () => {
 
 	it('loads the overview for the open project, or for no project', () => {
 		const settings = src(SETTINGS);
-		expect(settings).toContain('ipc.memoryOverview(project?.id ?? null)');
-		expect(settings).toContain('const project = $derived(app.currentProject && !app.currentProject.chats ? app.currentProject : null);');
+		expect(settings).toContain('ipc.memoryOverview(projectId)');
+		expect(settings).toContain('const projectId = project?.id ?? null');
+		expect(settings).toContain('const project = currentProject && !currentProject.chats ? currentProject : null');
 	});
 });
 
@@ -39,7 +40,10 @@ describe('the switch', () => {
 	const settings = src(SETTINGS);
 
 	it('shows the saved state on one switch, labelled Mémoire', () => {
-		expect(settings).toContain(`{${call('Mémoire')}}\n\t\t\t<Switch bind:checked={() => app.prefs.memory_enabled, (on) => toggle(on)} disabled={toggling} />`);
+		expect(settings).toContain('const memoryEnabled = useApp((s) => s.prefs.memory_enabled)');
+		expect(settings).toMatch(
+			/\{t\('common\.memory'\)\}\s*<Switch\s+checked=\{memoryEnabled\}\s+onCheckedChange=\{\(on\) => void toggle\(on\)\}\s+disabled=\{toggling\}/,
+		);
 		expect(settings).not.toContain('<Badge');
 		expect(settings).not.toContain('Désactiver');
 		expect(settings).not.toContain('Activer la mémoire');
@@ -85,13 +89,13 @@ describe('the global and project memories', () => {
 
 	it('names the missing project, and disables the project actions without one', () => {
 		expect(settings).toContain(call('Aucun projet ouvert'));
-		expect(settings).toContain("disabled={!project} onclick={() => view('project')}");
+		expect(settings).toMatch(/disabled=\{!project\}\s+onClick=\{\(\) => view\('project'\)\}/);
 		expect(settings).toContain('disabled={!project || !overview?.project}');
 	});
 
 	it('opens the memory view for the scope chosen', () => {
 		expect(settings).toContain("ui.open('memory', { scope })");
-		expect(settings).toContain("onclick={() => view('global')}");
+		expect(settings).toContain("onClick={() => view('global')}");
 	});
 });
 
@@ -122,20 +126,21 @@ describe('deletions ask first', () => {
 		expect(settings).toContain("run: () => ipc.memoryDelete('project', id)");
 		expect(settings).toContain('run: () => ipc.memoryDeleteRetired(id)');
 		// The asks only set the pending deletion: the call happens in confirmed(), from the dialog.
-		const asks = settings.slice(settings.indexOf('function askGlobal('), settings.indexOf('</script>'));
+		const asksStart = settings.indexOf('function askGlobal(');
+		const asks = settings.slice(asksStart, settings.indexOf('return (', asksStart));
 		expect(asks).not.toMatch(/await ipc\.memoryDelete/);
-		expect(settings).toContain('onConfirm={() => confirmed(p.run)}');
+		expect(settings).toContain('onConfirm={() => confirmed(pending.run)}');
 	});
 
 	it('reloads after a deletion, and reports a refused one without closing as success', () => {
 		const confirmedFn = settings.slice(settings.indexOf('async function confirmed('), settings.indexOf('function askGlobal('));
-		expect(confirmedFn).toContain('await run();');
-		expect(confirmedFn).toContain('await load();');
-		expect(confirmedFn).toContain('return { ok: false, message: ipc.errorMessage(e), conflict: false };');
+		expect(confirmedFn).toContain('await run()');
+		expect(confirmedFn).toContain('await load()');
+		expect(confirmedFn).toContain('return { ok: false, message: ipc.errorMessage(e), conflict: false }');
 	});
 
 	it('closes the pending deletion on close', () => {
-		expect(settings).toContain('onClose={() => (pending = null)}');
+		expect(settings).toContain('onClose={() => setPending(null)}');
 	});
 });
 
@@ -143,13 +148,14 @@ describe('the retired memories', () => {
 	const settings = src(SETTINGS);
 
 	it('lists them only when there are some', () => {
-		expect(settings).toContain('{#if overview && overview.retired.length > 0}');
+		expect(settings).toContain('{overview && overview.retired.length > 0 && (');
 		expect(settings).toContain(bound('title', 'Mémoires de projets retirés'));
 	});
 
 	it('names a retired project without a name, and keys each row by its id', () => {
 		expect(settings).toContain(`{r.name ?? ${call('Projet sans nom')}}`);
-		expect(settings).toContain('{#each overview.retired as r (r.project_id)}');
+		expect(settings).toContain('{overview.retired.map((r) => (');
+		expect(settings).toContain('<div key={r.project_id}');
 	});
 
 	it('does not show the former store note any more, and reads no former store', () => {

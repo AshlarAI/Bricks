@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
-// SvgViewer.svelte: the image actions of a diagram. Most checks read its source: button
+// SvgViewer.tsx: the image actions of a diagram. Most checks read its source: button
 // order and labels, the clipboard written inside the click (no await before it), the
 // button hidden without ClipboardItem, and the PNG export. The PNG size limit is run:
 // the component is mounted with the IPC client and the rasteriser replaced by fakes, and
 // a PNG over 32 Mio is refused without the backend being asked to save it.
+import { act } from 'react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushSync, mount, unmount } from 'svelte'
-import SvgViewer from '../../src/lib/features/conversation/markdown/SvgViewer.svelte'
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils'
+import SvgViewer, { type SvgViewerProps } from '../../src/lib/features/conversation/markdown/SvgViewer'
 import { bound, call } from './french-keys'
 
 // The sanitizer is replaced by the identity: this file checks the export, not the cleaning
@@ -32,17 +33,21 @@ vi.mock('../../src/lib/features/conversation/markdown/svg-png', async (importOri
 }))
 
 const SOURCE = readFileSync(
-	resolve(process.cwd(), 'src/lib/features/conversation/markdown/SvgViewer.svelte'),
+	resolve(process.cwd(), 'src/lib/features/conversation/markdown/SvgViewer.tsx'),
 	'utf8'
 )
 const CURLY = '’'
+
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 /** The text of a function declared in the script, from its signature to the next top-level declaration. */
 function functionBody(name: string): string {
 	const start = SOURCE.indexOf(`function ${name}(`)
 	expect(start, `function ${name} exists`).toBeGreaterThan(-1)
 	const rest = SOURCE.slice(start + 1)
-	const next = rest.search(/\n  (?:async )?function |\n  const action = /)
+	const next = rest.search(/\n  (?:async )?function /)
 	return next < 0 ? SOURCE.slice(start) : SOURCE.slice(start, start + 1 + next)
 }
 
@@ -55,11 +60,13 @@ describe('SvgViewer image actions: order and labels', () => {
 		const between = SOURCE.slice(source, image)
 		// No other control lies between them: the only aria-label before the image button is the source one.
 		expect(between.match(/aria-label=/g)?.length ?? 0).toBe(1)
-		expect(between).toContain('{#if canCopyImage}')
+		expect(between).toContain('{canCopyImage && (')
 	})
 
 	it('gives the image button a title equal to its aria-label', () => {
-		expect(SOURCE).toContain(`${bound('title', `Copier l${CURLY}image`)} ${bound('aria-label', `Copier l${CURLY}image`)}`)
+		const titleAttr = escapeRegExp(bound('title', `Copier l${CURLY}image`))
+		const ariaAttr = escapeRegExp(bound('aria-label', `Copier l${CURLY}image`))
+		expect(SOURCE).toMatch(new RegExp(`${titleAttr}\\s+${ariaAttr}`))
 	})
 
 	it('puts the PNG export after the SVG export, both behind the download permission', () => {
@@ -67,7 +74,7 @@ describe('SvgViewer image actions: order and labels', () => {
 		const png = SOURCE.indexOf(bound('aria-label', 'Exporter en PNG'))
 		expect(svg).toBeGreaterThan(-1)
 		expect(png).toBeGreaterThan(svg)
-		expect(SOURCE.slice(png - 200, png)).toMatch(/\{#if options\.allowDownload && frame\.svg\}/)
+		expect(SOURCE.slice(Math.max(0, svg - 300), svg)).toMatch(/\{options\.allowDownload && frame\.svg && \(/)
 	})
 
 	it('disables the image button when there is no drawing', () => {
@@ -108,9 +115,9 @@ describe('SvgViewer clipboard support', () => {
 	it('is detected from ClipboardItem and navigator.clipboard.write, and gates the button', () => {
 		expect(SOURCE).toContain("typeof ClipboardItem !== 'undefined'")
 		expect(SOURCE).toContain('navigator.clipboard?.write')
-		const gate = SOURCE.indexOf('{#if canCopyImage}')
+		const gate = SOURCE.indexOf('{canCopyImage && (')
 		const button = SOURCE.indexOf(bound('aria-label', `Copier l${CURLY}image`))
-		const end = SOURCE.indexOf('{/if}', button)
+		const end = SOURCE.indexOf(')}', button)
 		expect(gate).toBeGreaterThan(-1)
 		expect(gate).toBeLessThan(button)
 		expect(end).toBeGreaterThan(button)
@@ -130,37 +137,38 @@ describe('SvgViewer PNG export', () => {
 })
 
 describe('SvgViewer PNG export, mounted: the size limit', () => {
-	/** What `save_png_file` accepts at most (32 Mio), as SvgViewer.svelte states it. */
+	/** What `save_png_file` accepts at most (32 Mio), as SvgViewer.tsx states it. */
 	const PNG_LIMIT = 32 * 1024 * 1024
 	const DRAWING = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10"><rect width="10" height="10"/></svg>'
 	let target: HTMLDivElement
-	let app: ReturnType<typeof mount> | null = null
+	let app: MountedComponent<SvgViewerProps> | null = null
 
 	function fakeBlob(size: number): Blob {
 		return { size, type: 'image/png', arrayBuffer: async () => new ArrayBuffer(4) } as unknown as Blob
 	}
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks()
 		target = document.createElement('div')
 		document.body.appendChild(target)
-		app = mount(SvgViewer, { target, props: { svg: DRAWING, title: 'SVG', fileName: 'dessin.svg', variant: 'drawing' } })
-		flushSync()
+		app = mountReact(SvgViewer, { target, props: { svg: DRAWING, title: 'SVG', fileName: 'dessin.svg', variant: 'drawing' } })
+		await tickReact()
 	})
 
 	afterEach(() => {
-		if (app) void unmount(app)
+		app?.unmount()
 		app = null
 		target.remove()
 	})
 
 	/** Clicks "Exporter en PNG" and lets the export settle; returns the message shown, if any. */
 	async function exportPng(): Promise<string | null> {
-		target.querySelector<HTMLButtonElement>('button[aria-label="Exporter en PNG"]')?.click()
-		for (let i = 0; i < 5; i++) {
-			await new Promise((resolve) => setTimeout(resolve, 0))
-			flushSync()
-		}
+		await act(async () => {
+			target.querySelector<HTMLButtonElement>('button[aria-label="Exporter en PNG"]')?.click()
+			for (let i = 0; i < 5; i++) {
+				await Promise.resolve()
+			}
+		})
 		return target.querySelector('[role="status"]')?.textContent ?? null
 	}
 

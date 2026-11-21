@@ -2,13 +2,13 @@
 // ```svg and ```vega-lite fences of assistant messages: top-level fences become
 // dedicated blocks (kind 'svg' / 'vega'), open while streaming, closed at the end;
 // anything else (nested, other languages) stays HTML. Streams equal the one-shot
-// rendering, and the keys of a block stay stable while it grows. SvgBlock.svelte
+// rendering, and the keys of a block stay stable while it grows. SvgBlock.tsx
 // (mounted here, sanitizing mocked as above) draws a closed svg fence or shows why not.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushSync, mount, unmount } from 'svelte'
+import { mountReact, tickReact, type MountedComponent } from './react-test-utils'
 import { MarkdownDocument, renderReference } from '../../src/lib/features/conversation/markdown/document'
 import type { RenderedBlock } from '../../src/lib/features/conversation/markdown/types'
-import SvgBlock from '../../src/lib/features/conversation/markdown/SvgBlock.svelte'
+import SvgBlock, { type SvgBlockProps } from '../../src/lib/features/conversation/markdown/SvgBlock'
 import { MAX_SVG_LENGTH } from '../../src/lib/features/conversation/markdown/svg-viewer'
 
 vi.mock('../../src/lib/features/conversation/markdown/sanitize', () => ({
@@ -171,7 +171,7 @@ describe('streams of svg and vega-lite fences', () => {
 describe('SvgBlock: a closed svg fence drawn, or its source shown', () => {
 	const ALERT = 'Dessin non rendu : la racine doit être un élément <svg>'
 	let target: HTMLDivElement
-	let app: ReturnType<typeof mount> | null = null
+	let app: MountedComponent<SvgBlockProps> | null = null
 
 	beforeEach(() => {
 		target = document.createElement('div')
@@ -179,53 +179,53 @@ describe('SvgBlock: a closed svg fence drawn, or its source shown', () => {
 	})
 
 	afterEach(() => {
-		if (app) void unmount(app)
+		app?.unmount()
 		app = null
 		target.remove()
 	})
 
-	function show(source: string, complete = true): void {
-		app = mount(SvgBlock, { target, props: { source, complete } })
-		flushSync()
+	async function show(source: string, complete = true): Promise<void> {
+		app = mountReact(SvgBlock, { target, props: { source, complete } })
+		await tickReact()
 	}
 
 	function alertText(): string | null {
 		return target.querySelector('[role="alert"]')?.textContent ?? null
 	}
 
-	it('refuses a root that is not an svg element, and shows the source', () => {
+	it('refuses a root that is not an svg element, and shows the source', async () => {
 		const source = '<div><svg viewBox="0 0 10 10"/></div>'
-		show(source)
+		await show(source)
 		expect(alertText()).toBe(ALERT)
 		expect(target.querySelector('pre code')?.textContent).toBe(source)
 		expect(target.querySelector('iframe')).toBeNull()
 	})
 
-	it('refuses text that is not markup', () => {
-		show('Bonjour le monde')
+	it('refuses text that is not markup', async () => {
+		await show('Bonjour le monde')
 		expect(alertText()).toBe(ALERT)
 		expect(target.querySelector('pre code')?.textContent).toBe('Bonjour le monde')
 	})
 
-	it('refuses a source longer than 5 MiB', () => {
-		show('<svg>'.padEnd(MAX_SVG_LENGTH + 1, 'x'))
+	it('refuses a source longer than 5 MiB', async () => {
+		await show('<svg>'.padEnd(MAX_SVG_LENGTH + 1, 'x'))
 		expect(alertText()).toBe('Dessin non rendu : SVG trop volumineux (5 Mio au maximum)')
 	})
 
-	it('shows the source of an unfinished fence without an error', () => {
-		show('<div>', false)
+	it('shows the source of an unfinished fence without an error', async () => {
+		await show('<div>', false)
 		expect(alertText()).toBeNull()
 		expect(target.querySelector('pre code')?.textContent).toBe('<div>')
 	})
 
-	it('accepts an xml declaration and a comment before the root', () => {
-		show('<?xml version="1.0" encoding="UTF-8"?>\n<!-- schéma -->\n<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')
+	it('accepts an xml declaration and a comment before the root', async () => {
+		await show('<?xml version="1.0" encoding="UTF-8"?>\n<!-- schéma -->\n<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')
 		expect(alertText()).toBeNull()
 		expect(target.querySelector('iframe')).not.toBeNull()
 	})
 
-	it('accepts a doctype and a comment before the root', () => {
-		show('<!DOCTYPE svg>\n<!-- dessin -->\n<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')
+	it('accepts a doctype and a comment before the root', async () => {
+		await show('<!DOCTYPE svg>\n<!-- dessin -->\n<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')
 		expect(alertText()).toBeNull()
 		expect(target.querySelector('iframe')).not.toBeNull()
 	})

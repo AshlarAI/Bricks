@@ -3,7 +3,7 @@
 // without run ids, the items after one user message). Pure: unit-tested
 // (tests/unit/responses.test.ts).
 import type { RunRecord } from '$lib/ipc/client'
-import type { RunInfo, TimelineItem } from '$lib/state/conversation.svelte'
+import type { RunInfo, TimelineItem } from '$lib/state/conversation'
 
 export interface ResponseGroup {
   /** Stable within a conversation: the run id, else the user item's id. */

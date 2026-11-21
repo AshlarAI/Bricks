@@ -1,38 +1,40 @@
 // The icon of each tool, by its real name. A call's state is said in words only
 // when it failed; the icon says what the call does. Pure: unit-tested
 // (tests/unit/tool-icons.test.ts).
-import AppWindowIcon from '@lucide/svelte/icons/app-window'
-import BinocularsIcon from '@lucide/svelte/icons/binoculars'
-import BookOpenCheckIcon from '@lucide/svelte/icons/book-open-check'
-import BotIcon from '@lucide/svelte/icons/bot'
-import BracesIcon from '@lucide/svelte/icons/braces'
-import BrainIcon from '@lucide/svelte/icons/brain'
-import CameraIcon from '@lucide/svelte/icons/camera'
-import ChartLineIcon from '@lucide/svelte/icons/chart-line'
-import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
-import CodeIcon from '@lucide/svelte/icons/code'
-import CpuIcon from '@lucide/svelte/icons/cpu'
-import DatabaseIcon from '@lucide/svelte/icons/database'
-import FileDiffIcon from '@lucide/svelte/icons/file-diff'
-import FolderSearchIcon from '@lucide/svelte/icons/folder-search'
-import GlobeIcon from '@lucide/svelte/icons/globe'
-import ImageIcon from '@lucide/svelte/icons/image'
-import KeyboardIcon from '@lucide/svelte/icons/keyboard'
-import ListChecksIcon from '@lucide/svelte/icons/list-checks'
-import ListTodoIcon from '@lucide/svelte/icons/list-todo'
-import MailIcon from '@lucide/svelte/icons/mail'
-import MessageSquareIcon from '@lucide/svelte/icons/message-square'
-import MessageCircleQuestionIcon from '@lucide/svelte/icons/message-circle-question-mark'
-import PackageOpenIcon from '@lucide/svelte/icons/package-open'
-import PenIcon from '@lucide/svelte/icons/pen'
-import PenLineIcon from '@lucide/svelte/icons/pen-line'
-import PlayIcon from '@lucide/svelte/icons/play'
-import PlugIcon from '@lucide/svelte/icons/plug'
-import ScanEyeIcon from '@lucide/svelte/icons/scan-eye'
-import SearchIcon from '@lucide/svelte/icons/search'
-import SquareDashedMousePointerIcon from '@lucide/svelte/icons/square-dashed-mouse-pointer'
-import WrenchIcon from '@lucide/svelte/icons/wrench'
-import ZapIcon from '@lucide/svelte/icons/zap'
+import {
+  AppWindowIcon,
+  BinocularsIcon,
+  BookOpenCheckIcon,
+  BotIcon,
+  BracesIcon,
+  BrainIcon,
+  CameraIcon,
+  ChartLineIcon,
+  CodeIcon,
+  CpuIcon,
+  DatabaseIcon,
+  FileDiffIcon,
+  FolderSearchIcon,
+  GlobeIcon,
+  ImageIcon,
+  KeyboardIcon,
+  ListChecksIcon,
+  ListTodoIcon,
+  MailIcon,
+  MessageCircleQuestionIcon,
+  MessageSquareIcon,
+  PackageOpenIcon,
+  PenIcon,
+  PenLineIcon,
+  PlayIcon,
+  PlugIcon,
+  ScanEyeIcon,
+  SearchIcon,
+  SquareDashedMousePointerIcon,
+  TerminalIcon,
+  WrenchIcon,
+  ZapIcon,
+} from 'lucide-react'
 import type { IconComponent } from '$lib/layout/types'
 
 const COMPUTER_USE_PREFIX = 'mcp__computer-use__'
@@ -61,10 +63,10 @@ const COMPUTER_USE_ICONS: Record<string, IconComponent> = {
 }
 
 const BY_NAME: Record<string, IconComponent> = {
-  Bash: ChevronRightIcon,
-  bash: ChevronRightIcon,
-  Shell: ChevronRightIcon,
-  PowerShell: ChevronRightIcon,
+  Bash: TerminalIcon,
+  bash: TerminalIcon,
+  Shell: TerminalIcon,
+  PowerShell: TerminalIcon,
   Read: BookOpenCheckIcon,
   Grep: SearchIcon,
   Search: SearchIcon,

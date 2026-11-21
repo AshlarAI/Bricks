@@ -1,9 +1,13 @@
-import Avatar from "./message-avatar.svelte";
-import Content from "./message-content.svelte";
-import Footer from "./message-footer.svelte";
-import Group from "./message-group.svelte";
-import Header from "./message-header.svelte";
-import Root from "./message.svelte";
+import {
+	Message as Root,
+	type MessageAlign,
+	type MessageProps,
+} from "./message";
+import { MessageAvatar as Avatar } from "./message-avatar";
+import { MessageContent as Content } from "./message-content";
+import { MessageFooter as Footer } from "./message-footer";
+import { MessageGroup as Group } from "./message-group";
+import { MessageHeader as Header } from "./message-header";
 
 export {
 	Root,
@@ -19,4 +23,6 @@ export {
 	Content as MessageContent,
 	Header as MessageHeader,
 	Footer as MessageFooter,
+	type MessageAlign,
+	type MessageProps,
 };

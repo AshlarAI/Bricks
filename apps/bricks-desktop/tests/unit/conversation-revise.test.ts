@@ -5,10 +5,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryMessage, OpenedSession, RunRecord } from '../../src/lib/ipc/client';
 import type { Envelope } from '../../src/lib/ipc/engine';
-import { Conversation, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type UserItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, SESSION_ID, T0, openedSession } from './fixtures';
 
-type AppStore = (typeof import('../../src/lib/state/app.svelte'))['app'];
+type AppStore = (typeof import('../../src/lib/state/app'))['app'];
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => {
@@ -247,9 +247,9 @@ describe('app.reviseMessage', () => {
 		vi.useFakeTimers();
 		vi.resetModules();
 		// A reset reloads the i18n module in its default language: French again, as in setup-language.ts.
-		const i18n = await import('../../src/lib/i18n/i18n.svelte');
+		const i18n = await import('../../src/lib/i18n/i18n');
 		i18n.setLanguage('fr');
-		({ app } = await import('../../src/lib/state/app.svelte'));
+		({ app } = await import('../../src/lib/state/app'));
 		ipc.invoke.mockReset();
 		ipc.invoke.mockImplementation(async (cmd: string) => {
 			if (cmd === 'session_command') return undefined;

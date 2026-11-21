@@ -1,7 +1,7 @@
 // The time a run worked, as the « bilan » shows it: compact units.
 import { describe, expect, it } from 'vitest';
 import { formatWorked, runEndSummary } from '../../src/lib/features/conversation/runend';
-import type { RunInfo } from '../../src/lib/state/conversation.svelte';
+import type { RunInfo } from '../../src/lib/state/conversation';
 
 describe('formatWorked', () => {
 	it('keeps milliseconds below a second and truncates longer durations', () => {

@@ -1,9 +1,11 @@
-// One light line per tool call, and the one-line trace of a resolved approval.
-// Shared by the timeline and the sub-agent inspector. Pure functions only.
+// One trace line per tool call (its title says what it does or did), and the
+// one-line trace of a resolved approval. Shared by the timeline and the
+// sub-agent lines. Pure functions only.
 
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 import { DECIDED_BY_LABEL, DECISION_LABEL, formatDuration, formatToolName } from '../format';
 import type { DecidedBy, Decision } from '$lib/ipc/engine';
+import type { MessageKey } from '$lib/i18n/messages/en';
 
 /** What the line says about a call. */
 export type ToolLineState = 'running' | 'done' | 'failed' | 'interrupted';
@@ -35,6 +37,64 @@ export function toolLineState(call: ToolCallFacts, interrupted: boolean): ToolLi
 		return 'interrupted';
 	}
 	return 'failed';
+}
+
+type Verb = 'read' | 'edit' | 'search' | 'run' | 'fetch';
+
+const VERB_OF: Record<string, Verb> = {
+	Read: 'read', ViewImage: 'read',
+	Write: 'edit', Edit: 'edit', MultiEdit: 'edit', ApplyPatch: 'edit', NotebookEdit: 'edit',
+	Grep: 'search', Glob: 'search', Search: 'search',
+	Bash: 'run', bash: 'run', Shell: 'run', PowerShell: 'run',
+	WebFetch: 'fetch', WebSearch: 'fetch'
+};
+
+const VERB_KEY: Record<Verb, { now: MessageKey; past: MessageKey }> = {
+	read: { now: 'conversation.toolReading', past: 'conversation.toolRead' },
+	edit: { now: 'conversation.toolEditing', past: 'conversation.toolEdited' },
+	search: { now: 'conversation.toolSearching', past: 'conversation.toolSearched' },
+	run: { now: 'conversation.toolRunning', past: 'conversation.toolRan' },
+	fetch: { now: 'conversation.toolFetching', past: 'conversation.toolFetched' }
+};
+
+function field(input: unknown, keys: string[]): string | null {
+	if (typeof input !== 'object' || input === null) return null;
+	const record = input as Record<string, unknown>;
+	for (const key of keys) {
+		const value = record[key];
+		if (typeof value === 'string' && value.trim() !== '') return value.trim().replace(/\s+/g, ' ');
+	}
+	return null;
+}
+
+/** What the call works on: a file name, a pattern, a command, an address. */
+function target(verb: Verb, input: unknown): string | null {
+	switch (verb) {
+		case 'read':
+		case 'edit': {
+			const path = field(input, ['file_path', 'path', 'notebook_path']);
+			return path ? (path.split(/[\\/]/).filter(Boolean).pop() ?? path) : null;
+		}
+		case 'search':
+			return field(input, ['pattern', 'query']);
+		case 'run':
+			return field(input, ['command']);
+		case 'fetch':
+			return field(input, ['url', 'query']);
+	}
+}
+
+/**
+ * The title of a call's line: « Exécute cargo test » while it runs, « A exécuté
+ * cargo test » once it ended. A tool without a known verb, or a call without a
+ * target, is named by the tool.
+ */
+export function toolTitle(name: string, input: unknown, state: ToolLineState): string {
+	const verb = VERB_OF[name];
+	const what = verb ? target(verb, input) : null;
+	if (!verb || !what) return formatToolName(name);
+	const key = VERB_KEY[verb][state === 'running' ? 'now' : 'past'];
+	return t(key, { target: what });
 }
 
 /** Compact elapsed time; `null` when the engine gave no valid duration. */

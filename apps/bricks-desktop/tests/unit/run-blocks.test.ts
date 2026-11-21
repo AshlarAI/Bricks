@@ -3,15 +3,14 @@
 // the answer. Items without a run keep their place. Built with the reducer, from the envelopes
 // the engine sends, so the items have the shape the view really gets.
 import { describe, expect, it } from 'vitest';
-import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-import BotIcon from '@lucide/svelte/icons/bot';
+import { BotIcon, TerminalIcon } from 'lucide-react';
 import {
 	Conversation,
 	type ApprovalItem,
 	type AssistantItem,
 	type QuestionItem,
 	type TimelineItem,
-} from '../../src/lib/state/conversation.svelte';
+} from '../../src/lib/state/conversation';
 import {
 	answerOf,
 	currentStep,
@@ -229,7 +228,7 @@ describe('currentStep: what the run does now', () => {
 
 	it('is the tool that runs, with its own icon and name', () => {
 		const items: TimelineItem[] = [{ kind: 'tool', id: 't', toolCallId: 'tc', name: 'Bash', input: {}, status: 'running' }];
-		expect(currentStep(items)).toEqual({ icon: ChevronRightIcon, label: 'Bash' });
+		expect(currentStep(items)).toEqual({ icon: TerminalIcon, label: 'Bash' });
 	});
 
 	it('is the last tool when several ran', () => {

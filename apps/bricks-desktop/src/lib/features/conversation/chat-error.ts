@@ -1,7 +1,7 @@
 // The error shown above the composer (ChatErrorBanner.svelte): the last failed run of the
 // conversation, or a command the engine refused. Engine messages are English and technical;
 // the known ones get a translated sentence and keep their text as the details.
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 
 export interface ChatErrorView {
   /** One line, in the interface language. */

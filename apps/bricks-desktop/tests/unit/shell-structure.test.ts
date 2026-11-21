@@ -6,10 +6,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
-import TopBar from '../../src/lib/layout/TopBar.svelte';
-import StartSplash from '../../src/lib/layout/StartSplash.svelte';
-import { setTheme } from '../../src/lib/theme/theme.svelte';
+import { renderHtml } from './react-test-utils';
+import TopBar from '../../src/lib/layout/TopBar';
+import StartSplash from '../../src/lib/layout/StartSplash';
+import { setTheme } from '../../src/lib/theme/theme';
 
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
 const source = (path: string) => readFileSync(join(SRC, path), 'utf8');
@@ -19,7 +19,7 @@ function sourceFiles(dir = SRC): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
 		const path = join(dir, entry.name);
 		if (entry.isDirectory()) return sourceFiles(path);
-		return /\.(svelte|ts|js|css)$/.test(entry.name) ? [path.slice(SRC.length)] : [];
+		return /\.(tsx?|jsx?|css|svelte)$/.test(entry.name) ? [path.slice(SRC.length)] : [];
 	});
 }
 
@@ -51,31 +51,31 @@ describe('TopBar: the icons show the state of each panel', () => {
 	};
 
 	it('the left panel shows « open » when hidden and « close » when shown', () => {
-		expect(icons(render(TopBar, { props: { ...base, leftPressed: false, rightPressed: false } }).body)).toContain(
+		expect(icons(renderHtml(TopBar, { ...base, leftPressed: false, rightPressed: false }))).toContain(
 			'panel-left-open',
 		);
-		expect(icons(render(TopBar, { props: { ...base, leftPressed: true, rightPressed: false } }).body)).toContain(
+		expect(icons(renderHtml(TopBar, { ...base, leftPressed: true, rightPressed: false }))).toContain(
 			'panel-left-close',
 		);
 	});
 
 	it('the right panel shows « open » when hidden and « close » when shown', () => {
-		const hidden = icons(render(TopBar, { props: { ...base, leftPressed: false, rightPressed: false } }).body);
+		const hidden = icons(renderHtml(TopBar, { ...base, leftPressed: false, rightPressed: false }));
 		expect(hidden).toContain('panel-right-open');
 		expect(hidden).not.toContain('panel-right-close');
-		const shown = icons(render(TopBar, { props: { ...base, leftPressed: false, rightPressed: true } }).body);
+		const shown = icons(renderHtml(TopBar, { ...base, leftPressed: false, rightPressed: true }));
 		expect(shown).toContain('panel-right-close');
 	});
 
 	it('the terminal, the changes and the reader have their own icons', () => {
-		const names = icons(render(TopBar, { props: { ...base, leftPressed: false, rightPressed: false } }).body);
+		const names = icons(renderHtml(TopBar, { ...base, leftPressed: false, rightPressed: false }));
 		expect(names).toContain('terminal');
 		expect(names).toContain('git-compare');
 		expect(names).toContain('book-open');
 	});
 
 	it('the toggles carry their names for assistive technology, and no text is written', () => {
-		const html = render(TopBar, { props: { ...base, leftPressed: false, rightPressed: false } }).body;
+		const html = renderHtml(TopBar, { ...base, leftPressed: false, rightPressed: false });
 		expect(html).toContain('aria-label="Panneau de gauche"');
 		expect(html).toContain('aria-label="Terminal"');
 		expect(visible(html)).toBe('');
@@ -83,7 +83,7 @@ describe('TopBar: the icons show the state of each panel', () => {
 });
 
 describe('ReaderPanel: the tabs share the width', () => {
-	const panel = source('lib/features/reader/ReaderPanel.svelte');
+	const panel = source('lib/features/reader/ReaderPanel.tsx');
 	const tabLine = panel.split('\n').find((line) => line.includes('max-w-48'));
 
 	it('each tab grows and shrinks between its minimum and its maximum width', () => {
@@ -102,10 +102,11 @@ describe('ReaderPanel: the tabs share the width', () => {
 });
 
 describe('Composer: a rounded card, with no project strip', () => {
-	const composer = source('lib/features/composer/Composer.svelte');
+	const composer = source('lib/features/composer/Composer.tsx');
 	const shell = composer.split('\n').find((line) => line.includes('relative z-10 mx-1 mt-1 flex flex-col rounded-xl'));
 
 	it('the project strip is gone: its file is deleted and no source imports it', () => {
+		expect(existsSync(join(SRC, 'lib/features/composer/ProjectStrip.tsx'))).toBe(false);
 		expect(existsSync(join(SRC, 'lib/features/composer/ProjectStrip.svelte'))).toBe(false);
 		expect(composer).not.toContain('ProjectStrip');
 		const importers = sourceFiles().filter((file) => readFileSync(join(SRC, file), 'utf8').includes('ProjectStrip'));
@@ -122,24 +123,24 @@ describe('Composer: a rounded card, with no project strip', () => {
 describe('StartSplash: only the logo, the one that contrasts with the theme last shown', () => {
 	it('shows no visible text, only the logo', () => {
 		setTheme('light');
-		const html = render(StartSplash).body;
+		const html = renderHtml(StartSplash);
 		expect(visible(html)).toBe('');
 		expect(html).toContain('<img');
 		expect(html).toContain('alt=""');
 	});
 
 	it('is announced as the start of Bricks, without showing it', () => {
-		const html = render(StartSplash).body;
+		const html = renderHtml(StartSplash);
 		expect(html).toContain('aria-label="Démarrage de Bricks"');
 	});
 
 	it('uses the dark tile on a light theme, and the light tile on a dark one', () => {
 		setTheme('light');
-		expect(render(StartSplash).body).toContain('app-dark.png');
-		expect(render(StartSplash).body).not.toContain('app-light.png');
+		expect(renderHtml(StartSplash)).toContain('app-dark.png');
+		expect(renderHtml(StartSplash)).not.toContain('app-light.png');
 		setTheme('dark');
-		expect(render(StartSplash).body).toContain('app-light.png');
-		expect(render(StartSplash).body).not.toContain('app-dark.png');
+		expect(renderHtml(StartSplash)).toContain('app-light.png');
+		expect(renderHtml(StartSplash)).not.toContain('app-dark.png');
 	});
 });
 

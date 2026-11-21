@@ -1,0 +1,97 @@
+// The timer of the questions the model asks (`Ask`): off by default; SMART lets
+// the model choose each duration, CUSTOM imposes one. Saved in the preferences
+// and sent with each message: a change applies from the next message.
+import { useId, useState } from 'react'
+import { Field, FieldError, FieldLabel } from '$lib/components/ui/field'
+import { Input } from '$lib/components/ui/input'
+import { Switch } from '$lib/components/ui/switch'
+import { t, useLanguage } from '$lib/i18n/i18n'
+import type { AskTimerMode } from '$lib/ipc/client'
+import { app, useApp } from '$lib/state/app'
+import SettingsGroup from './SettingsGroup'
+
+const MIN = 30
+const MAX = 3600
+const MODES: { value: AskTimerMode; label: string }[] = [
+  { value: 'smart', label: 'SMART' },
+  { value: 'custom', label: 'CUSTOM' },
+]
+
+export function AskTimerSettings() {
+  useLanguage()
+  const uid = useId()
+  const timer = useApp((s) => s.prefs.ask_timer)
+  /** The duration as typed, kept apart until it is valid. */
+  const [typed, setTyped] = useState<string | null>(null)
+  const seconds = typed ?? String(timer.seconds)
+  const nSeconds = Number(seconds)
+  const invalid = !Number.isInteger(nSeconds) || nSeconds < MIN || nSeconds > MAX
+
+  function update(patch: Partial<typeof timer>) {
+    app.setPrefs({ ask_timer: { ...timer, ...patch } })
+  }
+
+  function onSeconds(value: string) {
+    setTyped(value)
+    const n = Number(value)
+    if (Number.isInteger(n) && n >= MIN && n <= MAX) update({ seconds: n })
+  }
+
+  return (
+    <SettingsGroup title={t('settings.questionTimer')}>
+      <label className="flex items-center justify-between gap-3 p-3 text-ui">
+        {t('settings.enableTheTimer')}
+        <Switch checked={timer.enabled} onCheckedChange={(on) => update({ enabled: on })} />
+      </label>
+      {timer.enabled && (
+        <fieldset className="flex flex-wrap items-center gap-4 p-3 text-ui">
+          <legend className="sr-only">{t('settings.timerMode')}</legend>
+          {MODES.map((mode) => (
+            <label key={mode.value} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`${uid}-mode`}
+                value={mode.value}
+                checked={timer.mode === mode.value}
+                onChange={() => update({ mode: mode.value })}
+              />
+              {mode.label}
+            </label>
+          ))}
+          {timer.mode === 'custom' && (
+            <>
+              <Field
+                orientation="horizontal"
+                className="w-auto"
+                data-invalid={invalid ? 'true' : undefined}
+              >
+                <FieldLabel htmlFor={`${uid}-seconds`} className="text-ui">
+                  {t('settings.durationS')}
+                </FieldLabel>
+                <Input
+                  id={`${uid}-seconds`}
+                  type="number"
+                  min={MIN}
+                  max={MAX}
+                  step={1}
+                  value={seconds}
+                  aria-invalid={invalid ? 'true' : undefined}
+                  aria-describedby={invalid ? `${uid}-error` : undefined}
+                  className="h-8 w-24 text-ui"
+                  onChange={(event) => onSeconds(event.currentTarget.value)}
+                />
+              </Field>
+              {invalid && (
+                <FieldError id={`${uid}-error`} className="w-full text-caption">
+                  {t('settings.betweenAndSeconds', { MIN, MAX })}
+                </FieldError>
+              )}
+            </>
+          )}
+        </fieldset>
+      )}
+    </SettingsGroup>
+  )
+}
+
+export default AskTimerSettings

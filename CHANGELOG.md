@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 227 (2026/11/21)
+
+- Migrate `apps/bricks-desktop` from Svelte 5 (`shadcn-svelte`, `bits-ui`, `paneforge`, `layerchart`, `@lucide/svelte`, `svelte-sonner`) to React 19 with official React `shadcn/ui` components, `lucide-react`, `recharts`, `react-resizable-panels`, and `sonner`, replacing all `.svelte` and `.svelte.ts` modules with `.tsx` and `.ts`.
+- Migrate the Vitest unit test suite and Markdown harness to React (`@vitejs/plugin-react`, `react-test-utils`, `tsc -p tests/tsconfig.json --noEmit`), remove legacy Svelte dependencies and `svelte.config.js`, and update `AGENTS.md`, CI, and desktop documentation.
+
 ### Commit 226 (2026/11/19)
 
 - Accept top-level `description` alongside `missions` in the `Agent` tool (falling back to it when an individual mission omits its own description), and include the `system_prompt` hint in validation errors only when `system_prompt` was actually sent.

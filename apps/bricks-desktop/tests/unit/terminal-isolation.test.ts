@@ -13,8 +13,8 @@ import {
 	type PtyPort,
 	type TerminalDeps,
 	type XtermPort
-} from '../../src/lib/features/terminal/terminal-session.svelte';
-import { TerminalStore } from '../../src/lib/features/terminal/terminal-store.svelte';
+} from '../../src/lib/features/terminal/terminal-session';
+import { TerminalStore } from '../../src/lib/features/terminal/terminal-store';
 
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 

@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
 import { FOCUS_REFRESH_COOLDOWN_MS, FocusGate } from '../../src/lib/state/focus-gate';
-import { GitState } from '../../src/lib/features/changes/git.svelte';
-import ProjectEnvironment from '../../src/lib/features/context/ProjectEnvironment.svelte';
+import { GitState } from '../../src/lib/features/changes/git';
+import ProjectEnvironment from '../../src/lib/features/context/ProjectEnvironment';
 import * as ipc from '../../src/lib/ipc/client';
 import type { GitStatus, Project } from '../../src/lib/ipc/client';
 
@@ -40,8 +40,9 @@ function deferred<T>() {
 }
 
 async function settle() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	flushSync();
+	for (let i = 0; i < 3; i++) {
+		await tickReact();
+	}
 }
 
 describe('FocusGate', () => {
@@ -145,7 +146,7 @@ describe('GitState focus and concurrency guards', () => {
 
 describe('ProjectEnvironment focus gating', () => {
 	let target: HTMLDivElement;
-	let component: ReturnType<typeof mount> | null = null;
+	let component: MountedComponent<object> | null = null;
 
 	beforeEach(() => {
 		vi.mocked(ipc.gitStatus).mockReset();
@@ -154,7 +155,7 @@ describe('ProjectEnvironment focus gating', () => {
 	});
 
 	afterEach(() => {
-		if (component) void unmount(component);
+		component?.unmount();
 		component = null;
 		target.remove();
 	});
@@ -171,14 +172,16 @@ describe('ProjectEnvironment focus gating', () => {
 			chats: false
 		};
 
-		component = mount(ProjectEnvironment, { target, props: { project } });
+		component = mountReact(ProjectEnvironment, { target, props: { project } }) as MountedComponent<object>;
 		await settle();
 		expect(ipc.gitStatus).toHaveBeenCalledTimes(1);
 
 		// Simulate a focus bounce loop on Windows right after opening/picker close.
-		for (let i = 0; i < 5; i++) {
-			window.dispatchEvent(new Event('focus'));
-		}
+		flushReact(() => {
+			for (let i = 0; i < 5; i++) {
+				window.dispatchEvent(new Event('focus'));
+			}
+		});
 		await settle();
 		expect(ipc.gitStatus).toHaveBeenCalledTimes(1);
 	});

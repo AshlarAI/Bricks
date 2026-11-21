@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command, QuestionAnswer } from '../../src/lib/ipc/engine';
 import { PROJECT_ID, SESSION_ID } from './fixtures';
 
-type AppStore = (typeof import('../../src/lib/state/app.svelte'))['app'];
+type AppStore = (typeof import('../../src/lib/state/app'))['app'];
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => {
@@ -24,7 +24,7 @@ let refusal: { code: string; message: string } | null = null;
 beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
 	vi.resetModules();
-	({ app } = await import('../../src/lib/state/app.svelte'));
+	({ app } = await import('../../src/lib/state/app'));
 	refusal = null;
 	ipc.invoke.mockReset();
 	ipc.invoke.mockImplementation(async (cmd: string) => {

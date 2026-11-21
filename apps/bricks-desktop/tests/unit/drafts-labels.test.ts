@@ -9,8 +9,8 @@ import type {
 	OpenedSession
 } from '../../src/lib/ipc/client';
 import type { Command, ModelChoice, Snapshot } from '../../src/lib/ipc/engine';
-import { app } from '../../src/lib/state/app.svelte';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { app } from '../../src/lib/state/app';
+import { Conversation } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, MODEL, PROJECT_ID, SESSION_ID, T0, openedSession, snapshot } from './fixtures';
 
 const ipc = vi.hoisted(() => ({

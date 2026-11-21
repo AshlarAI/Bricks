@@ -127,7 +127,7 @@ jobs:
       - run: npm ci
       - name: Design tokens are up to date
         run: npm run tokens:check
-      - name: svelte-check
+      - name: Type-check (tsc)
         run: npm run check
       - name: Type-check the tests
         run: npm run test:types

@@ -8,11 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSlashLine, type SlashHost } from '../../src/lib/features/commands/dispatch';
 import type { OpenedSession, OpenSessionRequest, Project } from '../../src/lib/ipc/client';
 import type { SlashAction } from '../../src/lib/ipc/bindings/SlashAction';
-import type { Conversation, DraftAttachment } from '../../src/lib/state/conversation.svelte';
+import type { Conversation, DraftAttachment } from '../../src/lib/state/conversation';
 import type { ModelChoice } from '../../src/lib/ipc/engine';
 import { MODEL, PROJECT_ID, SESSION_ID, openedSession, snapshot } from './fixtures';
 
-type AppStore = (typeof import('../../src/lib/state/app.svelte'))['app'];
+type AppStore = (typeof import('../../src/lib/state/app'))['app'];
 
 const PROJECT_B = 'proj-test-2';
 const MODEL_OTHER = 'prov/other';
@@ -95,7 +95,7 @@ let app: AppStore;
 beforeEach(async () => {
 	vi.useFakeTimers();
 	vi.resetModules();
-	({ app } = await import('../../src/lib/state/app.svelte'));
+	({ app } = await import('../../src/lib/state/app'));
 	ipc.invoke.mockReset();
 	ipc.invoke.mockImplementation(answer);
 	onOpen = defaultOpen;

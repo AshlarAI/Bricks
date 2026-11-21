@@ -2,7 +2,7 @@
 // usage, search, agent profiles, skills, memory, jobs, /clear, /compact, /skill, command
 // refusals, and session isolation. Envelopes are hand-built with EnvelopeFeed (fixtures.ts).
 import { describe, expect, it } from 'vitest';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { Conversation } from '../../src/lib/state/conversation';
 import type { Envelope, Usage } from '../../src/lib/ipc/engine';
 import {
 	EnvelopeFeed,

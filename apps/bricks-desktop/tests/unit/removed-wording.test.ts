@@ -13,7 +13,7 @@ function sourceFiles(dir: string = SRC): { path: string; text: string }[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
 		const full = join(dir, entry.name);
 		if (entry.isDirectory()) return sourceFiles(full);
-		if (!/\.(svelte|ts|js|css|json)$/.test(entry.name)) return [];
+		if (!/\.(tsx|ts|js|css|json)$/.test(entry.name)) return [];
 		return [{ path: relative(SRC, full), text: readFileSync(full, 'utf8') }];
 	});
 }
@@ -43,7 +43,7 @@ describe('the removed wordings are gone from src/', () => {
 
 	it('the scan reads the product sources, not an empty folder', () => {
 		expect(files.length).toBeGreaterThan(100);
-		expect(files.some((f) => f.path === join('lib', 'features', 'session-info', 'ConfigView.svelte'))).toBe(true);
+		expect(files.some((f) => f.path === join('lib', 'features', 'session-info', 'ConfigView.tsx'))).toBe(true);
 	});
 
 	it.each(REMOVED)('no file under src/ contains « %s »', (text) => {

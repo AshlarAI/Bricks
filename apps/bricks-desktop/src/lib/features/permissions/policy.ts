@@ -2,7 +2,7 @@
 // pure functions). The engine decides; these helpers only build the policy
 // a person chose.
 
-import { t, localeTag } from '$lib/i18n/i18n.svelte'
+import { t, localeTag } from '$lib/i18n/i18n'
 import type {
 	CustomRules,
 	PermissionEffect,

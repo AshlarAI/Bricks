@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
-// « Délai des questions » (AskTimerSettings.svelte), mounted in happy-dom over the app store: off
+// « Délai des questions » (AskTimerSettings.tsx), mounted in happy-dom over the app store: off
 // by default, SMART and CUSTOM once enabled, a duration kept between 30 and 3600 seconds (an
 // invalid one is said and not saved), the chosen values kept while the timer is off, and the
 // saved preference debounced. The section sits below the diagram settings in General.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import AskTimerSettings from '../../src/lib/features/settings/AskTimerSettings.svelte';
-import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app.svelte';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import AskTimerSettings from '../../src/lib/features/settings/AskTimerSettings';
+import { DEFAULT_PREFERENCES, app } from '../../src/lib/state/app';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => {
@@ -23,7 +23,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 const src = (path: string) => readFileSync(join(process.cwd(), 'src', path), 'utf8');
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<object> | null = null;
 
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -32,12 +32,11 @@ beforeEach(() => {
 	app.prefs = { ...DEFAULT_PREFERENCES, ask_timer: { enabled: false, mode: 'smart', seconds: 300 } };
 	target = document.createElement('div');
 	document.body.appendChild(target);
-	component = mount(AskTimerSettings, { target });
-	flushSync();
+	component = mountReact(AskTimerSettings, { target });
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 	vi.useRealTimers();
@@ -56,22 +55,24 @@ function seconds(): HTMLInputElement | null {
 }
 
 function toggle(control: HTMLButtonElement) {
-	control.click();
-	flushSync();
+	flushReact(() => {
+		control.click();
+	});
 }
 
 function pick(value: 'smart' | 'custom') {
-	const radio = modes().find((r) => r.value === value)!;
-	radio.checked = true;
-	radio.dispatchEvent(new Event('change', { bubbles: true }));
-	flushSync();
+	flushReact(() => {
+		const radio = modes().find((r) => r.value === value)!;
+		radio.click();
+	});
 }
 
 function type(value: string) {
 	const input = seconds()!;
-	input.value = value;
-	input.dispatchEvent(new Event('input', { bubbles: true }));
-	flushSync();
+	flushReact(() => {
+		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+	});
 }
 
 function alertText(): string | null {
@@ -168,7 +169,7 @@ describe('« Délai des questions »', () => {
 
 describe('where the section sits', () => {
 	it('comes right after the diagram settings in General', () => {
-		const general = src('lib/features/settings/GeneralSettings.svelte');
+		const general = src('lib/features/settings/GeneralSettings.tsx');
 		const diagrams = general.indexOf('<DiagramSettings />');
 		const ask = general.indexOf('<AskTimerSettings />');
 		expect(diagrams).toBeGreaterThan(0);

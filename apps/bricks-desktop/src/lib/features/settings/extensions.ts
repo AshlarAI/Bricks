@@ -1,5 +1,5 @@
 // Labels of the Extensions section: the state of Computer Use and of its permissions.
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import type { ComputerUseStatus } from '$lib/ipc/bindings/ComputerUseStatus'
 import type { PermissionState } from '$lib/ipc/bindings/PermissionState'
 

@@ -1,19 +1,19 @@
 // @vitest-environment happy-dom
-// The welcome's typed line (TypedLine.svelte): typed a third slower than before, and while
+// The welcome's typed line (TypedLine.tsx): typed a third slower than before, and while
 // `paused` (composer focused) the line in progress is finished and kept, even mid-erase.
 // The cycle goes on once the pause ends. Mounted in happy-dom with fake timers.
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import TypedLine from '../../src/lib/features/conversation/welcome/TypedLine.svelte';
-import { t } from '../../src/lib/i18n/i18n.svelte';
-import { typedLineProps } from './typed-line-props.svelte';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import TypedLine, { type TypedLineProps } from '../../src/lib/features/conversation/welcome/TypedLine';
+import { t } from '../../src/lib/i18n/i18n';
 
 const LINE1 = t('welcome.line1');
 /** With `Math.random` at 0: 35 ms a key, times the pace of 1.5. */
 const KEY_MS = 52.5;
 
 let target: HTMLDivElement;
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<TypedLineProps> | null = null;
 
 function typed(): string {
 	return target.querySelector('[aria-hidden="true"]')?.textContent ?? '';
@@ -22,26 +22,26 @@ function caretStill(): boolean {
 	return target.querySelector('.caret')?.classList.contains('still') ?? false;
 }
 async function advance(ms: number): Promise<void> {
-	await vi.advanceTimersByTimeAsync(ms);
-	flushSync();
+	await act(async () => {
+		await vi.advanceTimersByTimeAsync(ms);
+	});
 }
 function setPaused(paused: boolean): void {
-	typedLineProps.paused = paused;
-	flushSync();
+	flushReact(() => {
+		app!.rerender({ paused });
+	});
 }
 
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.spyOn(Math, 'random').mockReturnValue(0);
-	typedLineProps.paused = false;
 	target = document.createElement('div');
 	document.body.append(target);
-	app = mount(TypedLine, { target, props: typedLineProps });
-	flushSync();
+	app = mountReact(TypedLine, { target, props: { paused: false } });
 });
 
 afterEach(() => {
-	if (app) unmount(app);
+	app?.unmount();
 	app = null;
 	target.remove();
 	vi.restoreAllMocks();

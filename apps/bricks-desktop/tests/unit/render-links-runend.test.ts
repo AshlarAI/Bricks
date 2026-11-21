@@ -1,12 +1,12 @@
 // Server render of two.3 views: the user message (links in plain text, `dir="auto"`,
 // HTML-like text shown as text) and the run-end card (the « bilan » line built from the
-// reducer's envelopes, as the engine sends them). Node environment, rendered with svelte/server,
+// reducer's envelopes, as the engine sends them). Node environment, rendered with renderToStaticMarkup,
 // like toolline-render.test.ts. Validation, Haiku V.
 import { describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
-import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage.svelte';
-import RunEndCard from '../../src/lib/features/conversation/timeline/RunEndCard.svelte';
-import { Conversation, type RunEndItem, type UserItem } from '../../src/lib/state/conversation.svelte';
+import { renderHtml } from './react-test-utils';
+import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage';
+import RunEndCard from '../../src/lib/features/conversation/timeline/RunEndCard';
+import { Conversation, type RunEndItem, type UserItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, MODEL, PROJECT_ID, T0, openedSession } from './fixtures';
 import type { ApprovalRequest, Termination } from '../../src/lib/ipc/engine';
 
@@ -21,14 +21,14 @@ function textOf(html: string, sep = ''): string {
 		.replace(/&lt;/g, '<')
 		.replace(/&gt;/g, '>')
 		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'")
+		.replace(/&#(?:39|x27);/g, "'")
 		.replace(/&amp;/g, '&');
 	return plain(decoded.replace(/\s+/g, ' ').trim());
 }
 
 /** The anchors of the markup: decoded href and visible text. */
 function anchorsOf(html: string): { href: string; text: string; attrs: string }[] {
-	const decode = (s: string) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+	const decode = (s: string) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#(?:39|x27);/g, "'");
 	return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => {
 		const href = /\bhref="([^"]*)"/.exec(m[1])?.[1] ?? '';
 		return { href: decode(href), text: decode(m[2].replace(/<[^>]+>/g, '')), attrs: m[1] };
@@ -37,7 +37,7 @@ function anchorsOf(html: string): { href: string; text: string; attrs: string }[
 
 function userMessage(text: string): string {
 	const item: UserItem = { kind: 'user', id: 'u1', text, attachments: [] };
-	return render(UserMessage, { props: { item } }).body;
+	return renderHtml(UserMessage, { item });
 }
 
 describe('user message: web addresses become links, the rest stays text', () => {
@@ -133,7 +133,7 @@ function runOf(
 
 /** The markup of the card. */
 function markup(conv: Conversation, item: RunEndItem): string {
-	return render(RunEndCard, { props: { item, conversation: conv } }).body;
+	return renderHtml(RunEndCard, { item, conversation: conv });
 }
 
 /** The card's visible text: the spoken totals of DiffStat (sr-only) are left out. */

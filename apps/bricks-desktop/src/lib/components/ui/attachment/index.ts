@@ -1,40 +1,47 @@
-import Action from "./attachment-action.svelte";
-import Actions from "./attachment-actions.svelte";
-import Content from "./attachment-content.svelte";
-import Description from "./attachment-description.svelte";
-import Group from "./attachment-group.svelte";
-import Media from "./attachment-media.svelte";
-import Title from "./attachment-title.svelte";
-import Trigger from "./attachment-trigger.svelte";
-import Root, {
-	attachmentVariants,
-	type AttachmentOrientation,
-	type AttachmentSize,
-	type AttachmentState,
-} from "./attachment.svelte";
+import { AttachmentAction } from "./attachment-action"
+import { AttachmentActions } from "./attachment-actions"
+import { AttachmentContent } from "./attachment-content"
+import { AttachmentDescription } from "./attachment-description"
+import { AttachmentGroup } from "./attachment-group"
+import {
+  AttachmentMedia,
+  attachmentMediaVariants,
+  type AttachmentMediaVariant,
+} from "./attachment-media"
+import { AttachmentTitle } from "./attachment-title"
+import { AttachmentTrigger } from "./attachment-trigger"
+import {
+  Attachment,
+  attachmentVariants,
+  type AttachmentOrientation,
+  type AttachmentSize,
+  type AttachmentState,
+} from "./attachment"
 
 export {
-	Root,
-	Group,
-	Media,
-	Content,
-	Title,
-	Description,
-	Actions,
-	Action,
-	Trigger,
-	attachmentVariants,
-	type AttachmentSize,
-	type AttachmentOrientation,
-	type AttachmentState,
-	//
-	Root as Attachment,
-	Group as AttachmentGroup,
-	Media as AttachmentMedia,
-	Content as AttachmentContent,
-	Title as AttachmentTitle,
-	Description as AttachmentDescription,
-	Actions as AttachmentActions,
-	Action as AttachmentAction,
-	Trigger as AttachmentTrigger,
-};
+  Attachment as Root,
+  AttachmentGroup as Group,
+  AttachmentMedia as Media,
+  AttachmentContent as Content,
+  AttachmentTitle as Title,
+  AttachmentDescription as Description,
+  AttachmentActions as Actions,
+  AttachmentAction as Action,
+  AttachmentTrigger as Trigger,
+  attachmentVariants,
+  attachmentMediaVariants,
+  type AttachmentSize,
+  type AttachmentOrientation,
+  type AttachmentState,
+  type AttachmentMediaVariant,
+  //
+  Attachment,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentContent,
+  AttachmentTitle,
+  AttachmentDescription,
+  AttachmentActions,
+  AttachmentAction,
+  AttachmentTrigger,
+}

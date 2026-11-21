@@ -2,7 +2,7 @@
 // patch building, labels and write-failure mapping. No state, no IPC: the
 // write calls live in ModelSettings.svelte. Rust validates the rest.
 
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 import type { ModelPatch } from '$lib/ipc/bindings/ModelPatch';
 import type { ModelProfileView } from '$lib/ipc/bindings/ModelProfileView';
 import type { ModelView } from '$lib/ipc/bindings/ModelView';

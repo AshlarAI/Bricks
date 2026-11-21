@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-// The forks in the conversation list (ConversationList.svelte) mounted over explicit lists: a fork
+// The forks in the conversation list (ConversationList.tsx) mounted over explicit lists: a fork
 // sits under its parent, which has a fold button (aria-expanded) that hides and shows it; a fork
 // whose parent is not listed is shown on its own; the actions menu of a row offers « Forker ».
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import ConversationList from '../../src/lib/features/navigation/ConversationList.svelte';
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
+import ConversationList from '../../src/lib/features/navigation/ConversationList';
 import type { SessionItem } from '../../src/lib/ipc/client';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -38,7 +38,7 @@ function item(id: string, title: string, updated: number, overrides: Partial<Ses
 }
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<object> | null = null;
 
 beforeEach(() => {
 	ipc.invoke.mockReset();
@@ -48,18 +48,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 	document.body.innerHTML = '';
 });
 
 function render(sessions: SessionItem[], limit?: number) {
-	component = mount(ConversationList, {
+	component = mountReact(ConversationList, {
 		target,
 		props: { sessions, label: 'Conversations du projet', ...(limit === undefined ? {} : { limit }) }
-	});
-	flushSync();
+	}) as MountedComponent<object>;
 }
 
 /** The rows of the list, in order, by conversation id. */
@@ -97,16 +96,14 @@ describe('a fork under its parent', () => {
 		render([item('root', 'Plan Atlas', 1_000), item('fork', 'Plan Atlas (fork)', 2_000, { parent_id: 'root' })]);
 		expect(row('fork')).not.toBeNull();
 
-		fold('Plan Atlas')!.click();
-		flushSync();
+		flushReact(() => fold('Plan Atlas')!.click());
 		expect(row('fork')).toBeNull();
 		expect(row('root')).not.toBeNull();
 		const folded = fold('Plan Atlas')!;
 		expect(folded.getAttribute('aria-expanded')).toBe('false');
 		expect(folded.getAttribute('aria-label')).toBe('Afficher les forks de Plan Atlas');
 
-		fold('Plan Atlas')!.click();
-		flushSync();
+		flushReact(() => fold('Plan Atlas')!.click());
 		expect(row('fork')).not.toBeNull();
 		expect(fold('Plan Atlas')!.getAttribute('aria-expanded')).toBe('true');
 	});
@@ -140,10 +137,11 @@ describe('the actions of a conversation', () => {
 			'button[aria-label="Actions pour la conversation Plan Atlas"]'
 		);
 		expect(trigger, 'the row has an actions button').not.toBeNull();
-		trigger!.dispatchEvent(
-			new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' })
-		);
-		flushSync();
+		flushReact(() => {
+			trigger!.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' })
+			);
+		});
 		await vi.waitFor(() => {
 			const items = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((el) =>
 				el.textContent?.trim()

@@ -1,8 +1,8 @@
 // HTML of the assistant Markdown. One marked instance, configured once here. Block HTML
 // is raw until `finishHtml`: sanitized (sanitizeMarkdown), then math placeholders replaced
 // by the math renderer (or by the source when none is installed).
-import { t } from '$lib/i18n/i18n.svelte'
-import { highlightedLines, isHighlightable } from '$lib/code-highlight.svelte'
+import { t } from '$lib/i18n/i18n'
+import { highlightedLines, isHighlightable } from '$lib/code-highlight'
 import { Lexer, Marked, Renderer, type Parser, type Token, type Tokens } from 'marked'
 import { isOpenableUrl } from '../links'
 import { buttonVariants } from '$lib/components/ui/button'

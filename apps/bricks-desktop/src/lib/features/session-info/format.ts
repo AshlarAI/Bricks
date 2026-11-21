@@ -1,6 +1,6 @@
 // Labels and pure helpers of the session inspectors (French, no state, no IPC).
 
-import { t, localeTag } from '$lib/i18n/i18n.svelte';
+import { t, localeTag } from '$lib/i18n/i18n';
 import type { BadgeVariant } from '$lib/components/ui/badge';
 import type { Activity } from '$lib/ipc/engine';
 

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-// The hover card of a grain in the message rail (MessageRail.svelte): hovered or focused, it
+// The hover card of a grain in the message rail (MessageRail.tsx): hovered or focused, it
 // shows the message, the start of its answer as plain text, its place among the marks and, when
 // known, its date. Mounted in happy-dom; the interface is in French (setup-language.ts).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { flushSync, mount, unmount } from 'svelte'
-import MessageRail from '../../src/lib/features/conversation/MessageRail.svelte'
+import { mountReact, type MountedComponent } from './react-test-utils'
+import MessageRail, { type MessageRailProps } from '../../src/lib/features/conversation/MessageRail'
 
 interface Mark {
 	key: string
@@ -20,13 +20,12 @@ function mark(index: number, overrides: Partial<Mark> = {}): Mark {
 }
 
 let target: HTMLDivElement
-let app: ReturnType<typeof mount> | null = null
+let app: MountedComponent<MessageRailProps> | null = null
 
 function show(marks: Mark[]): void {
 	// Unless a test says otherwise, the marks are all the messages of the conversation.
 	const full = marks.map((m, i) => ({ place: i + 1, total: marks.length, ...m }))
-	app = mount(MessageRail, { target, props: { marks: full, scroller: null } })
-	flushSync()
+	app = mountReact(MessageRail, { target, props: { marks: full, scroller: null } })
 }
 
 /** The hover card of the grain for `key`: the aria-hidden span directly inside its button. */
@@ -52,7 +51,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-	if (app) void unmount(app)
+	app?.unmount()
 	app = null
 	target.remove()
 })

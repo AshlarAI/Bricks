@@ -4,7 +4,7 @@
 // labels (definitions), its heading ids (earlier headings), its footnote numbers and the math
 // renderer/macro state in source order. `final` re-lexes everything and reuses every unchanged block, so it equals
 // `renderReference` of the same source.
-import { t } from '$lib/i18n/i18n.svelte'
+import { t } from '$lib/i18n/i18n'
 import type { Token } from 'marked'
 import { DUPLICATE_MARK, fenceClosed, fenceLanguage, forEachNode, labelsOf, plainText, slugify, type Tok } from './extensions'
 import {

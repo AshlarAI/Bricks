@@ -1,0 +1,180 @@
+/**
+ * Theme state for Bricks.
+ *
+ * - `theme.mode` is the user's choice: 'light' | 'dark' | 'system'.
+ * - `theme.resolved` is what is actually shown: 'light' | 'dark'.
+ * - The `dark` class is toggled on <html>; CSS tokens are generated from src/lib/theme/tokens.json.
+ *
+ * Persistence is the caller's job (prefs IPC): read the saved value, pass it
+ * to `initTheme()` once at startup, and call `setTheme()` when the user picks
+ * a mode, then save it. Until then, the theme last shown (`last-theme.ts`, a
+ * display copy) is used, so a dark setup does not start light.
+ *
+ * `fontsReady` resolves once the bundled Google Sans faces are loaded (the terminal
+ * refits after it).
+ */
+
+import { flushSync } from 'react-dom'
+import { ObservableStore, useStoreSelector } from '$lib/state/observable'
+import tokens from './tokens.json'
+import { readLastTheme, rememberTheme } from './last-theme'
+
+export type ThemeMode = 'light' | 'dark' | 'system'
+export type ResolvedTheme = 'light' | 'dark'
+
+const DARK_QUERY = '(prefers-color-scheme: dark)'
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'light' || value === 'dark' || value === 'system'
+}
+
+function systemPrefersDark(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(DARK_QUERY).matches
+    : false
+}
+
+class ThemeState extends ObservableStore {
+  #mode: ThemeMode = readLastTheme() ?? 'system'
+  #systemDark = systemPrefersDark()
+
+  get mode(): ThemeMode {
+    return this.#mode
+  }
+
+  get resolved(): ResolvedTheme {
+    return this.#mode === 'system' ? (this.#systemDark ? 'dark' : 'light') : this.#mode
+  }
+
+  set mode(value: ThemeMode) {
+    if (this.#mode === value) return
+    this.#mode = value
+    this.emit()
+  }
+
+  set systemDark(value: boolean) {
+    if (this.#systemDark === value) return
+    this.#systemDark = value
+    this.emit()
+  }
+}
+
+const state = new ThemeState()
+
+/** Read-only view of the theme. Use `useTheme()` inside React components for reactive updates. */
+export const theme = {
+  get mode(): ThemeMode {
+    return state.mode
+  },
+  get resolved(): ResolvedTheme {
+    return state.resolved
+  },
+}
+
+/** Subscribes a React component to theme mode and resolved theme changes. */
+export function useTheme(): { mode: ThemeMode; resolved: ResolvedTheme } {
+  return useStoreSelector(
+    state,
+    (s) => ({ mode: s.mode, resolved: s.resolved }),
+    (a, b) => a.mode === b.mode && a.resolved === b.resolved,
+  )
+}
+
+let mediaQuery: MediaQueryList | null = null
+let disposeListener: (() => void) | null = null
+
+function applyToDocument(resolved: ResolvedTheme): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.toggle('dark', resolved === 'dark')
+  rememberTheme(resolved)
+}
+
+// The theme last shown, from the first paint on (the preferences load later).
+applyToDocument(state.resolved)
+
+/** Resolves once the bundled Google Sans faces (UI and mono) are loaded. Never rejects: the fallback fonts stay if a face fails. */
+export const fontsReady: Promise<void> = loadBundledFonts()
+
+async function loadBundledFonts(): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return
+  try {
+    await Promise.all([
+      document.fonts.load(`${tokens.fonts.ui.defaultWeight} 1em "${tokens.fonts.ui.family}"`),
+      document.fonts.load(`500 1em "${tokens.fonts.ui.family}"`),
+      document.fonts.load(`400 1em "${tokens.fonts.code.family}"`),
+    ])
+    await document.fonts.ready
+  } catch {
+    // A face that fails to load leaves the system fallback in place.
+  }
+}
+
+/**
+ * Runs `change` as a short cross-fade between the old and the new look. Falls back to an
+ * instant change without the View Transitions API, with reduced motion, or while hidden.
+ * `flushSync` lets the new mode land before the new look is captured.
+ */
+function fade(change: () => void): void {
+  const reduced =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (typeof document === 'undefined' || !document.startViewTransition || reduced || document.hidden) {
+    change()
+    return
+  }
+  document.startViewTransition(() => {
+    flushSync(change)
+  })
+}
+
+/** Sets the user's theme mode and updates <html> (with a cross-fade when it changes what is shown). Does not persist. */
+export function setTheme(mode: ThemeMode): void {
+  // The mode asked last wins, even if an earlier fade has not applied its own yet.
+  wanted = mode
+  const apply = () => {
+    if (wanted !== null) state.mode = wanted
+    wanted = null
+    applyToDocument(state.resolved)
+  }
+  const after = mode === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : mode
+  if (after === state.resolved) return apply()
+  fade(apply)
+}
+
+/** The mode a pending fade will apply. */
+let wanted: ThemeMode | null = null
+
+/**
+ * Starts following the operating system colour scheme and applies the initial
+ * mode. Call once at startup with the saved preference (default 'system').
+ * Returns a disposer that stops listening to system changes.
+ */
+export function initTheme(initial: ThemeMode = 'system'): () => void {
+  disposeListener?.()
+  disposeListener = null
+
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    mediaQuery = window.matchMedia(DARK_QUERY)
+    state.systemDark = mediaQuery.matches
+
+    const onChange = (event: MediaQueryListEvent) => {
+      const apply = () => {
+        state.systemDark = event.matches
+        applyToDocument(state.resolved)
+      }
+      if (state.mode === 'system') fade(apply)
+      else apply()
+    }
+    mediaQuery.addEventListener('change', onChange)
+    disposeListener = () => mediaQuery?.removeEventListener('change', onChange)
+  }
+
+  // Start-up: no fade, the window is only just showing.
+  state.mode = initial
+  applyToDocument(state.resolved)
+  return () => {
+    disposeListener?.()
+    disposeListener = null
+  }
+}

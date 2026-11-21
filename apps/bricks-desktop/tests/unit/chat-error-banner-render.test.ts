@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
-// The error banner above the composer (ChatErrorBanner.svelte), mounted in happy-dom: which
+// The error banner above the composer (ChatErrorBanner.tsx), mounted in happy-dom: which
 // buttons each kind of error shows, the callbacks, the hook icon, the details dialog, and « Copier »
-// (the clipboard text, its success and its failure toasts). svelte-sonner is replaced so the
+// (the clipboard text, its success and its failure toasts). sonner is replaced so the
 // toasts can be read.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, tick, unmount } from 'svelte';
-import ChatErrorBanner from '../../src/lib/features/conversation/ChatErrorBanner.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import ChatErrorBanner from '../../src/lib/features/conversation/ChatErrorBanner';
 import { chatErrorCopyText, resolveChatError, type ChatErrorView } from '../../src/lib/features/conversation/chat-error';
-import { toast } from 'svelte-sonner';
+import { toast } from 'sonner';
 
-vi.mock('svelte-sonner', () => ({ toast: vi.fn() }));
+vi.mock('sonner', () => ({ toast: vi.fn() }));
 
 const PLAIN: ChatErrorView = {
 	message: 'Le fournisseur a renvoyé une erreur 400.',
@@ -21,15 +21,14 @@ const NO_KEY: ChatErrorView = resolveChatError('Authentication error: provider "
 const HOOK: ChatErrorView = resolveChatError('Blocked by hook: no rm -rf');
 const UNKNOWN_ONE_LINE: ChatErrorView = { message: 'Erreur brute', detail: null, modelConfigMissing: false, hookBlocked: false };
 
-let app: ReturnType<typeof mount> | null = null;
+let app: MountedComponent<object> | null = null;
 let target: HTMLDivElement | null = null;
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
 
 function render(props: Record<string, unknown>) {
 	target = document.createElement('div');
 	document.body.append(target);
-	app = mount(ChatErrorBanner, { target, props: props as never });
-	flushSync();
+	app = mountReact(ChatErrorBanner, { target, props: props as never }) as MountedComponent<object>;
 	return target;
 }
 
@@ -55,7 +54,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (app) void unmount(app);
+	app?.unmount();
 	app = null;
 	target?.remove();
 	target = null;
@@ -180,9 +179,8 @@ describe('the details dialog', () => {
 	it('opens on « Afficher les détails » and shows the message as title and the detail in a pre', async () => {
 		render({ error: PLAIN });
 		expect(document.querySelector('pre')).toBeNull();
-		button('Afficher les détails')!.click();
-		flushSync();
-		await tick();
+		flushReact(() => button('Afficher les détails')!.click());
+		await tickReact();
 		await vi.waitFor(() => expect(document.querySelector('[role="dialog"] pre')).not.toBeNull());
 		const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
 		expect(dialog.querySelector('pre')!.textContent).toBe(PLAIN.detail);
@@ -192,7 +190,8 @@ describe('the details dialog', () => {
 	it('shows the whole multi-line detail in the pre', async () => {
 		const raw = 'Provider error 500: first\nsecond line';
 		render({ error: resolveChatError(raw) });
-		button('Afficher les détails')!.click();
+		flushReact(() => button('Afficher les détails')!.click());
+		await tickReact();
 		await vi.waitFor(() => expect(document.querySelector('[role="dialog"] pre')).not.toBeNull());
 		expect(document.querySelector('[role="dialog"] pre')!.textContent).toBe(raw);
 	});
@@ -203,7 +202,7 @@ describe('« Copier »', () => {
 		const writeText = vi.fn(async (_text: string) => undefined);
 		Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 		render({ error: PLAIN });
-		button('Copier')!.click();
+		flushReact(() => button('Copier')!.click());
 		await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
 		expect(writeText).toHaveBeenCalledWith(chatErrorCopyText(PLAIN));
 		expect(writeText.mock.calls[0]![0]).toContain('Provider error 400: bad request');
@@ -214,7 +213,7 @@ describe('« Copier »', () => {
 		const writeText = vi.fn(async (_text: string) => undefined);
 		Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 		render({ error: UNKNOWN_ONE_LINE });
-		button('Copier')!.click();
+		flushReact(() => button('Copier')!.click());
 		await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
 		expect(writeText).toHaveBeenCalledWith('Erreur Bricks\n\nRésumé de l’erreur\nErreur brute');
 	});
@@ -225,7 +224,7 @@ describe('« Copier »', () => {
 		});
 		Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 		render({ error: PLAIN });
-		button('Copier')!.click();
+		flushReact(() => button('Copier')!.click());
 		await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Copie impossible : permission denied'));
 		expect(toast).not.toHaveBeenCalledWith('Détails de l’erreur copiés');
 	});
@@ -233,7 +232,7 @@ describe('« Copier »', () => {
 	it('without a clipboard API the failure toast names the missing clipboard', async () => {
 		Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
 		render({ error: PLAIN });
-		button('Copier')!.click();
+		flushReact(() => button('Copier')!.click());
 		await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Copie impossible : clipboard-unavailable'));
 	});
 });

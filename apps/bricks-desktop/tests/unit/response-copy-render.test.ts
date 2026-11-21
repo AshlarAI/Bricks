@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
-import TimelineEntry from '../../src/lib/features/conversation/timeline/TimelineEntry.svelte';
-import { Conversation } from '../../src/lib/state/conversation.svelte';
+import { renderHtml } from './react-test-utils';
+import TimelineEntry from '../../src/lib/features/conversation/timeline/TimelineEntry';
+import { Conversation } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, openedSession } from './fixtures';
 
 function copyButtons(conversation: Conversation): number {
   return conversation.items.reduce((count, item) => {
-    const html = render(TimelineEntry, { props: { item, conversation } }).body;
+    const html = renderHtml(TimelineEntry, { item, conversation });
     return count + (html.match(/aria-label="Copier"/g)?.length ?? 0);
   }, 0);
 }

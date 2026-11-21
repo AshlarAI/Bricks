@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
-// MCP servers in the settings (McpServers.svelte, shown in Extensions), mounted in happy-dom with the
+// MCP servers in the settings (McpServers.tsx, shown in Extensions), mounted in happy-dom with the
 // IPC functions replaced. The person's servers list with their switch and their remove button; a
 // server the open project declares waits for « Autoriser » / « Refuser » and runs only once allowed;
 // `/mcp` opens the settings on the extensions section.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
-import McpServers from '../../src/lib/features/settings/McpServers.svelte';
+import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
+import McpServers from '../../src/lib/features/settings/McpServers';
 import * as ipc from '../../src/lib/ipc/client';
 import type { McpServerItem, McpServersView } from '../../src/lib/ipc/client';
 import { runSlashLine, type SlashHost } from '../../src/lib/features/commands/dispatch';
 import type { SlashAction } from '../../src/lib/ipc/bindings/SlashAction';
-import { app } from '../../src/lib/state/app.svelte';
+import { app } from '../../src/lib/state/app';
 import type { Project } from '../../src/lib/ipc/client';
 
 vi.mock('@tauri-apps/api/core', () => {
@@ -58,19 +58,18 @@ const PROJECT: Project = {
 };
 
 let target: HTMLDivElement;
-let component: ReturnType<typeof mount> | null = null;
+let component: MountedComponent<object> | null = null;
 
 // Lets the pending IPC promises and the component's updates settle.
 async function settle() {
 	for (let i = 0; i < 3; i++) {
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		flushSync();
+		await tickReact();
 	}
 }
 
 async function open(first: McpServersView) {
 	vi.mocked(ipc.mcpServers).mockResolvedValue(first);
-	component = mount(McpServers, { target });
+	component = mountReact(McpServers, { target });
 	await settle();
 }
 
@@ -88,7 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (component) void unmount(component);
+	component?.unmount();
 	component = null;
 	target.remove();
 });
@@ -117,7 +116,7 @@ describe('the person’s servers', () => {
 		await open(view([server({ name: 'docs', transport: 'http', enabled: false, active: false })]));
 		vi.mocked(ipc.mcpSetEnabled).mockResolvedValue(view([server({ name: 'docs', transport: 'http' })]));
 
-		byLabel('Activer docs')?.click();
+		flushReact(() => byLabel('Activer docs')?.click());
 		await settle();
 
 		expect(ipc.mcpSetEnabled).toHaveBeenCalledWith('docs', true, null);
@@ -128,7 +127,7 @@ describe('the person’s servers', () => {
 		await open(view([server({ name: 'files' })]));
 		vi.mocked(ipc.mcpRemove).mockResolvedValue(view([]));
 
-		byLabel('Retirer files')?.click();
+		flushReact(() => byLabel('Retirer files')?.click());
 		await settle();
 
 		expect(ipc.mcpRemove).toHaveBeenCalledWith('files', null);
@@ -164,7 +163,7 @@ describe('the servers a project declares', () => {
 			view([server({ name: 'repo', source: 'project', target: 'node server.js', decision: 'approved', active: true })], PROJECT.path)
 		);
 		const approve = [...row!.querySelectorAll('button')].find((b) => b.textContent?.includes('Autoriser'));
-		approve?.click();
+		flushReact(() => approve?.click());
 		await settle();
 
 		expect(ipc.mcpDecide).toHaveBeenCalledWith(PROJECT.id, 'repo', true);

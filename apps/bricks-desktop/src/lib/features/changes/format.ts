@@ -1,5 +1,5 @@
 // Labels and number formats shared by the changes views.
-import { t, dateTimeFormat } from '$lib/i18n/i18n.svelte';
+import { t, dateTimeFormat } from '$lib/i18n/i18n';
 
 
 const DATE_TIME = dateTimeFormat({

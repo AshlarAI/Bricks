@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunRecord } from '../../src/lib/ipc/client';
 import type { CostEstimate, Usage } from '../../src/lib/ipc/engine';
-import { Conversation, type RunUsageView } from '../../src/lib/state/conversation.svelte';
+import { Conversation, type RunUsageView } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, openedSession, usageOf, usageRecord } from './fixtures';
 
 const RUN_1 = 'run-1';

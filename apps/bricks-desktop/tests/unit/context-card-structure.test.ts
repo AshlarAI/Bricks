@@ -7,17 +7,17 @@ import { bound, call, tkey } from './french-keys';
 
 const src = (path: string) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 
-const CARD = 'lib/features/context/ContextCard.svelte';
-const RING = 'lib/features/context/ContextGauge.svelte';
+const CARD = 'lib/features/context/ContextCard.tsx';
+const RING = 'lib/features/context/ContextGauge.tsx';
 
 describe('context card: compact, one share, one meter, no session block', () => {
 	const card = src(CARD);
 
 	it('keeps the title and reads the share from contextGauge and the figures from formatShort', () => {
 		expect(card).toContain(`<SectionCard ${bound('title', 'Contexte')}>`);
-		expect(card).toContain('const status = $derived(conversation.context ?? null);');
-		expect(card).toContain('const stale = $derived(conversation.contextStale ?? false);');
-		expect(card).toContain('const gauge = $derived(contextGauge(status, stale));');
+		expect(card).toContain('const status = useConversation(conversation, (c) => c.context) ?? null');
+		expect(card).toContain('const stale = useConversation(conversation, (c) => c.contextStale) ?? false');
+		expect(card).toContain('const gauge = contextGauge(status, stale)');
 		expect(card).toContain('`${Math.round(gauge.percent)} %`');
 		expect(card).toContain('formatShort(gauge.used)');
 		expect(card).toContain('formatShort(gauge.total)');
@@ -56,7 +56,9 @@ describe('composer ring: same figures as the card, accessible name kept', () => 
 	const ring = src(RING);
 
 	it('takes its value from contextGauge and gaugeLine, the card from contextLine', () => {
-		expect(ring).toContain('contextGauge(conversation?.context ?? null, conversation?.contextStale ?? false)');
+		expect(ring).toContain('const context = useConversation(conversation, (c) => c.context) ?? null');
+		expect(ring).toContain('const contextStale = useConversation(conversation, (c) => c.contextStale) ?? false');
+		expect(ring).toContain('contextGauge(context, contextStale)');
 		expect(ring).toContain('gaugeLine(gauge)');
 	});
 

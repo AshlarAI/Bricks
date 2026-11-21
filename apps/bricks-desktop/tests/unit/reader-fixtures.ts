@@ -2,7 +2,7 @@
 // `reader_file_read`, answers the test gives itself, and edit items.
 
 import type { ReaderFileRequest, ReaderFileWindow } from '../../src/lib/ipc/reader';
-import type { EditItem } from '../../src/lib/state/conversation.svelte';
+import type { EditItem } from '../../src/lib/state/conversation';
 
 /** The project folder and the worktree of the isolated agent `a1`. */
 export const PROJECT = '/proj';

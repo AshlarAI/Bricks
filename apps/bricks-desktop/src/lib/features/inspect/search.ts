@@ -7,7 +7,7 @@
 // highlight only: when it does not compile here, the hit is shown without
 // highlight (the engine's own match is the reference).
 
-import { t } from '$lib/i18n/i18n.svelte';
+import { t } from '$lib/i18n/i18n';
 import type { SearchHit } from '$lib/ipc/engine';
 
 /** Prefix that asks for a regular expression, as in the TUI (`/search re:<regex>`). */

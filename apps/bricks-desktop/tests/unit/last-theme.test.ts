@@ -98,14 +98,14 @@ describe('rememberTheme: the theme shown is kept, and a refusal is not an error'
 describe('the theme state starts on the theme last shown', () => {
 	it('starts on the kept theme, in dark mode as well', async () => {
 		vi.stubGlobal('localStorage', memoryStorage({ 'bricks.lastTheme': 'dark' }));
-		const { theme } = await import('../../src/lib/theme/theme.svelte');
+		const { theme } = await import('../../src/lib/theme/theme');
 		expect(theme.mode).toBe('dark');
 		expect(theme.resolved).toBe('dark');
 	});
 
 	it('starts on the system theme when nothing was kept', async () => {
 		vi.stubGlobal('localStorage', memoryStorage());
-		const { theme } = await import('../../src/lib/theme/theme.svelte');
+		const { theme } = await import('../../src/lib/theme/theme');
 		expect(theme.mode).toBe('system');
 	});
 });
