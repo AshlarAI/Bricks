@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 231 (2026/11/22)
+
+- Title official releases with the bare CalVer version (`Bricks 2026.11.22`) while git tags keep their `v` prefix.
+
 ### Commit 230 (2026/11/22)
 
 - Rewrite the README with a quick tour of light and dark screenshots, live release and download badges, platform, Rust and license badges, and up-to-date features, downloads and settings.

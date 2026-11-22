@@ -122,7 +122,8 @@ jobs:
                 exit 1
               fi
             fi
-            TITLE="Bricks ${TAG}"
+            # The title shows the bare version; the git tag keeps its v prefix.
+            TITLE="Bricks ${CALVER}"
             PRERELEASE="false"
             BUNDLES_WIN="nsis"
             ZIP_LEVEL="9"
