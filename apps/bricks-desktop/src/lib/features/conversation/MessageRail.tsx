@@ -23,6 +23,7 @@ export interface Mark {
 export interface MessageRailProps {
   marks: Mark[]
   scroller: HTMLElement | null
+  onJumpToTurn?: (key: string) => void
 }
 
 /** The answer as plain text: Markdown's marks go, every other character stays. */
@@ -40,7 +41,7 @@ function plain(text: string): string {
     .trim()
 }
 
-export function MessageRail({ marks, scroller }: MessageRailProps) {
+export function MessageRail({ marks, scroller, onJumpToTurn }: MessageRailProps) {
   const language = useLanguage()
   const [active, setActive] = useState<string | null>(null)
 
@@ -54,22 +55,25 @@ export function MessageRail({ marks, scroller }: MessageRailProps) {
     [scroller],
   )
 
-  /** The message being read: the last one whose top is above the upper third of the view. */
+  /** The message being read: the last rendered one whose top is above the upper third of the view. */
   const measure = useCallback(() => {
     const el = scroller
     const currentMarks = marksRef.current
     if (!el || currentMarks.length === 0) return
     const line = el.getBoundingClientRect().top + el.clientHeight * 0.35
-    let current = currentMarks[0].key
+    let current: string | null = null
+    let firstRendered: string | null = null
     for (const mark of currentMarks) {
       const turn = turnOf(mark.key)
-      if (turn && turn.getBoundingClientRect().top <= line) current = mark.key
+      if (!turn) continue
+      if (firstRendered === null) firstRendered = mark.key
+      if (turn.getBoundingClientRect().top <= line) current = mark.key
     }
     // At the very bottom, the last message is the one read.
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 4) {
       current = currentMarks.at(-1)?.key ?? current
     }
-    setActive(current)
+    setActive(current ?? firstRendered ?? currentMarks[0].key)
   }, [scroller, turnOf])
 
   useEffect(() => {
@@ -96,7 +100,14 @@ export function MessageRail({ marks, scroller }: MessageRailProps) {
 
   function go(key: string) {
     const turn = turnOf(key)
-    if (!turn || !scroller) return
+    if (!turn) {
+      if (onJumpToTurn) {
+        onJumpToTurn(key)
+        setActive(key)
+      }
+      return
+    }
+    if (!scroller) return
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Only the timeline scrolls: `scrollIntoView` would also scroll the clipped panels around it.
     const margin = parseFloat(getComputedStyle(turn).scrollMarginTop) || 0

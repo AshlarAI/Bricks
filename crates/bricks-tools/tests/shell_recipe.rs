@@ -1,10 +1,10 @@
 //! Recipe gaps of the Bash session: cursors of a task's output, spawn errors,
 //! individual interruption, sequential and concurrent state changes, load and
-//! the job quota under concurrent yields. Real processes (Unix). Barriers are
-//! observable files or counts; the only clocks are upper bounds.
+//! the job quota under concurrent background starts. Real processes (Unix).
+//! Barriers are observable files or counts; the only clocks are upper bounds.
 //!
 //! Complements `shell_session.rs` (state, isolation, timeouts, cleanup) and
-//! the unit tests of `src/bash.rs` (yield, timeout after yield).
+//! the unit tests of `src/bash.rs`.
 
 #![cfg(unix)]
 
@@ -150,7 +150,7 @@ async fn job_output_pages_follow_the_cursor_without_omission() {
         .execute(
             json!({
                 "command": "for i in 1 2 3 4 5 6 7; do echo line$i; sleep 0.15; done",
-                "yield_time_ms": 100
+                "background": true
             }),
             &c,
         )
@@ -353,11 +353,11 @@ async fn ten_concurrent_commands_of_one_agent_run_side_by_side() {
     }
 }
 
-/// Load: 8, 16 then 32 commands of one session, each started with a yield
-/// and all handed over at once under a quota of 32. Every one is a task,
-/// none is lost, and the registry counts exactly what was launched.
+/// Load: 8, 16 then 32 background commands of one session, all started at once
+/// under a quota of 32. Every one is a task, none is lost, and the registry
+/// counts exactly what was launched.
 #[tokio::test]
-async fn loads_of_8_16_and_32_commands_are_all_handed_over_under_a_quota_of_32() {
+async fn loads_of_8_16_and_32_background_commands_succeed_under_a_quota_of_32() {
     let dir = tempfile::tempdir().unwrap();
     let sid = format!("load-{}", uuid::Uuid::new_v4());
     let reg = JobRegistry::new(
@@ -378,7 +378,7 @@ async fn loads_of_8_16_and_32_commands_are_all_handed_over_under_a_quota_of_32()
             let cmd = format!("touch '{d}/l{n}_{i}'; sleep 1.5; echo done-{n}-{i}");
             handles.push(tokio::spawn(async move {
                 BashTool::with_jobs(Arc::clone(&reg_for_wave))
-                    .execute(json!({ "command": cmd, "yield_time_ms": 100 }), &ctx)
+                    .execute(json!({ "command": cmd, "background": true }), &ctx)
                     .await
             }));
         }
@@ -388,7 +388,7 @@ async fn loads_of_8_16_and_32_commands_are_all_handed_over_under_a_quota_of_32()
             if r.running {
                 running += 1;
             } else {
-                panic!("not handed over: {}", r.content);
+                panic!("not started: {}", r.content);
             }
         }
         assert_eq!(running, n);
@@ -407,10 +407,10 @@ async fn loads_of_8_16_and_32_commands_are_all_handed_over_under_a_quota_of_32()
     shell::close_session(&sid).await;
 }
 
-/// Calls beyond the quota of running jobs wait for their command instead of
-/// starting a task: never more hand-overs than places.
+/// Calls beyond the quota of running jobs are refused before starting: never
+/// more background jobs than places.
 #[tokio::test]
-async fn concurrent_yields_never_hand_over_more_than_the_quota() {
+async fn concurrent_background_starts_never_exceed_the_quota() {
     let dir = tempfile::tempdir().unwrap();
     let sid = format!("quota-{}", uuid::Uuid::new_v4());
     let reg = JobRegistry::new(
@@ -426,23 +426,23 @@ async fn concurrent_yields_never_hand_over_more_than_the_quota() {
         let reg_for_call = Arc::clone(&reg);
         handles.push(tokio::spawn(async move {
             BashTool::with_jobs(reg_for_call)
-                .execute(json!({ "command": "sleep 2", "yield_time_ms": 50 }), &ctx)
+                .execute(json!({ "command": "sleep 2", "background": true }), &ctx)
                 .await
         }));
     }
-    let mut handed = 0;
-    let mut waited = 0;
+    let mut started = 0;
+    let mut refused = 0;
     for h in handles {
         let r: ToolResultLike = h.await.unwrap().into();
         if r.running {
-            handed += 1;
+            started += 1;
         } else {
-            waited += 1;
+            refused += 1;
             assert!(r.content.contains("max_jobs"), "{}", r.content);
         }
     }
-    assert_eq!(handed, 8, "exactly the places are handed over");
-    assert_eq!(waited, 32);
+    assert_eq!(started, 8, "exactly the places are granted");
+    assert_eq!(refused, 32);
     shell::close_session(&sid).await;
 }
 

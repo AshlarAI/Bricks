@@ -24,6 +24,60 @@ export type TimelineBlock =
   | { kind: 'item'; key: string; item: TimelineItem; /** The run's answer: its text only. */ answer?: boolean }
   | WorkBlock
 
+export interface TurnWindow {
+  visible: readonly TimelineItem[]
+  hiddenTurns: number
+  totalTurns: number
+  startIndex: number
+}
+
+/**
+ * Slice `items` to the last `maxTurns` user turns, always starting at a turn/run
+ * boundary so a run's `WorkBlock` is never split in half.
+ */
+export function turnWindow(items: readonly TimelineItem[], maxTurns: number): TurnWindow {
+  const userIndices: number[] = []
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].kind === 'user') userIndices.push(i)
+  }
+  const totalTurns = userIndices.length
+  if (totalTurns === 0 || maxTurns >= totalTurns) {
+    return { visible: items, hiddenTurns: 0, totalTurns, startIndex: 0 }
+  }
+  const keep = Math.max(1, maxTurns)
+  let startIndex = userIndices[totalTurns - keep]
+  const startRunId = items[startIndex]?.runId
+  if (startRunId) {
+    while (startIndex > 0 && items[startIndex - 1]?.runId === startRunId) {
+      startIndex--
+    }
+  }
+  let hiddenTurns = 0
+  for (const idx of userIndices) {
+    if (idx < startIndex) hiddenTurns++
+    else break
+  }
+  return {
+    visible: startIndex > 0 ? items.slice(startIndex) : items,
+    hiddenTurns,
+    totalTurns,
+    startIndex,
+  }
+}
+
+/**
+ * Number of trailing turns needed to bring the user message with `id === itemId`
+ * into the visible window, or `null` when no matching user item exists.
+ */
+export function turnsRequiredForKey(items: readonly TimelineItem[], itemId: string): number | null {
+  const userIds: string[] = []
+  for (const item of items) {
+    if (item.kind === 'user') userIds.push(item.id)
+  }
+  const pos = userIds.indexOf(itemId)
+  return pos === -1 ? null : userIds.length - pos
+}
+
 /** The last message with text of an ended run: its answer. `null` while it runs. */
 export function answerOf(
   items: readonly TimelineItem[],

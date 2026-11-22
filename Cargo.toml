@@ -31,7 +31,7 @@ members = [
 [workspace.package]
 version = "2026.11.15"
 edition = "2024"
-authors = ["Adib Mohsin"]
+authors = ["ainsiparlaitzarathoustra"]
 license = "MPL-2.0"
 description = "A modular Rust SDK for building coding agents"
 repository = "https://github.com/ainsiparlaitzarathoustra/bricks"

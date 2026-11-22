@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDownIcon } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { Button } from '$lib/components/ui/button'
 import { t, useLanguage } from '$lib/i18n/i18n'
-import { useConversation, type Conversation, type TimelineItem } from '$lib/state/conversation'
+import { cn } from '$lib/utils'
+import { useConversation, type Conversation, type TimelineItem, type UserItem } from '$lib/state/conversation'
 import { OUTCOME_LABEL, truncate } from './format'
 import ApprovalCard from './timeline/ApprovalCard'
 import QuestionCard from './timeline/QuestionCard'
@@ -11,30 +12,61 @@ import SkillsTrustBanner from './timeline/SkillsTrustBanner'
 import TimelineEntry from './timeline/TimelineEntry'
 import WorkBlock from './timeline/WorkBlock'
 import MessageRail from './MessageRail'
-import { timelineBlocks } from './runBlocks'
+import { timelineBlocks, turnWindow, turnsRequiredForKey } from './runBlocks'
 
 export interface ConversationTimelineProps {
   conversation: Conversation
 }
 
-/** Items rendered at once; earlier ones load on request (keeps long conversations light). */
-const WINDOW = 120
+/** User turns rendered at once; earlier ones load on scroll or request. */
+const TURN_WINDOW = 20
 const NEAR_BOTTOM_PX = 80
+/** Keep the tail and active work out of `content-visibility: auto` so initial paint stays immediate. */
+const DEFERRED_TAIL_BLOCKS = 6
+
+function firstVisibleBlock(list: HTMLElement | null): HTMLElement | null {
+  if (!list) return null
+  for (const el of list.querySelectorAll<HTMLElement>('[data-block-key]')) {
+    if (el.getBoundingClientRect().height > 0 || el.childElementCount > 0) return el
+  }
+  return null
+}
 
 export function ConversationTimeline({ conversation }: ConversationTimelineProps) {
-  useLanguage()
+  const language = useLanguage()
   useConversation(conversation)
 
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const topSentinelRef = useRef<HTMLDivElement | null>(null)
   const [nearBottom, setNearBottom] = useState(true)
   const nearBottomRef = useRef(true)
   /** Items that arrived while the user was scrolled up. */
   const [unseen, setUnseen] = useState(0)
-  const [limit, setLimit] = useState(WINDOW)
+  const [turnLimit, setTurnLimit] = useState(TURN_WINDOW)
+  const [trackedConv, setTrackedConv] = useState(conversation)
   /** Text of the polite live region: completed messages and attention needs only. */
   const [announcement, setAnnouncement] = useState('')
+
+  const pendingScrollAdjustRef = useRef<{
+    key: string | null
+    top: number
+    scrollHeight: number
+  } | null>(null)
+  const pendingJumpKeyRef = useRef<string | null>(null)
+  const autoLoadInFlightRef = useRef(false)
+
+  if (trackedConv !== conversation) {
+    setTrackedConv(conversation)
+    setTurnLimit(TURN_WINDOW)
+    setUnseen(0)
+    setNearBottom(true)
+    nearBottomRef.current = true
+    pendingScrollAdjustRef.current = null
+    pendingJumpKeyRef.current = null
+    autoLoadInFlightRef.current = false
+  }
 
   const handleViewportRef = useCallback((el: HTMLDivElement | null) => {
     scrollRef.current = el
@@ -42,47 +74,47 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
   }, [])
 
   const items = conversation.items
+  const convVersion = typeof conversation.getSnapshot === 'function' ? conversation.getSnapshot() : 0
   const running = conversation.running
   const runningRef = useRef(running)
   runningRef.current = running
 
-  const hiddenCount = Math.max(0, items.length - limit)
-  const visible = hiddenCount > 0 ? items.slice(hiddenCount) : items
-  const blocks = timelineBlocks(visible, items, conversation.runs, conversation.runningRunId)
+  const { visible, hiddenTurns } = useMemo(
+    () => turnWindow(items, turnLimit),
+    [items, turnLimit, convVersion],
+  )
+  const blocks = useMemo(
+    () => timelineBlocks(visible, items, conversation.runs, conversation.runningRunId),
+    [visible, items, conversation, convVersion],
+  )
 
-  /** The place of each message sent in the whole conversation, and how many there are. */
-  const userOrder = new Map<string, number>()
-  for (const item of items) {
-    if (item.kind === 'user') userOrder.set(item.id, userOrder.size + 1)
-  }
-
-  /** The answer of each ended run: its last message with text, found in one pass from the end. */
-  const lastAnswers = new Map<string, string>()
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]
-    if (item.kind === 'assistant' && item.runId && !lastAnswers.has(item.runId) && item.text.trim()) {
-      lastAnswers.set(item.runId, item.text)
+  /** One grain per message sent across the full conversation: the message, its answer, its time. */
+  const marks = useMemo(() => {
+    const users: UserItem[] = []
+    for (const item of items) {
+      if (item.kind === 'user') users.push(item)
     }
-  }
-
-  /** One grain per message sent, among the rendered ones: the message, its answer, its time. */
-  const marks = blocks.flatMap((block) => {
-    if (block.kind !== 'item' || block.item.kind !== 'user') return []
-    const item = block.item
-    const run = item.runId ? conversation.runs.get(item.runId) : undefined
-    const ended = item.runId !== undefined && item.runId !== conversation.runningRunId
-    const answer = ended ? (run?.finalText ?? lastAnswers.get(item.runId!) ?? '') : ''
-    return [
-      {
-        key: block.key,
+    const lastAnswers = new Map<string, string>()
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      if (item.kind === 'assistant' && item.runId && !lastAnswers.has(item.runId) && item.text.trim()) {
+        lastAnswers.set(item.runId, item.text)
+      }
+    }
+    return users.map((item, idx) => {
+      const run = item.runId ? conversation.runs.get(item.runId) : undefined
+      const ended = item.runId !== undefined && item.runId !== conversation.runningRunId
+      const answer = ended ? (run?.finalText ?? lastAnswers.get(item.runId!) ?? '') : ''
+      return {
+        key: item.id,
         label: truncate(item.text.trim() || t('conversation.message'), 80),
         answer: truncate(answer.trim(), 400),
         at: item.at ?? run?.startedAt ?? null,
-        place: userOrder.get(item.id) ?? 0,
-        total: userOrder.size,
-      },
-    ]
-  })
+        place: idx + 1,
+        total: users.length,
+      }
+    })
+  }, [items, conversation, convVersion, language])
 
   /** The run at work has no block when none of its items is in the view (it started elsewhere). */
   const runningWithoutBlock =
@@ -90,13 +122,21 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
     !blocks.some((block) => block.kind === 'work' && block.runId === conversation.runningRunId)
 
   /** Waiting approvals with no card in the timeline (e.g. after a reload). */
-  const orphanApprovals = conversation.pendingApprovals.filter(
-    (approval) => !items.some((item) => item.kind === 'approval' && item.approval.approval_id === approval.approval_id),
+  const orphanApprovals = useMemo(
+    () =>
+      conversation.pendingApprovals.filter(
+        (approval) => !items.some((item) => item.kind === 'approval' && item.approval.approval_id === approval.approval_id),
+      ),
+    [conversation, items, convVersion],
   )
 
   /** Waiting questions with no card in the timeline (e.g. after a reload). */
-  const orphanQuestions = conversation.pendingQuestions.filter(
-    (question) => !items.some((item) => item.kind === 'question' && item.question.question_id === question.question_id),
+  const orphanQuestions = useMemo(
+    () =>
+      conversation.pendingQuestions.filter(
+        (question) => !items.some((item) => item.kind === 'question' && item.question.question_id === question.question_id),
+      ),
+    [conversation, items, convVersion],
   )
 
   /** Length of the growing text of the last item: changes on every streamed delta. */
@@ -127,21 +167,62 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
     setUnseen(0)
   }, [])
 
-  const pendingScrollAdjustRef = useRef<number | null>(null)
-  function loadEarlier() {
+  const loadEarlier = useCallback(() => {
     const el = scrollRef.current
-    pendingScrollAdjustRef.current = el ? el.scrollHeight : null
-    setLimit((prev) => prev + WINDOW)
-  }
+    const anchor = firstVisibleBlock(listRef.current)
+    pendingScrollAdjustRef.current = el
+      ? {
+          key: anchor?.dataset.blockKey ?? null,
+          top: anchor ? anchor.getBoundingClientRect().top : 0,
+          scrollHeight: el.scrollHeight,
+        }
+      : null
+    setTurnLimit((prev) => prev + TURN_WINDOW)
+  }, [])
+
+  const jumpToTurn = useCallback(
+    (key: string) => {
+      const needed = turnsRequiredForKey(items, key)
+      if (needed === null) return
+      nearBottomRef.current = false
+      setNearBottom(false)
+      pendingScrollAdjustRef.current = null
+      pendingJumpKeyRef.current = key
+      setTurnLimit((prev) => (prev >= needed ? prev : needed))
+    },
+    [items],
+  )
 
   useLayoutEffect(() => {
-    const before = pendingScrollAdjustRef.current
-    if (before === null) return
-    pendingScrollAdjustRef.current = null
-    // Keep the reader on the same message when older ones are added above.
+    autoLoadInFlightRef.current = false
     const el = scrollRef.current
-    if (el) el.scrollTop += el.scrollHeight - before
-  }, [limit])
+    const jumpKey = pendingJumpKeyRef.current
+    if (jumpKey && el) {
+      const turn = el.querySelector<HTMLElement>(`[data-turn="${CSS.escape(jumpKey)}"]`)
+      if (turn) {
+        pendingJumpKeyRef.current = null
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const margin = parseFloat(getComputedStyle(turn).scrollMarginTop) || 0
+        const top =
+          turn.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - margin
+        el.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' })
+        updateNearBottom()
+        return
+      }
+    }
+    const adj = pendingScrollAdjustRef.current
+    if (!adj) return
+    pendingScrollAdjustRef.current = null
+    if (!el) return
+    const anchor = adj.key
+      ? listRef.current?.querySelector<HTMLElement>(`[data-block-key="${CSS.escape(adj.key)}"]`)
+      : null
+    if (anchor && anchor.getBoundingClientRect().height > 0) {
+      el.scrollTop += anchor.getBoundingClientRect().top - adj.top
+    } else {
+      el.scrollTop += el.scrollHeight - adj.scrollHeight
+    }
+  }, [turnLimit, updateNearBottom])
 
   const prevConversationRef = useRef(conversation)
   const prevCountRef = useRef(-1)
@@ -183,6 +264,24 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
     orphanApprovals.length,
     scrollToBottom,
   ])
+
+  // Auto-load the next turn slice as the reader scrolls near the top.
+  useEffect(() => {
+    if (!scrollEl || hiddenTurns <= 0 || typeof IntersectionObserver === 'undefined') return
+    const sentinel = topSentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        if (!initialisedRef.current || nearBottomRef.current || autoLoadInFlightRef.current) return
+        autoLoadInFlightRef.current = true
+        loadEarlier()
+      },
+      { root: scrollEl, rootMargin: '200px 0px 0px 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [scrollEl, hiddenTurns, loadEarlier])
 
   // Panel resizes: stay at the bottom if we were there. While a run streams,
   // the rendered answer grows after the text changed (throttled rendering):
@@ -243,7 +342,7 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
   }, [conversation, items.length])
 
   return (
-    <div className="@container relative flex h-full min-h-0 flex-1 flex-col">
+    <div className="@container relative flex h-full min-h-0 flex-1 flex-col overflow-clip">
       {/* The timeline scrolls: keyboard users must be able to focus it (WCAG 2.1.1). */}
       <ScrollArea
         className="min-h-0 flex-1"
@@ -264,35 +363,51 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
           aria-label={t('conversation.conversationMessages')}
           className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-6 pb-10"
         >
-          {hiddenCount > 0 && (
-            <div className="flex justify-center">
-              <Button variant="ghost" size="sm" onClick={loadEarlier}>
-                {t('conversation.loadEarlierMessages', { hiddenCount })}
+          {hiddenTurns > 0 && (
+            <div ref={topSentinelRef} className="flex justify-center">
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-full bg-background shadow-md"
+                aria-label={t('conversation.loadEarlierMessages', { hiddenCount: hiddenTurns })}
+                title={t('conversation.loadEarlierMessages', { hiddenCount: hiddenTurns })}
+                onClick={loadEarlier}
+              >
+                <ArrowUpIcon />
               </Button>
             </div>
           )}
 
-          {blocks.map((block) => {
-            if (block.kind === 'work') {
-              return (
-                <WorkBlock
-                  key={block.key}
-                  conversation={conversation}
-                  runId={block.runId}
-                  items={block.items}
-                  answerReasoning={block.answerReasoning}
-                />
-              )
-            }
-            if (block.item.kind === 'user') {
-              return (
-                <div key={block.key} data-turn={block.key} className="scroll-mt-8">
-                  <TimelineEntry item={block.item} conversation={conversation} answer={block.answer} />
-                </div>
-              )
-            }
+          {blocks.map((block, index) => {
+            const isUser = block.kind === 'item' && block.item.kind === 'user'
+            const isRunningBlock =
+              conversation.runningRunId !== null &&
+              (block.kind === 'work'
+                ? block.runId === conversation.runningRunId
+                : block.item.runId === conversation.runningRunId)
+            const deferred = index < blocks.length - DEFERRED_TAIL_BLOCKS && !isRunningBlock
             return (
-              <TimelineEntry key={block.key} item={block.item} conversation={conversation} answer={block.answer} />
+              <div
+                key={block.key}
+                data-block-key={block.key}
+                data-turn={isUser ? block.key : undefined}
+                className={cn(
+                  'flex flex-col gap-6 empty:hidden',
+                  isUser && 'scroll-mt-8',
+                  deferred && 'timeline-block-deferred',
+                )}
+              >
+                {block.kind === 'work' ? (
+                  <WorkBlock
+                    conversation={conversation}
+                    runId={block.runId}
+                    items={block.items}
+                    answerReasoning={block.answerReasoning}
+                  />
+                ) : (
+                  <TimelineEntry item={block.item} conversation={conversation} answer={block.answer} />
+                )}
+              </div>
             )
           })}
 
@@ -315,7 +430,7 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
         </div>
       </ScrollArea>
 
-      <MessageRail marks={marks} scroller={scrollEl} />
+      <MessageRail marks={marks} scroller={scrollEl} onJumpToTurn={jumpToTurn} />
 
       {!nearBottom && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">

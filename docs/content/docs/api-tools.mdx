@@ -110,11 +110,11 @@ Convenience functions that return pre-configured tool collections:
 
 | Function | Count | Tools Included |
 |----------|-------|----------------|
-| `bricks::tools::all()` | 13 (14 with PowerShell) | `coding()` plus `TodoWrite` |
-| `bricks::tools::coding()` | 12 (13 with PowerShell) | filesystem + shell_with_jobs (on a fresh registry) + web |
+| `bricks::tools::all()` | 13 on Unix, 12 on Windows | `coding()` plus `TodoWrite` |
+| `bricks::tools::coding()` | 12 on Unix, 11 on Windows | filesystem + shell_with_jobs (on a fresh registry) + web |
 | `bricks::tools::filesystem()` | 8 | Read (text and images), Write, Edit, ApplyPatch, Glob, Grep, CodeScout, CodeStats |
-| `bricks::tools::shell()` | 1 (2 with PowerShell) | Bash (no job registry: commands that may become a job are refused), PowerShell (on Windows or when `pwsh` is on `PATH`) |
-| `bricks::tools::shell_with_jobs(registry)` | 2 (3 with PowerShell) | Bash and Job on `registry`, PowerShell (when available) |
+| `bricks::tools::shell()` | 1 | `Bash` on Unix (no job registry: `background: true` is refused), `PowerShell` on Windows |
+| `bricks::tools::shell_with_jobs(registry)` | 2 on Unix, 1 on Windows | `Bash` and `Job` on `registry` on Unix, `PowerShell` on Windows |
 | `bricks::tools::web()` | 2 | WebFetch, WebSearch |
 | `bricks::tools::planning()` | 1 | TodoWrite |
 | `bricks::tools::none()` | 0 | Empty (for chat-only agents) |
@@ -142,7 +142,7 @@ The permission level is the one each tool declares in code (`permission_level()`
 
 | Tool | Permission | Description |
 |------|-----------|-------------|
-| `BashTool` | Execute | Run a command as its own process, started from the session's state. Timeout, output bounded. A command still running after `yield_time_ms` is handed over as a job; `background: true` starts one at once. With `BashTool::default()` (no registry) such a command is refused before it starts. |
+| `BashTool` | Execute | Run a command as its own process, started from the session's state. Timeout, output bounded. Foreground commands run until completion or `timeout`; `background: true` starts a job at once. With `BashTool::default()` (no registry), `background: true` is refused before it starts. |
 | `JobTool` | Execute (`stop`) / ReadOnly (`list`, `status`, `output`, `wait`) | List, inspect, read, wait for and stop the jobs of the calling agent. Needs the `JobOwner` identity in the tool context, which the runner sets. |
 | `PowerShellTool` | Execute | Windows PowerShell execution, with one interpreter per session. |
 
@@ -440,12 +440,12 @@ Closing the agent (`agent.close().await`, async) or dropping it stops the sessio
 
 ## Background Jobs
 
-A job is a command that keeps running after its call returned: one started with `background: true`, or one handed over after `yield_time_ms`. The jobs of a session are kept by a `JobRegistry` (`bricks_tools::jobs`), which holds the quota, the owner of each job, its events and its logs. `JobSettings` (the `[background]` table) sets the limits, with these defaults: `max_jobs` 16, `output_buffer_bytes` 1 MiB per stream, `max_line_bytes` 64 KiB, `raw_log_bytes` 50 MiB per log, `stop_grace_ms` 2000, `max_page_bytes` 64 KiB.
+A job is a command started with `background: true` that keeps running after its call returns. The jobs of a session are kept by a `JobRegistry` (`bricks_tools::jobs`), which holds the quota, the owner of each job, its events and its logs. `JobSettings` (the `[background]` table) sets the limits, with these defaults: `max_jobs` 16, `output_buffer_bytes` 1 MiB per stream, `max_line_bytes` 64 KiB, `raw_log_bytes` 50 MiB per log, `stop_grace_ms` 2000, `max_page_bytes` 64 KiB.
 
 | Function | Tools |
 |---|---|
-| `shell()` | `BashTool::default()` (no registry: a command that may become a job is refused before it starts), `PowerShellTool` |
-| `shell_with_jobs(registry)` | `BashTool` and `JobTool` on `registry`, `PowerShellTool` |
+| `shell()` | `BashTool::default()` on Unix (no registry: `background: true` is refused before it starts), `PowerShellTool` on Windows |
+| `shell_with_jobs(registry)` | `BashTool` and `JobTool` on `registry` on Unix, `PowerShellTool` on Windows |
 | `coding()`, `all()` | `shell_with_jobs` on a fresh registry |
 | `on_job_registry(tools, &registry)` | Each tool whose `job_registry()` is set moves to `registry` (`on_job_registry()`); `JobTool` is added when Bash is present without it |
 
@@ -458,6 +458,6 @@ let tools = bricks_tools::shell_with_jobs(Arc::clone(&registry));
 
 When an agent is built, `AgentBuilder::build` looks at its job tools. If its extensions hold a `JobsHandle` (sessions and sub-agents get one), the tools are put on that registry. Otherwise the registry of the tools becomes the agent's `JobsHandle`. Tools on two different registries are refused with `BricksError::Config` before any model call.
 
-A job belongs to the agent that started it: `JobTool` and `Bash` read the `JobOwner` in the tool context, which the runner sets for each agent. Without an owner, `Bash` refuses a command that may become a job, and `Job` answers with an error.
+A job belongs to the agent that started it: `JobTool` and `Bash` read the `JobOwner` in the tool context, which the runner sets for each agent. Without an owner, `Bash` refuses `background: true`, and `Job` answers with an error.
 
 Code that reads a job's output uses `Task::read(stream, OutputPosition::Offset(n) | OutputPosition::Tail, limit)` (`bricks_tools::shell::background`). It returns a `Page`: its lines with their absolute line numbers, its totals, and `evicted`, the number of lines no longer in memory.

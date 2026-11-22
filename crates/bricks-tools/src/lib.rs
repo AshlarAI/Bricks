@@ -474,9 +474,9 @@ mod tool_image_tests {
 
 // ─── Built-in tool sets ──────────────────────────────────────────────────────
 
-/// All built-in tools: the standard coding tools plus `TodoWrite`. Bash and
-/// Job are on a registry of their own (an agent built with a session's
-/// registry puts them on it). Worktree isolation is managed by the
+/// All built-in tools: the standard coding tools plus `TodoWrite`. On Unix,
+/// `Bash` and `Job` are on a registry of their own (an agent built with a
+/// session's registry puts them on it). Worktree isolation is managed by the
 /// sub-agent runtime, independently of `all()`.
 pub fn all() -> Vec<Box<dyn Tool>> {
     let mut tools = coding();
@@ -484,9 +484,9 @@ pub fn all() -> Vec<Box<dyn Tool>> {
     tools
 }
 
-/// All coding-oriented tools (filesystem + shell with jobs + web), Bash and
-/// Job on a registry of their own (an agent built with a session's registry
-/// puts them on it).
+/// All coding-oriented tools (filesystem + shell with jobs + web). On Unix,
+/// `Bash` and `Job` are on a registry of their own (an agent built with a
+/// session's registry puts them on it).
 pub fn coding() -> Vec<Box<dyn Tool>> {
     let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     tools.extend(filesystem());
@@ -517,29 +517,34 @@ pub fn filesystem() -> Vec<Box<dyn Tool>> {
     ]
 }
 
-/// Shell tools without jobs: Bash (commands that end in the call only; a
-/// command that may become a job is refused before it starts), and PowerShell
-/// where it can run (see [`powershell_available`]).
+/// Native shell tools without jobs: `Bash` on Unix (background commands need a
+/// registry and are refused before starting), `PowerShell` on non-Unix.
 pub fn shell() -> Vec<Box<dyn Tool>> {
-    let mut tools: Vec<Box<dyn Tool>> = vec![Box::new(bash::BashTool::default())];
-    if powershell_available() {
-        tools.push(Box::new(powershell::PowerShellTool));
+    #[cfg(unix)]
+    {
+        vec![Box::new(bash::BashTool::default())]
     }
-    tools
+    #[cfg(not(unix))]
+    {
+        vec![Box::new(powershell::PowerShellTool)]
+    }
 }
 
-/// Shell tools on one job registry: Bash records its background and
-/// handed-over commands there, Job follows them, and PowerShell where it can
-/// run (see [`powershell_available`]). What a session uses.
+/// Native shell tools on one job registry: `Bash` and `Job` on Unix,
+/// `PowerShell` on non-Unix. What a session uses.
 pub fn shell_with_jobs(registry: Arc<jobs::JobRegistry>) -> Vec<Box<dyn Tool>> {
-    let mut tools: Vec<Box<dyn Tool>> = vec![
-        Box::new(bash::BashTool::with_jobs(Arc::clone(&registry))),
-        Box::new(jobs::JobTool::new(registry)),
-    ];
-    if powershell_available() {
-        tools.push(Box::new(powershell::PowerShellTool));
+    #[cfg(unix)]
+    {
+        vec![
+            Box::new(bash::BashTool::with_jobs(Arc::clone(&registry))),
+            Box::new(jobs::JobTool::new(registry)),
+        ]
     }
-    tools
+    #[cfg(not(unix))]
+    {
+        let _ = registry;
+        vec![Box::new(powershell::PowerShellTool)]
+    }
 }
 
 /// Whether the PowerShell tool can run here: always on Windows, elsewhere
@@ -650,7 +655,10 @@ mod unknown_parameter_policy {
     }
 
     /// The built-in tools with no required parameter, in `all()` order.
+    #[cfg(unix)]
     const UNPROBED: &[&str] = &["CodeScout", "CodeStats", "Job", "WebFetch"];
+    #[cfg(not(unix))]
+    const UNPROBED: &[&str] = &["CodeScout", "CodeStats", "WebFetch"];
 
     /// Every tool must reject a parameter it does not declare.
     ///

@@ -442,7 +442,7 @@ export function AppShell({
 
   return (
     <>
-      <div className="flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-sidebar text-foreground">
+      <div className="flex h-dvh min-h-0 w-full flex-col overflow-clip bg-sidebar text-foreground">
         <h1 className="sr-only">Bricks</h1>
         {topbar ? topbar(controls) : <TopBar {...controls} />}
 
@@ -470,7 +470,7 @@ export function AppShell({
                     collapsedSize="0%"
                   >
                     <div
-                      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
+                      className="flex h-full min-h-0 min-w-0 flex-col overflow-clip bg-sidebar text-sidebar-foreground"
                       inert={!leftInline}
                       style={{ minWidth: leftInline ? undefined : `${sides.left ?? leftWidth}px` }}
                     >
@@ -490,7 +490,7 @@ export function AppShell({
               <ResizablePanel id="bricks-center" defaultSize={`${centerPct}%`} minSize={`${centerMinPct}%`}>
                 <div
                   ref={centerRef}
-                  className={`flex h-full min-w-0 flex-col overflow-hidden border-y border-l border-border-subtle bg-background ${
+                  className={`flex h-full min-w-0 flex-col overflow-clip border-y border-l border-border-subtle bg-background ${
                     rightInline && right ? 'rounded-l-xl' : 'rounded-xl border-r'
                   }`}
                 >
@@ -501,7 +501,7 @@ export function AppShell({
                     className="flex h-full w-full flex-col"
                   >
                     <ResizablePanel id="bricks-conversation" defaultSize={`${convPct}%`} minSize={`${convMinPct}%`}>
-                      <main aria-label={t('common.conversation')} className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+                      <main aria-label={t('common.conversation')} className="flex h-full min-h-0 min-w-0 flex-col overflow-clip bg-background">
                         {center}
                       </main>
                     </ResizablePanel>
@@ -546,11 +546,11 @@ export function AppShell({
                     collapsedSize="0%"
                   >
                     {/* While it closes, the panel keeps its width and slides out: nothing in it reflows or stays visible. */}
-                    <div className="flex h-full min-h-0 justify-end overflow-hidden">
+                    <div className="flex h-full min-h-0 justify-end overflow-clip">
                       <aside
                         aria-label={t('common.context')}
                         inert={!rightInline}
-                        className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-r-xl border-y border-r border-border-subtle bg-background text-foreground"
+                        className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col overflow-clip rounded-r-xl border-y border-r border-border-subtle bg-background text-foreground"
                         style={{ minWidth: rightInline ? undefined : `${sides.right ?? rightWidth}px` }}
                       >
                         {right}
@@ -568,7 +568,7 @@ export function AppShell({
         <Sheet open={leftOverlay} onOpenChange={setLeftOverlay}>
           <SheetContent side="left" className="gap-0 p-0" style={{ width: 'min(20rem, 88vw)' }}>
             <SheetTitle className="sr-only">{t('layout.leftPanel')}</SheetTitle>
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">{left}</div>
+            <div className="flex h-full min-h-0 flex-col overflow-clip">{left}</div>
           </SheetContent>
         </Sheet>
       )}
@@ -581,7 +581,7 @@ export function AppShell({
             style={{ width: `min(${rightWidth}px, 92vw)` }}
           >
             <SheetTitle className="sr-only">{t('layout.rightPanel')}</SheetTitle>
-            <aside aria-label={t('common.context')} className="flex h-full min-h-0 flex-col overflow-hidden">
+            <aside aria-label={t('common.context')} className="flex h-full min-h-0 flex-col overflow-clip">
               {right}
             </aside>
           </SheetContent>

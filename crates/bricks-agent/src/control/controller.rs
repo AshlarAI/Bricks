@@ -626,8 +626,8 @@ fn build_agent(
     ext.insert(bricks_tools::todo_write::PlanHandle(
         bricks_tools::todo_write::PlanService::in_dir(&files_dir(cfg, &meta.id)),
     ));
-    // The `[bash]` settings of the project (`yield_time_ms`, `extra_path`)
-    // shape the shell of the Bash tool; everything else keeps its default.
+    // The `[bash]` settings of the project (`extra_path`) shape the shell of
+    // the Bash tool; everything else keeps its default.
     let mut shell = bricks_tools::shell::ShellConfig::default();
     project.bricks.bash.apply_to(&mut shell);
     ext.insert(shell);

@@ -239,7 +239,7 @@ async fn background_jobs_through_the_agent() {
                     "command": server,
                     "background": true,
                     "ready_pattern": "port \\d+",
-                    "ready_timeout": 15000
+                    "timeout": 15000
                 }),
             ),
             1 => tool_call("b2", "Job", json!({ "action": "output", "job_id": id })),

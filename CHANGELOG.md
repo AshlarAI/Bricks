@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 232 (2026/11/22)
+
+- Simplify `Bash` to 5 parameters by removing automatic foreground handover (`yield_time_ms`) and `ready_timeout`, expose only the platform-native shell by default, translate `PowerShell` errors to English, and push finished background job notifications into the agent turn loop.
+- Coalesce consecutive streaming deltas in the desktop event hub over a 16 ms window, paginate the conversation timeline by user turns with a symmetric round `ArrowUpIcon` button and full-history `MessageRail`, memoize timeline blocks with `content-visibility: auto`, prevent drag-selection scrolling into empty space with `overflow: clip`, render Markdown inline code in the UI font at inherited size, and update workspace package authors in `Cargo.toml`.
+
 ### Commit 231 (2026/11/22)
 
 - Title official releases with the bare CalVer version (`Bricks 2026.11.22`) while git tags keep their `v` prefix.

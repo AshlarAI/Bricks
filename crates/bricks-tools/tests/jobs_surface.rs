@@ -1,5 +1,5 @@
-//! The jobs surface, through the tools: `Bash` (background, handed over,
-//! refusals without a registry) and `Job` (argument rules, owners, listing,
+//! The jobs surface, through the tools: `Bash` (background, refusals
+//! without a registry) and `Job` (argument rules, owners, listing,
 //! output pages, wait, stop). Real processes (Unix); waits poll observable
 //! state, and the only clocks are upper bounds.
 
@@ -47,17 +47,6 @@ fn ctx(dir: &Path, reg: &Arc<JobRegistry>, agent: &str) -> ToolContext {
 async fn background(reg: &Arc<JobRegistry>, c: &ToolContext, command: &str) -> ToolResult {
     BashTool::with_jobs(Arc::clone(reg))
         .execute(json!({ "command": command, "background": true }), c)
-        .await
-}
-
-async fn yielded(
-    reg: &Arc<JobRegistry>,
-    c: &ToolContext,
-    command: &str,
-    yield_ms: u64,
-) -> ToolResult {
-    BashTool::with_jobs(Arc::clone(reg))
-        .execute(json!({ "command": command, "yield_time_ms": yield_ms }), c)
         .await
 }
 
@@ -179,24 +168,17 @@ async fn job_arguments_out_of_range_or_unknown_are_refused_with_a_reason() {
 // ─── Owners ──────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn background_and_handed_over_jobs_are_followed_by_their_owner_only() {
+async fn background_jobs_are_followed_by_their_owner_only() {
     let dir = tempfile::tempdir().unwrap();
     let reg = JobRegistry::new(settings(), None);
     let a = ctx(dir.path(), &reg, "agent_a");
     let b = ctx(dir.path(), &reg, "agent_b");
 
-    let bg = id_of(&background(&reg, &a, "sleep 30").await);
-    let y = yielded(&reg, &a, "sleep 30", 100).await;
-    assert_eq!(
-        y.report.as_ref().unwrap().status,
-        ToolStatus::Running,
-        "{}",
-        y.content
-    );
-    let handed = id_of(&y);
+    let bg1 = id_of(&background(&reg, &a, "sleep 30").await);
+    let bg2 = id_of(&background(&reg, &a, "sleep 30").await);
 
     let list_a = job(&reg, &a, json!({})).await.content;
-    assert!(list_a.contains(&bg) && list_a.contains(&handed), "{list_a}");
+    assert!(list_a.contains(&bg1) && list_a.contains(&bg2), "{list_a}");
     assert!(
         job(&reg, &b, json!({}))
             .await
@@ -204,7 +186,7 @@ async fn background_and_handed_over_jobs_are_followed_by_their_owner_only() {
             .contains("You have no jobs")
     );
 
-    for id in [bg.as_str(), handed.as_str(), "job_000000000000"] {
+    for id in [bg1.as_str(), bg2.as_str(), "job_000000000000"] {
         for action in ["status", "output", "wait", "stop"] {
             let r = job(
                 &reg,
@@ -217,7 +199,7 @@ async fn background_and_handed_over_jobs_are_followed_by_their_owner_only() {
         }
     }
     // Nothing the other agent tried reached the jobs.
-    let status = job(&reg, &a, json!({ "action": "status", "job_id": bg }))
+    let status = job(&reg, &a, json!({ "action": "status", "job_id": bg1 }))
         .await
         .content;
     assert!(status.contains("[running]"), "{status}");
@@ -637,7 +619,7 @@ fn plain_ctx(dir: &Path) -> ToolContext {
 }
 
 #[tokio::test]
-async fn bash_from_shell_refuses_what_may_become_a_job_before_anything_starts() {
+async fn bash_from_shell_runs_foreground_and_refuses_background_before_anything_starts() {
     let dir = tempfile::tempdir().unwrap();
     let tools = bricks_tools::shell();
     let bash = tools.iter().find(|t| t.name() == "Bash").expect("Bash");
@@ -657,40 +639,17 @@ async fn bash_from_shell_refuses_what_may_become_a_job_before_anything_starts() 
         .await;
     assert!(bg.is_error, "{}", bg.content);
     assert!(bg.content.contains("no job registry"), "{}", bg.content);
-
-    // The default yield (10 s) is below the default timeout (120 s): the
-    // command may become a job, so it is refused.
-    let default = bash
-        .execute(
-            json!({ "command": format!("touch {}", marker.display()) }),
-            &c,
-        )
-        .await;
-    assert!(default.is_error, "{}", default.content);
-    assert!(
-        default.content.contains("no job registry"),
-        "{}",
-        default.content
-    );
-
-    tokio::time::sleep(Duration::from_millis(1200)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(!marker.exists(), "refused before anything started");
 
-    // A yield at or past the timeout: the command cannot be handed over, so
-    // it runs without a registry, and its timeout ends it.
+    // Foreground commands run without a registry, and their timeout ends them.
     let quick = bash
-        .execute(
-            json!({ "command": "echo quick", "yield_time_ms": 5000, "timeout": 5000 }),
-            &c,
-        )
+        .execute(json!({ "command": "echo quick", "timeout": 5000 }), &c)
         .await;
     assert!(!quick.is_error, "{}", quick.content);
     assert!(quick.content.contains("quick"), "{}", quick.content);
     let slow = bash
-        .execute(
-            json!({ "command": "sleep 30", "yield_time_ms": 300, "timeout": 300 }),
-            &c,
-        )
+        .execute(json!({ "command": "sleep 30", "timeout": 300 }), &c)
         .await;
     assert_eq!(
         slow.report.as_ref().unwrap().status,
@@ -702,7 +661,7 @@ async fn bash_from_shell_refuses_what_may_become_a_job_before_anything_starts() 
 }
 
 #[tokio::test]
-async fn a_registry_without_an_owner_refuses_before_anything_starts() {
+async fn a_registry_without_an_owner_refuses_background_before_anything_starts() {
     let dir = tempfile::tempdir().unwrap();
     let reg = JobRegistry::new(settings(), None);
     let c = plain_ctx(dir.path());
@@ -716,36 +675,15 @@ async fn a_registry_without_an_owner_refuses_before_anything_starts() {
         .await;
     assert!(r.is_error, "{}", r.content);
     assert!(r.content.contains("no identity"), "{}", r.content);
-    let r = bash
-        .execute(
-            json!({ "command": format!("touch {}", marker.display()) }),
-            &c,
-        )
-        .await;
-    assert!(r.is_error, "{}", r.content);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(!marker.exists(), "refused before anything started");
     assert!(reg.views(None).is_empty());
-}
 
-#[tokio::test]
-async fn background_with_a_yield_is_refused_as_a_contradiction() {
-    let dir = tempfile::tempdir().unwrap();
-    let reg = JobRegistry::new(settings(), None);
-    let c = ctx(dir.path(), &reg, "agent_a");
-    let r = BashTool::with_jobs(Arc::clone(&reg))
-        .execute(
-            json!({ "command": "true", "background": true, "yield_time_ms": 100 }),
-            &c,
-        )
-        .await;
-    assert!(r.is_error, "{}", r.content);
-    assert!(
-        r.content.contains("only applies to a foreground command"),
-        "{}",
-        r.content
-    );
-    assert!(reg.views(None).is_empty());
+    // Foreground commands do not need an owner.
+    let fg = bash.execute(json!({ "command": "echo ok" }), &c).await;
+    assert!(!fg.is_error, "{}", fg.content);
+    assert!(fg.content.contains("ok"), "{}", fg.content);
+    bricks_tools::shell::close_session(&c.session_id).await;
 }
 
 // ─── Surface ─────────────────────────────────────────────────────────────────
@@ -794,7 +732,7 @@ async fn a_started_job_that_ended_or_is_not_ready_shows_its_last_lines() {
     let waiting = BashTool::with_jobs(Arc::clone(&reg))
         .execute(
             json!({ "command": "echo booting; sleep 30", "background": true,
-                    "ready_pattern": "listening", "ready_timeout": 300 }),
+                    "ready_pattern": "listening", "timeout": 300 }),
             &c,
         )
         .await;
@@ -823,7 +761,7 @@ async fn a_wait_that_sees_the_end_shows_the_last_lines_and_where_the_rest_is() {
     let reg = JobRegistry::new(settings(), None);
     let c = ctx(dir.path(), &reg, "agent_a");
 
-    let y = yielded(&reg, &c, "sleep 0.3; seq 1 500; echo oops >&2", 50).await;
+    let y = background(&reg, &c, "sleep 0.3; seq 1 500; echo oops >&2").await;
     let id = id_of(&y);
     let w = job(&reg, &c, json!({ "action": "wait", "job_id": id })).await;
     assert!(!w.is_error, "{}", w.content);

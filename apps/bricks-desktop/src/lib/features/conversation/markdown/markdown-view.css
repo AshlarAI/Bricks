@@ -97,8 +97,8 @@
   background: color-mix(in oklab, var(--sidebar) 93%, var(--brand));
   color: color-mix(in oklab, var(--brand) 50%, var(--foreground));
   padding: 0.05rem 0.3rem;
-  font-family: var(--code-font-family);
-  font-size: 0.8125em;
+  font-family: var(--ui-font-family);
+  font-size: inherit;
 }
 .md a code,
 .md .file-ref code {

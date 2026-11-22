@@ -732,24 +732,6 @@ impl Task {
         Some([view(&caps[0])?, view(&caps[1])?])
     }
 
-    /// Stops keeping the output of an ordinary command, for a command handed
-    /// over as a job: its captures are dropped (and their raw files removed),
-    /// so nothing is read, cleaned or written for it any more. Call after
-    /// [`Self::output`] has been read; afterwards `output` is `None`.
-    pub fn release_capture(&self) {
-        let Some(caps) = &self.captures else {
-            return;
-        };
-        for c in caps {
-            // Taken under the lock the reader pushes under: no byte arrives
-            // after this, so the spill file is not recreated.
-            let taken = c.lock().take();
-            if let Some(cap) = taken {
-                cap.discard();
-            }
-        }
-    }
-
     /// The final state file of an ordinary command (complete once it ended).
     pub fn state_file(&self) -> Option<&Path> {
         self.state_file.as_deref()

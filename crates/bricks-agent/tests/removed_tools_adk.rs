@@ -147,11 +147,11 @@ async fn the_later_removed_tools_are_unknown_with_the_standard_error() {
     let results = tool_results(&agent);
     assert_eq!(results.len(), 4, "{results:?}");
     let total = bricks_tools::all().len();
-    let pwsh = usize::from(bricks_tools::powershell_available());
+    let expected_total = if cfg!(unix) { 13 } else { 12 };
     assert_eq!(
         total,
-        13 + pwsh,
-        "the standard set has thirteen tools, and PowerShell where it runs"
+        expected_total,
+        "the standard set exposes only the platform-native shell"
     );
     for (id, name) in ["w1", "w2", "w3", "w4"].iter().zip(removed) {
         let (_, text, is_error) = result_of(&results, id);
@@ -175,8 +175,9 @@ async fn the_later_removed_tools_are_unknown_with_the_standard_error() {
             .lines()
             .find(|l| l.contains("Available tools"))
             .expect("the list of tools");
+        let expected_shell = if cfg!(unix) { "Bash" } else { "PowerShell" };
         assert!(
-            listed.contains("Read") && listed.contains("Bash"),
+            listed.contains("Read") && listed.contains(expected_shell),
             "{listed}"
         );
     }

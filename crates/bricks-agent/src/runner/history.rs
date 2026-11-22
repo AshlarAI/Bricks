@@ -22,6 +22,24 @@ pub(super) fn inject_pending(agent: &Agent, controls: Option<&crate::events::Str
                 .invalidate("a user message was injected");
         }
     }
+    if let (Some(jobs), Some(identity)) = (
+        agent.extensions.get::<bricks_tools::jobs::JobsHandle>(),
+        agent.extensions.get::<crate::agents::AgentIdentity>(),
+    ) {
+        let finished = jobs.0.drain_finished_notifications(&identity.agent_id);
+        if !finished.is_empty() {
+            let lines = finished
+                .into_iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            push_message(
+                agent,
+                Message::user(format!("[system] Background job(s) finished:\n{lines}")),
+            );
+            agent.context.lock().invalidate("background job finished");
+        }
+    }
 }
 
 /// Answer every tool call left without a result (a run stopped while tools

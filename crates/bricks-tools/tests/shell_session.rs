@@ -833,35 +833,25 @@ async fn jobs_report_the_directory_they_started_in() {
     let background = bash
         .execute(json!({ "command": "sleep 30", "background": true }), &ctx)
         .await;
-    let yielded = bash
-        .execute(json!({ "command": "sleep 30", "yield_time_ms": 100 }), &ctx)
-        .await;
-    let mut ids = Vec::new();
-    for r in [&background, &yielded] {
-        let data = r
-            .metadata
-            .as_ref()
-            .unwrap_or_else(|| panic!("{}", r.content));
-        let cwd = data["cwd"].as_str().unwrap();
-        assert!(cwd.ends_with("/subdir"), "{cwd}: {}", r.content);
-        assert!(r.content.contains("/subdir"), "{}", r.content);
-        ids.push(data["job_id"].as_str().unwrap().to_string());
-    }
+    let data = background
+        .metadata
+        .as_ref()
+        .unwrap_or_else(|| panic!("{}", background.content));
+    let cwd = data["cwd"].as_str().unwrap();
+    assert!(cwd.ends_with("/subdir"), "{cwd}: {}", background.content);
+    assert!(background.content.contains("/subdir"), "{}", background.content);
+    let id = data["job_id"].as_str().unwrap().to_string();
     let list = JobTool::new(Arc::clone(&reg))
         .execute(json!({ "action": "list" }), &ctx)
         .await;
-    for id in &ids {
-        let line = list
-            .content
-            .lines()
-            .find(|l| l.contains(id.as_str()))
-            .unwrap_or_else(|| panic!("{id} not listed: {}", list.content));
-        assert!(line.contains("/subdir"), "{line}");
-    }
-    for id in ids {
-        JobTool::new(Arc::clone(&reg))
-            .execute(json!({ "action": "stop", "job_id": id }), &ctx)
-            .await;
-    }
+    let line = list
+        .content
+        .lines()
+        .find(|l| l.contains(id.as_str()))
+        .unwrap_or_else(|| panic!("{id} not listed: {}", list.content));
+    assert!(line.contains("/subdir"), "{line}");
+    JobTool::new(Arc::clone(&reg))
+        .execute(json!({ "action": "stop", "job_id": id }), &ctx)
+        .await;
     shell::close_session_now(&session_id);
 }

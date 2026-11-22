@@ -2,8 +2,8 @@
 // The hover card of a grain in the message rail (MessageRail.tsx): hovered or focused, it
 // shows the message, the start of its answer as plain text, its place among the marks and, when
 // known, its date. Mounted in happy-dom; the interface is in French (setup-language.ts).
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mountReact, type MountedComponent } from './react-test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushReact, mountReact, type MountedComponent } from './react-test-utils'
 import MessageRail, { type MessageRailProps } from '../../src/lib/features/conversation/MessageRail'
 
 interface Mark {
@@ -120,5 +120,20 @@ describe('the hover card of a grain', () => {
 	it('shows no date when the time of the message is unknown', () => {
 		show([mark(0, { at: null }), mark(1)])
 		expect(text(footer('turn-0'))).toBe('1 sur 2')
+	})
+
+	it('calls onJumpToTurn when clicking a grain not yet mounted in the DOM', () => {
+		const onJumpToTurn = vi.fn()
+		const scroller = document.createElement('div')
+		const marks = [
+			{ ...mark(0), place: 1, total: 2 },
+			{ ...mark(1), place: 2, total: 2 },
+		]
+		app = mountReact(MessageRail, { target, props: { marks, scroller, onJumpToTurn } })
+		const button = target.querySelector<HTMLButtonElement>('[data-mark="turn-0"]')
+		expect(button).not.toBeNull()
+		flushReact(() => button!.click())
+		expect(onJumpToTurn).toHaveBeenCalledWith('turn-0')
+		expect(button!.getAttribute('aria-current')).toBe('true')
 	})
 })

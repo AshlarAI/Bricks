@@ -1,12 +1,10 @@
 //! Commands as jobs: one registry per session over the shell's supervised
-//! tasks (`Bash` with `background: true`, or handed over), with an owner, a
+//! tasks (`Bash` with `background: true`), with an owner, a
 //! quota, events, durable logs, and the `Job` tool (`list`, `status`,
 //! `output`, `wait`, `stop`).
 //!
-//! * A job is either a background command (`background: true`, explicitly
-//!   durable) or a foreground command handed over after `yield_time_ms`
-//!   (not durable: it ends with its run). Both are seen through `Job` by the
-//!   agent that started them.
+//! * Every job is a background command (`background: true`), seen through
+//!   `Job` by the agent that started it.
 //! * A job belongs to the agent that started it (recorded with its root run
 //!   and workspace); only that agent sees it through `Job` (an id guessed
 //!   from another agent or session gives nothing). Frontends see the
@@ -116,11 +114,9 @@ struct Entry {
     owner: JobOwner,
     task: Arc<Task>,
     cwd: PathBuf,
+    notified: bool,
     logs: Vec<String>,
     logs_error: Option<String>,
-    /// Explicitly started in the background (not a handed-over command):
-    /// survives the run that started it.
-    durable: bool,
 }
 
 #[derive(Default)]
@@ -211,14 +207,13 @@ impl JobRegistry {
     }
 
     /// Track a started task as a job, in the place `slot` reserved; watch it
-    /// until it ends. `durable`: a background command, which outlives its run.
+    /// until it ends.
     pub fn register(
         self: &Arc<Self>,
         mut slot: JobSlot,
         owner: JobOwner,
         task: Arc<Task>,
         cwd: &Path,
-        durable: bool,
     ) -> String {
         let id = format!("job_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
         self.emit(JobEvent::Started {
@@ -239,9 +234,9 @@ impl JobRegistry {
                 owner,
                 task: Arc::clone(&task),
                 cwd: cwd.to_path_buf(),
+                notified: false,
                 logs: Vec::new(),
                 logs_error: None,
-                durable,
             });
         }
         let me = Arc::clone(self);
@@ -380,6 +375,43 @@ impl JobRegistry {
         )
     }
 
+    /// Mark a job as already notified so no duplicate push notification is
+    /// emitted for it.
+    pub fn mark_notified(&self, id: &str, viewer: Option<&str>) {
+        if let Some(e) = self
+            .table
+            .lock()
+            .entries
+            .iter_mut()
+            .find(|e| e.id == id && viewer.is_none_or(|v| e.owner.agent_id == v))
+        {
+            e.notified = true;
+        }
+    }
+
+    /// Drain concise summary lines for finished jobs owned by `agent_id` that
+    /// have not yet been notified, marking them as notified.
+    pub fn drain_finished_notifications(&self, agent_id: &str) -> Vec<String> {
+        let finished: Vec<(String, Arc<Task>)> = {
+            let mut table = self.table.lock();
+            table
+                .entries
+                .iter_mut()
+                .filter(|e| {
+                    e.owner.agent_id == agent_id && !e.notified && e.task.state().is_finished()
+                })
+                .map(|e| {
+                    e.notified = true;
+                    (e.id.clone(), Arc::clone(&e.task))
+                })
+                .collect()
+        };
+        finished
+            .into_iter()
+            .map(|(id, task)| format_finished_notification(&id, &task))
+            .collect()
+    }
+
     /// Stop every job of an agent (it ended).
     pub async fn stop_owned_by(&self, agent_id: &str) {
         let tasks: Vec<Arc<Task>> = self
@@ -388,23 +420,6 @@ impl JobRegistry {
             .entries
             .iter()
             .filter(|e| e.owner.agent_id == agent_id)
-            .map(|e| Arc::clone(&e.task))
-            .collect();
-        for t in tasks {
-            t.stop(Duration::from_millis(self.settings.stop_grace_ms))
-                .await;
-        }
-    }
-
-    /// Stop the commands of an agent that were handed over (not the
-    /// background jobs it started explicitly): its run ended.
-    pub async fn stop_ordinary_owned_by(&self, agent_id: &str) {
-        let tasks: Vec<Arc<Task>> = self
-            .table
-            .lock()
-            .entries
-            .iter()
-            .filter(|e| e.owner.agent_id == agent_id && !e.durable)
             .map(|e| Arc::clone(&e.task))
             .collect();
         for t in tasks {
@@ -623,12 +638,12 @@ impl Tool for JobTool {
     }
 
     fn description(&self) -> &str {
-        "Follow your jobs: the commands you started with Bash `background: true`, and the \
-         foreground commands handed over after `yield_time_ms` (both give a job_id). `list` \
-         (default): your jobs. `status`: one job, with its raw log paths. `output`: lines of \
-         stdout or stderr from `offset` (0-based), or the last `limit` lines with `tail`. `wait`: \
-         wait for its end up to `timeout_ms` (a timeout stops nothing). `stop`: TERM then KILL, \
-         idempotent. Running is not ready, and ready is not proof that a service works."
+        "Follow your background jobs (started with Bash `background: true`, which gives a \
+         job_id). `list` (default): your jobs. `status`: one job, with its raw log paths. \
+         `output`: lines of stdout or stderr from `offset` (0-based), or the last `limit` lines \
+         with `tail`. `wait`: wait for its end up to `timeout_ms` (a timeout stops nothing). \
+         `stop`: TERM then KILL, idempotent. Running is not ready, and ready is not proof that a \
+         service works."
     }
 
     fn permission_level(&self) -> PermissionLevel {
@@ -707,8 +722,7 @@ impl Tool for JobTool {
             let jobs = reg.views(Some(&viewer));
             if jobs.is_empty() {
                 return ToolResult::success(
-                    "You have no jobs. Bash starts one with `background: true`, or when a \
-                     command is still running after `yield_time_ms`.",
+                    "You have no jobs. Start one with Bash `background: true`.",
                 );
             }
             return ToolResult::success(
@@ -744,6 +758,9 @@ impl Tool for JobTool {
             JobAction::Wait => {
                 let limit = Duration::from_millis(i.timeout_ms.unwrap_or(DEFAULT_WAIT_MS));
                 let ended = job.task.wait_finished(limit).await;
+                if ended {
+                    reg.mark_notified(id, Some(&viewer));
+                }
                 let view = reg.view(id, Some(&viewer)).unwrap_or(job);
                 if ended {
                     // The end of what it wrote, so that one call tells how it
@@ -772,11 +789,42 @@ impl Tool for JobTool {
                 job.task
                     .stop(Duration::from_millis(reg.settings.stop_grace_ms))
                     .await;
+                reg.mark_notified(id, Some(&viewer));
                 let view = reg.view(id, Some(&viewer)).unwrap_or(job);
                 ToolResult::success(view.line())
             }
         }
     }
+}
+
+fn truncate_command(command: &str, max_chars: usize) -> String {
+    let normalized = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = normalized.chars();
+    let head: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{head}...")
+    } else {
+        head
+    }
+}
+
+fn format_finished_notification(id: &str, task: &Task) -> String {
+    let state = task.state();
+    let detail = match &state {
+        TaskState::Completed { code } => format!(" (exit {code})"),
+        TaskState::Failed { code, signal } => match (code, signal) {
+            (Some(c), _) => format!(" (exit {c})"),
+            (None, Some(s)) => format!(" (signal {s})"),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    };
+    let duration = bricks_types::duration::display_ms(task.elapsed());
+    let command = truncate_command(&task.command, 80);
+    format!(
+        "{id} [{}{detail}] ({duration}) `{command}`: use `Job` `output` if needed",
+        state.label()
+    )
 }
 
 /// The line that sets a line in progress apart on a page.
@@ -1048,7 +1096,7 @@ mod tests {
             start(
                 &a,
                 "sleep 30",
-                json!({ "ready_pattern": "never printed", "ready_timeout": 10_000 }),
+                json!({ "ready_pattern": "never printed", "timeout": 10_000 }),
             ),
         )
         .await;
@@ -1185,7 +1233,7 @@ mod tests {
         let r = start(
             &a,
             "sleep 300",
-            json!({ "ready_pattern": "LISTENING", "ready_timeout": 200 }),
+            json!({ "ready_pattern": "LISTENING", "timeout": 200 }),
         )
         .await;
         let id = job_id(&r.content);
@@ -1207,6 +1255,103 @@ mod tests {
         // The agent ends: its jobs go.
         reg.stop_owned_by("agent_a").await;
         assert_eq!(reg.running(), 0);
+    }
+
+    #[tokio::test]
+    async fn drain_finished_notifications_delivers_once_per_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = JobRegistry::new(JobSettings::default(), None);
+        let a = ctx(dir.path(), &reg, "agent_a");
+        let b = ctx(dir.path(), &reg, "agent_b");
+
+        let long_cmd = format!("sleep 0.25; echo {}", "x".repeat(120));
+        let ok_res = start(&a, &long_cmd, json!({})).await;
+        let ok_id = job_id(&ok_res.content);
+        let fail_res = start(&a, "sleep 0.25; exit 7", json!({})).await;
+        let fail_id = job_id(&fail_res.content);
+        let running_res = start(&a, "sleep 30", json!({})).await;
+        let running_id = job_id(&running_res.content);
+        let other_res = start(&b, "sleep 0.25; echo other", json!({})).await;
+        let other_id = job_id(&other_res.content);
+
+        // Wait until the short jobs finish.
+        for view in reg.views(None) {
+            if view.id != running_id {
+                assert!(view.task.wait_finished(Duration::from_secs(5)).await);
+            }
+        }
+
+        // Agent A receives notifications only for its two finished jobs, once.
+        let notes_a = reg.drain_finished_notifications("agent_a");
+        assert_eq!(notes_a.len(), 2, "{notes_a:?}");
+        let joined = notes_a.join("\n");
+        assert!(joined.contains(&ok_id), "{joined}");
+        assert!(joined.contains("completed (exit 0)"), "{joined}");
+        assert!(joined.contains("..."), "truncated command: {joined}");
+        assert!(joined.contains("Job"), "{joined}");
+        assert!(joined.contains("output"), "{joined}");
+        assert!(joined.contains(&fail_id), "{joined}");
+        assert!(joined.contains("failed (exit 7)"), "{joined}");
+        assert!(!joined.contains(&running_id), "{joined}");
+        assert!(!joined.contains(&other_id), "{joined}");
+
+        // Second drain is empty.
+        assert!(reg.drain_finished_notifications("agent_a").is_empty());
+
+        // Agent B still receives its own finished job notification.
+        let notes_b = reg.drain_finished_notifications("agent_b");
+        assert_eq!(notes_b.len(), 1, "{notes_b:?}");
+        assert!(notes_b[0].contains(&other_id), "{notes_b:?}");
+
+        reg.stop_all().await;
+    }
+
+    #[tokio::test]
+    async fn wait_and_stop_suppress_duplicate_notifications() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = JobRegistry::new(
+            JobSettings {
+                stop_grace_ms: 200,
+                ..Default::default()
+            },
+            None,
+        );
+        let a = ctx(dir.path(), &reg, "agent_a");
+
+        // Job 1: waited to completion -> no duplicate notification.
+        let id1 = job_id(&start(&a, "sleep 0.2; echo done", json!({})).await.content);
+        let w = job(
+            &a,
+            json!({ "action": "wait", "job_id": id1, "timeout_ms": 5000 }),
+        )
+        .await;
+        assert!(w.content.contains("completed"), "{}", w.content);
+        assert!(reg.drain_finished_notifications("agent_a").is_empty());
+
+        // Job 2: stopped via Job stop -> no duplicate notification.
+        let id2 = job_id(&start(&a, "sleep 30", json!({})).await.content);
+        let s = job(&a, json!({ "action": "stop", "job_id": id2 })).await;
+        assert!(s.content.contains("stopped"), "{}", s.content);
+        assert!(reg.drain_finished_notifications("agent_a").is_empty());
+
+        // Job 3: wait times out (ended == false), then job finishes -> notification IS delivered.
+        let id3 = job_id(&start(&a, "sleep 0.4; echo late", json!({})).await.content);
+        let wt = job(
+            &a,
+            json!({ "action": "wait", "job_id": id3, "timeout_ms": 50 }),
+        )
+        .await;
+        assert!(wt.content.contains("Still running"), "{}", wt.content);
+        assert!(
+            reg.view(&id3, Some("agent_a"))
+                .unwrap()
+                .task
+                .wait_finished(Duration::from_secs(5))
+                .await
+        );
+        let notes = reg.drain_finished_notifications("agent_a");
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains(&id3), "{notes:?}");
     }
 }
 

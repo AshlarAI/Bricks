@@ -8,8 +8,12 @@
 	html,
 	body {
 		height: 100%;
-		overflow: hidden;
+		overflow: clip;
 		overscroll-behavior: none;
+	}
+	/* Override react-resizable-panels' inline overflow: hidden so drag-selection cannot scroll clipped panes. */
+	[data-slot='resizable-panel'] {
+		overflow: clip !important;
 	}
 	.overflow-auto,
 	.overflow-y-auto,
@@ -163,4 +167,10 @@
 }
 :is(textarea, .md pre, [data-slot='code-block-content'])::-webkit-scrollbar-thumb:hover {
 	background-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+}
+
+/* Defer layout and paint for earlier finished timeline blocks off-screen while preserving Find-in-page. */
+.timeline-block-deferred {
+	content-visibility: auto;
+	contain-intrinsic-size: auto none auto 120px;
 }

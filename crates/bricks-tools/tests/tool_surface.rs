@@ -58,8 +58,7 @@ fn names(tools: &[Box<dyn bricks_tools::Tool>]) -> Vec<String> {
 #[test]
 fn the_built_in_surface_is_exactly_the_kept_tools() {
     let all = names(&bricks_tools::all());
-    // PowerShell is offered only where it can run.
-    let pwsh = bricks_tools::powershell_available();
+    let reg = bricks_tools::jobs::JobRegistry::new(Default::default(), None);
     let mut expected = vec![
         "Read",
         "Write",
@@ -69,27 +68,32 @@ fn the_built_in_surface_is_exactly_the_kept_tools() {
         "Grep",
         "CodeScout",
         "CodeStats",
-        "Bash",
-        "Job",
     ];
-    if pwsh {
+    if cfg!(unix) {
+        expected.extend(["Bash", "Job"]);
+    } else {
         expected.push("PowerShell");
     }
     expected.extend(["WebFetch", "WebSearch", "TodoWrite"]);
     assert_eq!(all, expected);
-    assert_eq!(
-        names(&bricks_tools::shell()).contains(&"PowerShell".to_string()),
-        pwsh
-    );
+
+    // Only the platform-native shell is exposed by default.
+    if cfg!(unix) {
+        assert_eq!(names(&bricks_tools::shell()), ["Bash"]);
+        assert_eq!(names(&bricks_tools::shell_with_jobs(reg)), ["Bash", "Job"]);
+        assert!(!all.contains(&"PowerShell".to_string()));
+    } else {
+        assert_eq!(names(&bricks_tools::shell()), ["PowerShell"]);
+        assert_eq!(names(&bricks_tools::shell_with_jobs(reg)), ["PowerShell"]);
+        assert!(!all.contains(&"Bash".to_string()));
+        assert!(!all.contains(&"Job".to_string()));
+    }
+
     // `all()` is the coding tools plus the plan.
     let mut coding_and_plan = names(&bricks_tools::coding());
-    assert_eq!(coding_and_plan.len(), 12 + usize::from(pwsh));
+    assert_eq!(coding_and_plan.len(), if cfg!(unix) { 12 } else { 11 });
     coding_and_plan.extend(names(&bricks_tools::planning()));
     assert_eq!(all, coding_and_plan);
-    // Job follows the jobs Bash records: it comes with a registry, not alone.
-    assert!(names(&bricks_tools::coding()).contains(&"Job".to_string()));
-    assert!(names(&bricks_tools::shell()).contains(&"Bash".to_string()));
-    assert!(!names(&bricks_tools::shell()).contains(&"Job".to_string()));
     assert_eq!(names(&bricks_tools::planning()), ["TodoWrite"]);
     for set in [
         bricks_tools::all(),

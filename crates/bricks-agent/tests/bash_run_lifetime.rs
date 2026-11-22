@@ -1,8 +1,7 @@
 //! The lifetime of a root run's commands, through the controller and real
-//! processes. A foreground command handed over as a task (past
-//! `yield_time_ms`) ends with its run; an explicit `background: true` job
-//! outlives the run and ends with the session. The project's `[bash]
-//! yield_time_ms` reaches the Bash tool.
+//! processes. An in-flight foreground command ends when its run is cancelled;
+//! an explicit `background: true` job outlives the run and ends with the
+//! session. The project's `[bash] extra_path` reaches the Bash tool.
 
 #![cfg(unix)]
 
@@ -18,11 +17,11 @@ use serde_json::json;
 use std::path::Path;
 use std::time::Duration;
 
-async fn open(dir: &Path, replies: Vec<Reply>, yield_time_ms: u64) -> (Controller, EventStream) {
+async fn open(dir: &Path, replies: Vec<Reply>, extra_path: Vec<String>) -> (Controller, EventStream) {
     let catalog = ScriptedCatalog::new(&["a"], Script::new(replies));
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.bash.yield_time_ms = yield_time_ms;
+    bricks.bash.extra_path = extra_path;
     let mut cfg = EngineConfig::new(dir, catalog, bricks, dir.join(".sessions"));
     cfg.interactive = false;
     // Commands run without asking: the session's policy is EXECUTE.
@@ -81,22 +80,22 @@ fn sleeper(pidfile: &Path) -> String {
 }
 
 #[tokio::test]
-async fn a_handed_over_command_ends_with_its_run_and_a_background_job_with_the_session() {
+async fn cancelling_a_run_stops_foreground_commands_while_background_jobs_outlive_it() {
     let dir = tempfile::tempdir().unwrap();
-    let ordinary_pid = dir.path().join("ordinary.pid");
+    let foreground_pid = dir.path().join("foreground.pid");
     let background_pid = dir.path().join("background.pid");
     let (ctl, mut events) = open(
         dir.path(),
         vec![
-            Reply::tool("ord", "Bash", json!({ "command": sleeper(&ordinary_pid) })),
             Reply::tool(
                 "bg",
                 "Bash",
                 json!({ "command": sleeper(&background_pid), "background": true }),
             ),
+            Reply::tool("fg", "Bash", json!({ "command": sleeper(&foreground_pid) })),
             Reply::hang(),
         ],
-        300,
+        Vec::new(),
     )
     .await;
     ctl.send(Command::Submit {
@@ -104,35 +103,17 @@ async fn a_handed_over_command_ends_with_its_run_and_a_background_job_with_the_s
     })
     .unwrap();
 
-    // Handed over after the project's 300 ms, not the default 10 s.
-    let Event::ToolFinished {
-        is_error,
-        duration_ms,
-        ..
-    } = until(&mut events, finished("ord")).await
-    else {
-        unreachable!()
-    };
-    assert!(
-        !is_error,
-        "the handed-over command is a task, not a failure"
-    );
-    assert!(
-        duration_ms < 5_000,
-        "yield_time_ms not applied: {duration_ms} ms"
-    );
-
     until(&mut events, finished("bg")).await;
-    let ordinary = pid_in(&ordinary_pid).await;
     let background = pid_in(&background_pid).await;
-    assert!(procs::is_running(ordinary), "the handed-over command runs");
+    let foreground = pid_in(&foreground_pid).await;
     assert!(procs::is_running(background), "the background job runs");
+    assert!(procs::is_running(foreground), "the foreground command runs");
 
     ctl.send(Command::Cancel).unwrap();
     until(&mut events, |e| matches!(e, Event::RunFinished { .. })).await;
     assert!(
-        procs::wait_gone(&[ordinary], Duration::from_secs(5)).await,
-        "the handed-over command outlived its cancelled run"
+        procs::wait_gone(&[foreground], Duration::from_secs(5)).await,
+        "the foreground command outlived its cancelled run"
     );
     assert!(
         procs::is_running(background),
@@ -147,38 +128,34 @@ async fn a_handed_over_command_ends_with_its_run_and_a_background_job_with_the_s
 }
 
 #[tokio::test]
-async fn the_project_yield_time_reaches_the_bash_tool() {
+async fn the_project_extra_path_reaches_the_bash_tool() {
     let dir = tempfile::tempdir().unwrap();
-    let pidfile = dir.path().join("pid");
+    let bin_dir = dir.path().join("custom-bin");
+    std::fs::create_dir(&bin_dir).unwrap();
     let (ctl, mut events) = open(
         dir.path(),
         vec![
-            Reply::tool("ord", "Bash", json!({ "command": sleeper(&pidfile) })),
-            Reply::hang(),
+            Reply::tool("ep", "Bash", json!({ "command": "echo \"$PATH\"" })),
+            Reply::text("done"),
         ],
-        200,
+        vec![bin_dir.display().to_string()],
     )
     .await;
     ctl.send(Command::Submit {
-        prompt: Prompt::text("go"),
+        prompt: Prompt::text("check path"),
     })
     .unwrap();
     let Event::ToolFinished {
-        is_error,
-        duration_ms,
-        ..
-    } = until(&mut events, finished("ord")).await
+        is_error, output, ..
+    } = until(&mut events, finished("ep")).await
     else {
         unreachable!()
     };
-    assert!(!is_error);
+    assert!(!is_error, "{output}");
     assert!(
-        duration_ms < 5_000,
-        "yield_time_ms not applied: {duration_ms} ms"
+        output.contains(&bin_dir.display().to_string()),
+        "{output}"
     );
-    let pid = pid_in(&pidfile).await;
-    ctl.send(Command::Cancel).unwrap();
     until(&mut events, |e| matches!(e, Event::RunFinished { .. })).await;
-    assert!(procs::wait_gone(&[pid], Duration::from_secs(5)).await);
     ctl.close().await;
 }

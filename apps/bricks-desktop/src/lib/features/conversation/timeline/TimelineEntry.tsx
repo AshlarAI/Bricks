@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useConversation, type Conversation, type TimelineItem } from '$lib/state/conversation'
 import UserMessage from './UserMessage'
 import AssistantMessage from './AssistantMessage'
@@ -16,7 +17,7 @@ export interface TimelineEntryProps {
   answer?: boolean
 }
 
-export function TimelineEntry({ item, conversation, answer = false }: TimelineEntryProps) {
+function TimelineEntryComponent({ item, conversation, answer = false }: TimelineEntryProps) {
   const liveConversation =
     conversation && typeof conversation.subscribe === 'function' ? conversation : null
 
@@ -86,5 +87,7 @@ export function TimelineEntry({ item, conversation, answer = false }: TimelineEn
     </>
   )
 }
+
+export const TimelineEntry = memo(TimelineEntryComponent)
 
 export default TimelineEntry

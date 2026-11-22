@@ -36,8 +36,7 @@ pub struct BricksConfig {
     /// `[background]`: background jobs (`Bash` with `background: true`,
     /// the `Job` tool).
     pub background: bricks_tools::jobs::JobSettings,
-    /// `[bash]`: foreground commands (`yield_time_ms`, the hand-over to a
-    /// task) and the directories added to `PATH` (`extra_path`).
+    /// `[bash]`: directories added to `PATH` (`extra_path`).
     pub bash: bricks_tools::shell::BashSettings,
 }
 
@@ -110,6 +109,9 @@ impl BricksConfig {
             without_unknown_keys::<crate::control::settings::FileAgent>(text, "agent");
         let (cleaned, more) =
             without_unknown_keys::<crate::agents::DelegationSettings>(&cleaned, "agents");
+        unknown.extend(more);
+        let (cleaned, more) =
+            without_unknown_keys::<bricks_tools::shell::BashSettings>(&cleaned, "bash");
         unknown.extend(more);
         for key in unknown {
             c.diagnostics
@@ -404,13 +406,24 @@ mod tests {
         );
     }
 
-    /// `[bash] yield_time_ms` is read; a bad key is reported and defaults
-    /// are used.
+    /// Unknown keys in `[bash]` (including legacy `yield_time_ms`) are
+    /// ignored and reported without resetting valid keys; wrong value types
+    /// fall back to defaults with a diagnostic.
     #[test]
-    fn the_bash_section_sets_the_yield_time_and_bad_keys_fall_back() {
-        let c = BricksConfig::from_texts(Some("[bash]\nyield_time_ms = 2500\n"), &[]);
-        assert!(c.diagnostics.is_empty(), "{:#?}", c.diagnostics);
-        assert_eq!(c.bash.yield_time_ms, 2500);
+    fn unknown_keys_of_the_bash_table_are_ignored_and_bad_types_fall_back() {
+        let c = BricksConfig::from_texts(
+            Some("[bash]\nyield_time_ms = 2500\nextra_path = [\"~/.cargo/bin\"]\n"),
+            &[],
+        );
+        assert_eq!(c.bash.extra_path, ["~/.cargo/bin"]);
+        assert_eq!(c.diagnostics.len(), 1, "{:#?}", c.diagnostics);
+        assert!(
+            c.diagnostics[0].contains("unknown key ignored")
+                && c.diagnostics[0].contains("[bash] yield_time_ms"),
+            "{:#?}",
+            c.diagnostics
+        );
+
         let c = BricksConfig::from_texts(Some("[bash]\nbogus = 1\n"), &[]);
         assert_eq!(
             c.bash,
@@ -418,7 +431,15 @@ mod tests {
             "defaults used"
         );
         assert!(
-            c.diagnostics.iter().any(|d| d.contains("[bash]")),
+            c.diagnostics.iter().any(|d| d.contains("[bash] bogus")),
+            "{:#?}",
+            c.diagnostics
+        );
+
+        let c = BricksConfig::from_texts(Some("[bash]\nextra_path = \"bad\"\n"), &[]);
+        assert_eq!(c.bash, bricks_tools::shell::BashSettings::default());
+        assert!(
+            c.diagnostics.iter().any(|d| d.contains("[bash]:")),
             "{:#?}",
             c.diagnostics
         );
@@ -429,14 +450,13 @@ mod tests {
     #[test]
     fn the_bash_section_reads_the_extra_path_and_reports_bad_entries() {
         let c = BricksConfig::from_texts(
-            Some("[bash]\nyield_time_ms = 2500\nextra_path = [\"~/.cargo/bin\", \"bin\"]\n"),
+            Some("[bash]\nextra_path = [\"~/.cargo/bin\", \"bin\"]\n"),
             &[],
         );
-        assert_eq!(c.bash.yield_time_ms, 2500);
         assert_eq!(c.bash.extra_path, ["~/.cargo/bin", "bin"]);
         assert_eq!(c.diagnostics.len(), 1, "{:#?}", c.diagnostics);
         assert!(c.diagnostics[0].contains("\"bin\""), "{:#?}", c.diagnostics);
-        let c = BricksConfig::from_texts(Some("[bash]\nyield_time_ms = 2500\n"), &[]);
+        let c = BricksConfig::from_texts(Some("[bash]\n"), &[]);
         assert_eq!(
             c.bash.extra_path,
             bricks_tools::shell::BashSettings::default().extra_path
@@ -484,7 +504,6 @@ mod tests {
                 "raw_log_bytes",
                 "stop_grace_ms",
                 "max_page_bytes",
-                "yield_time_ms",
                 "retry_after_max_wait_ms",
             ];
             if !section.is_empty() && known.contains(&key) {
@@ -505,7 +524,7 @@ mod tests {
             "{out}"
         );
         assert_eq!(c.agent.retry_after_max_wait_ms, 60_000, "{out}");
-        assert_eq!(out.matches(" = ").count(), 16, "{out}");
+        assert_eq!(out.matches(" = ").count(), 15, "{out}");
     }
 
     #[test]

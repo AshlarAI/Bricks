@@ -212,7 +212,6 @@ pub(crate) async fn run_prepared_controlled(
         &mut capture,
     )
     .await;
-    end_root_run_commands(agent).await;
     if let Some(s) = agent.skill_session() {
         s.ledger.lock().clear_pending();
     }
@@ -272,23 +271,6 @@ pub(crate) async fn run_prepared_controlled(
         }
     }
     result
-}
-
-/// The end of a root run, whether it completed, failed or was cancelled: the
-/// commands of its agent that were handed over as tasks (a foreground command
-/// past `yield_time_ms`, not started with `background: true`) end with it.
-/// Explicit background jobs outlive the run and end with the session. A
-/// sub-agent's jobs end with the sub-agent (see `agents::spawn`).
-async fn end_root_run_commands(agent: &Agent) {
-    let Some(identity) = agent.extensions.get::<crate::agents::AgentIdentity>() else {
-        return;
-    };
-    if identity.parent_id.is_some() {
-        return;
-    }
-    if let Some(jobs) = agent.extensions.get::<bricks_tools::jobs::JobsHandle>() {
-        jobs.0.stop_ordinary_owned_by(&identity.agent_id).await;
-    }
 }
 
 /// Returns a cancellation token for post-run memory maintenance: links to

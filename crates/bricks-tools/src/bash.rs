@@ -5,13 +5,11 @@
 //! the session's state: working directory, exported variables, functions and
 //! aliases persist between calls because a command that ends normally
 //! publishes its changes; variables that are not exported do not persist.
-//! Commands run side by side. Stdin is empty unless `input` is given. A
-//! command still running after `yield_time_ms` is handed over as a job: the
-//! call returns `Running` with its `job_id`, and the command goes on, followed
-//! with the `Job` tool. `timeout` still ends it. `background: true` starts a
-//! job at once. Both need the session's job registry ([`BashTool::with_jobs`]);
-//! without one, Bash runs only commands that end in the call, and refuses the
-//! others before anything starts.
+//! Commands run side by side. Stdin is empty unless `input` is given.
+//! Foreground commands run until completion or `timeout`. `background: true`
+//! starts a job at once and needs the session's job registry
+//! ([`BashTool::with_jobs`]); without one ([`BashTool::default`]), foreground
+//! commands still run and `background: true` is refused before anything starts.
 //!
 //! Paths: the shell resolves relative paths against its own current
 //! directory, which `cd` changes. Other tools keep resolving against the
@@ -30,9 +28,9 @@ use std::time::Duration;
 pub const STDERR_MARKER: &str = "--- stderr ---";
 
 /// The Bash tool. Built on a job registry ([`BashTool::with_jobs`], what
-/// [`crate::shell_with_jobs`] does), its commands can be handed over and
-/// started in the background as jobs; without one ([`BashTool::default`]),
-/// only commands that end in the call run.
+/// [`crate::shell_with_jobs`] does), `background: true` starts jobs; without
+/// one ([`BashTool::default`]), foreground commands run and `background: true`
+/// is refused.
 #[derive(Default, Clone)]
 pub struct BashTool {
     jobs: Option<Arc<crate::jobs::JobRegistry>>,
@@ -52,17 +50,17 @@ impl BashTool {
     }
 }
 
-/// Why a command that may become a job cannot run here.
+/// Why a background command cannot run here.
 #[cfg(unix)]
-const NO_REGISTRY: &str = "this Bash has no job registry, so a command that may be handed over \
-    as a job cannot run (nothing was started). Give `yield_time_ms` at least equal to `timeout` \
-    so the call waits for the end, or assemble the tools with shell_with_jobs(registry).";
+const NO_REGISTRY: &str = "this Bash has no job registry, so `background: true` cannot run \
+    (nothing was started). Assemble the tools with shell_with_jobs(registry).";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Input {
     command: String,
-    /// Milliseconds.
+    /// Milliseconds (foreground deadline, or readiness wait when
+    /// `background: true` and `ready_pattern` is set).
     timeout: Option<u64>,
     #[serde(default)]
     background: bool,
@@ -72,12 +70,6 @@ struct Input {
     /// Background only: a regex on the task's output lines that means
     /// "ready" (e.g. a server's "listening on").
     ready_pattern: Option<String>,
-    /// Background only: milliseconds to wait for `ready_pattern`.
-    ready_timeout: Option<u64>,
-    /// Foreground only: milliseconds before a command still running is
-    /// handed over as a task (default: `[bash] yield_time_ms`). Not a
-    /// deadline: `timeout` is.
-    yield_time_ms: Option<u64>,
 }
 
 pub(crate) fn shell_config(ctx: &ToolContext) -> ShellConfig {
@@ -119,14 +111,13 @@ impl Tool for BashTool {
 
     fn description(&self) -> &str {
         "Run a bash command in this session. Each call is its own process, so calls run side by \
-         side; the working directory, exported variables, PATH, functions and aliases persist \
-         between calls (plain shell variables do not). stdin is empty unless `input` is given. \
-         `timeout` (ms, default 120000, max 600000) ends the command; a timed-out command returns \
-         its partial output. `yield_time_ms` (default 10000) only gives control back: a command \
-         still running then returns as Running with a `job_id` and keeps going until it ends or \
-         its timeout. For servers, watchers and other long-running processes use \
-         `background: true` (optionally `ready_pattern`) — do not end a command with `&`. Both \
-         kinds are jobs: follow them with the Job tool (list, status, output, wait, stop)."
+         side; working directory, exported variables, PATH, functions and aliases persist between \
+         calls (plain shell variables do not). stdin is empty unless `input` is given. `timeout` \
+         (ms, default 120000, max 600000) ends a foreground command and returns partial output. For \
+         servers, watchers and long-running processes, use `background: true` (optionally \
+         `ready_pattern`, with `timeout` as ready wait in ms, default 10000) instead of `&`. \
+         Follow background jobs with Job (list, status, output, wait, stop); use Job `wait` \
+         instead of `sleep` polling."
     }
 
     fn permission_level(&self) -> PermissionLevel {
@@ -149,12 +140,10 @@ impl Tool for BashTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "description": "The bash command to execute" },
-                "timeout": { "type": "integer", "description": "Timeout in milliseconds (default 120000, max 600000); ends the command, also after a hand-over" },
+                "timeout": { "type": "integer", "description": "Timeout in milliseconds (default 120000, max 600000). With background: true and ready_pattern, milliseconds to wait for readiness (default 10000)" },
                 "background": { "type": "boolean", "description": "Start as a background job and return its job_id" },
                 "input": { "type": "string", "description": "Text to give the command on stdin (default: empty stdin)" },
-                "ready_pattern": { "type": "string", "description": "Background only: regex on output lines meaning the task is ready" },
-                "ready_timeout": { "type": "integer", "description": "Background only: milliseconds to wait for ready_pattern" },
-                "yield_time_ms": { "type": "integer", "description": "Foreground only: milliseconds before a command still running returns as a task (Running) while it goes on (default 10000). Distinct from timeout, which still ends it" }
+                "ready_pattern": { "type": "string", "description": "Background only: regex on output lines meaning the task is ready" }
             },
             "required": ["command"]
         })
@@ -204,15 +193,11 @@ impl Tool for BashTool {
             .extensions
             .get::<std::sync::Arc<dyn bricks_vms::Sandbox>>()
         {
-            if input.background
-                || input.yield_time_ms.is_some()
-                || input.ready_pattern.is_some()
-                || input.ready_timeout.is_some()
-            {
+            if input.background || input.ready_pattern.is_some() {
                 return ToolResult::error(
-                    "`background`, `ready_pattern`, `ready_timeout` and `yield_time_ms` are not \
-                     available in a sandbox: each command runs there on its own and nothing \
-                     stays supervised. Run it without them.",
+                    "`background` and `ready_pattern` are not available in a sandbox: each \
+                     command runs there on its own and nothing stays supervised. Run it without \
+                     them.",
                 );
             }
             return run_in_sandbox(&sandbox, &input.command, timeout).await;
@@ -232,44 +217,28 @@ impl Tool for BashTool {
                     );
                 }
             }
-            // A command that may become a job needs the registry and the
-            // agent's identity: checked before anything starts.
-            let yield_after = input
-                .yield_time_ms
-                .map(Duration::from_millis)
-                .unwrap_or(config.yield_time);
-            let may_be_a_job = input.background || yield_after < timeout;
-            let jobs = match (&self.jobs, may_be_a_job) {
-                (_, false) => None,
-                (None, true) => return ToolResult::error(NO_REGISTRY),
-                (Some(registry), true) => {
-                    let Some(owner) = ctx.extensions.get::<crate::jobs::JobOwner>() else {
-                        return ToolResult::error(
-                            "this agent has no identity, so its jobs could not be followed: \
-                             nothing was started (the agent was assembled without one).",
-                        );
-                    };
-                    Some((Arc::clone(registry), (*owner).clone()))
-                }
-            };
             if input.background {
-                if input.yield_time_ms.is_some() {
-                    return ToolResult::error(
-                        "`yield_time_ms` only applies to a foreground command: a background \
-                         command is a job from the start.",
-                    );
-                }
-                let Some(jobs) = jobs else {
+                let Some(registry) = &self.jobs else {
                     return ToolResult::error(NO_REGISTRY);
                 };
-                return start_background(&input, ctx, &config, jobs).await;
+                let Some(owner) = ctx.extensions.get::<crate::jobs::JobOwner>() else {
+                    return ToolResult::error(
+                        "this agent has no identity, so its jobs could not be followed: \
+                         nothing was started (the agent was assembled without one).",
+                    );
+                };
+                return start_background(
+                    &input,
+                    ctx,
+                    &config,
+                    (Arc::clone(registry), (*owner).clone()),
+                )
+                .await;
             }
-            if input.ready_pattern.is_some() || input.ready_timeout.is_some() {
-                return ToolResult::error(
-                    "`ready_pattern` and `ready_timeout` only apply with `background: true`.",
-                );
+            if input.ready_pattern.is_some() {
+                return ToolResult::error("`ready_pattern` only applies with `background: true`.");
             }
-            run_foreground(&input, ctx, &config, timeout, yield_after, jobs).await
+            run_foreground(&input, ctx, &config, timeout).await
         }
         #[cfg(not(unix))]
         {
@@ -281,16 +250,13 @@ impl Tool for BashTool {
     }
 }
 
-/// A foreground command: its result when it ends before the hand-over, or a
-/// task (`Running`) when it does not.
+/// A foreground command: runs until completion or `timeout`.
 #[cfg(unix)]
 async fn run_foreground(
     input: &Input,
     ctx: &ToolContext,
     config: &ShellConfig,
     timeout: Duration,
-    yield_after: Duration,
-    jobs: Option<(Arc<crate::jobs::JobRegistry>, crate::jobs::JobOwner)>,
 ) -> ToolResult {
     let sessions = shell::session(&ctx.session_id, config);
     let started = std::time::Instant::now();
@@ -309,31 +275,14 @@ async fn run_foreground(
     };
     let task = Arc::clone(cmd.task());
     let progress = progress_for(ctx, "Bash");
-    let yield_timer = tokio::time::sleep(yield_after);
-    tokio::pin!(yield_timer);
-    // A hand-over at or after the deadline never happens: the timeout ends
-    // the command, as a timeout (not as a job still running). Without a
-    // registry the command was refused unless it cannot be handed over.
-    let mut yield_pending = jobs.is_some() && yield_after < timeout;
     let mut ticker = tokio::time::interval(config.progress_every);
     ticker.tick().await;
     let mut last_bytes = 0u64;
     let mut quiet_since = std::time::Instant::now();
-    let mut refused: Option<String> = None;
 
-    // `None`: the command ended; `Some(slot)`: it is handed over, with the
-    // place reserved for it as a job.
-    let handed_over: Option<crate::jobs::JobSlot> = loop {
+    loop {
         tokio::select! {
-            _ = task.wait_end() => break None,
-            _ = &mut yield_timer, if yield_pending => {
-                yield_pending = false;
-                match jobs.as_ref().map(|(registry, _)| registry.reserve()) {
-                    Some(Ok(slot)) => break Some(slot),
-                    Some(Err(e)) => refused = Some(e),
-                    None => {}
-                }
-            }
+            _ = task.wait_end() => break,
             _ = ticker.tick() => {
                 let st = task.status();
                 let bytes = st.stdout_bytes + st.stderr_bytes;
@@ -360,54 +309,15 @@ async fn run_foreground(
                 }
             }
         }
-    };
-
-    let Some(slot) = handed_over else {
-        let outcome = cmd.finish().await;
-        let mut notes = Vec::new();
-        if let Some(e) = refused {
-            notes.push(format!(
-                "still running after {}: not handed over as a job ({e}); the call waited for it",
-                bricks_types::duration::display_ms(yield_after)
-            ));
-        }
-        return finished_result(timeout, outcome, notes);
-    };
-
-    let Some((registry, owner)) = jobs else {
-        unreachable!("a command is handed over only with a registry");
-    };
-    // The job runs where the command started: the session's directory.
-    let job_id = registry.register(slot, owner, Arc::clone(&task), &task.cwd, false);
-    let mut partial = task
-        .output()
-        .unwrap_or_else(|| [Default::default(), Default::default()]);
-    sessions.adopt(Arc::clone(&task));
-    // From now on the job is read through its logs: the command's captures
-    // are released, and their raw files with them. The partial output points
-    // to the job's raw logs instead, which hold the whole stream (their path
-    // changes once the job ends and they are kept: Job status gives it).
-    task.release_capture();
-    for captured in &mut partial {
-        if let Some(spill) = captured.raw_path.take() {
-            captured.text = captured.text.replace(
-                &format!("complete raw output: {}", spill.display()),
-                "complete raw output: the job's raw log (Job action status)",
-            );
-        }
     }
-    // The command goes on: its watcher keeps its deadline and publishes its end.
-    drop(cmd.detach());
-    handed_over_result(&task, job_id, started, partial)
+
+    let outcome = cmd.finish().await;
+    finished_result(timeout, outcome)
 }
 
-/// The result of a command that ended (in the call or after the hand-over).
+/// The result of a command that ended.
 #[cfg(unix)]
-fn finished_result(
-    timeout: Duration,
-    outcome: crate::shell::bash::RunOutcome,
-    extra_notes: Vec<String>,
-) -> ToolResult {
+fn finished_result(timeout: Duration, outcome: crate::shell::bash::RunOutcome) -> ToolResult {
     use crate::shell::bash::RunStatus;
     let (status, exit_code, termination) = match &outcome.status {
         RunStatus::Exited { code } => (
@@ -454,7 +364,6 @@ fn finished_result(
     report.termination = termination;
     report.duration = Some(outcome.duration);
     report.timeout = (status == ToolStatus::TimedOut).then_some(timeout);
-    report.notes.extend(extra_notes);
     report.notes.extend(outcome.notes.iter().cloned());
     for (name, cap) in [("stdout", &outcome.stdout), ("stderr", &outcome.stderr)] {
         if let Some(p) = &cap.raw_path {
@@ -471,66 +380,6 @@ fn finished_result(
         "exit_code": exit_code_value,
         "stdout_bytes": outcome.stdout.raw_bytes,
         "stderr_bytes": outcome.stderr.raw_bytes,
-    }));
-    ToolResult::from_report(report)
-}
-
-/// The result of a command handed over: what it printed so far, its ids and
-/// the cursors to read the rest with.
-#[cfg(unix)]
-fn handed_over_result(
-    task: &shell::background::Task,
-    job_id: String,
-    started: std::time::Instant,
-    partial: [crate::shell::capture::Captured; 2],
-) -> ToolResult {
-    let st = task.status();
-    let cwd = &task.cwd;
-    let cursor_out = task
-        .read(
-            shell::background::Stream::Stdout,
-            shell::background::OutputPosition::Offset(0),
-            0,
-        )
-        .total_lines;
-    let cursor_err = task
-        .read(
-            shell::background::Stream::Stderr,
-            shell::background::OutputPosition::Offset(0),
-            0,
-        )
-        .total_lines;
-    let mut notes = task.launch_notes.clone();
-    notes.extend([
-        format!(
-            "Still running after {}, handed over as job {job_id} (pid {}) in {}: {}",
-            bricks_types::duration::display_ms(started.elapsed()),
-            st.pid,
-            cwd.display(),
-            st.command
-        ),
-        format!(
-            "Follow it with Job: action output, job_id \"{job_id}\", offset {cursor_out} for new \
-             stdout lines ({cursor_err} for stderr); wait to wait for its end; stop to end it. \
-             Unlike a background command, it is stopped when this run ends: wait for it with \
-             Job (action wait) before you answer; its timeout still ends it."
-        ),
-    ]);
-    let mut report = ToolReport::new(
-        ToolStatus::Running,
-        ToolBody::Streams {
-            stdout: partial[0].text.clone(),
-            stderr: partial[1].text.clone(),
-        },
-    );
-    report.duration = Some(started.elapsed());
-    report.notes = notes;
-    report.data = Some(serde_json::json!({
-        "job_id": job_id,
-        "pid": st.pid,
-        "state": st.state.label(),
-        "cwd": cwd.display().to_string(),
-        "cursors": { "stdout": cursor_out, "stderr": cursor_err },
     }));
     ToolResult::from_report(report)
 }
@@ -586,12 +435,16 @@ async fn start_background(
     // A job as soon as it runs, never out of reach while it starts. If the
     // call is abandoned before it reports (the run is cancelled), nobody got
     // its id: it is stopped.
-    let job_id = registry.register(slot, owner, Arc::clone(&task), &task.cwd, true);
+    let job_id = registry.register(slot, owner, Arc::clone(&task), &task.cwd);
     let mut unreported = StopIfUnreported(Some(Arc::clone(&task)));
-    let wait = match (input.ready_pattern.is_some(), input.ready_timeout) {
-        (true, Some(ms)) => Duration::from_millis(ms).min(config.max_timeout),
-        (true, None) => Duration::from_secs(10),
-        _ => Duration::ZERO,
+    let wait = if input.ready_pattern.is_some() {
+        input
+            .timeout
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| Duration::from_secs(10))
+            .min(config.max_timeout)
+    } else {
+        Duration::ZERO
     };
     if !wait.is_zero() {
         task.wait_ready(wait).await;
@@ -734,7 +587,7 @@ async fn run_in_sandbox(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jobs::{JobOwner, JobRegistry, JobTool, JobsHandle};
+    use crate::jobs::{JobOwner, JobRegistry, JobsHandle};
 
     #[test]
     fn invoked_names_are_the_first_words() {
@@ -756,8 +609,7 @@ mod tests {
     }
 
     /// Bash on a session's registry, for an agent with an identity (what
-    /// `shell_with_jobs` gives a real agent). Background and handed-over
-    /// commands need it.
+    /// `shell_with_jobs` gives a real agent). Background commands need it.
     fn with_jobs(dir: &std::path::Path) -> (BashTool, Arc<JobRegistry>, ToolContext) {
         let registry = JobRegistry::new(Default::default(), None);
         let c = ctx(dir);
@@ -770,7 +622,7 @@ mod tests {
         (BashTool::with_jobs(Arc::clone(&registry)), registry, c)
     }
 
-    /// The `job_id` of a background or handed-over result.
+    /// The `job_id` of a background result.
     fn job_id_of(r: &ToolResult) -> String {
         r.metadata.as_ref().expect("metadata")["job_id"]
             .as_str()
@@ -863,130 +715,52 @@ mod tests {
         crate::shell::close_session(&c.session_id).await;
     }
 
-    /// A command still running at the yield returns as a job; its output
-    /// and end are read through `Job`, and the deadline still holds.
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_yielded_command_is_a_job_read_to_its_end() {
+    async fn foreground_commands_run_without_a_registry() {
         let dir = tempfile::tempdir().unwrap();
-        let (bash, reg, c) = with_jobs(dir.path());
-        let r = bash
+        let c = ctx(dir.path());
+        let r = BashTool::default()
+            .execute(serde_json::json!({ "command": "echo hello" }), &c)
+            .await;
+        assert!(!r.is_error, "{}", r.content);
+        assert!(r.content.contains("hello"), "{}", r.content);
+
+        let timed = BashTool::default()
             .execute(
-                serde_json::json!({ "command": "echo first; sleep 0.8; echo last", "yield_time_ms": 150 }),
+                serde_json::json!({ "command": "sleep 30", "timeout": 300 }),
                 &c,
             )
             .await;
-        let rep = r.report.clone().unwrap();
-        assert_eq!(rep.status, ToolStatus::Running, "{}", r.content);
-        assert!(!r.is_error);
-        let id = job_id_of(&r);
+        let rep = timed.report.clone().unwrap();
+        assert_eq!(rep.status, ToolStatus::TimedOut, "{}", timed.content);
         assert!(
-            matches!(&rep.body, ToolBody::Streams { stdout, .. } if stdout.contains("first")),
-            "{:?}",
-            rep.body
+            timed.metadata.is_none() || timed.metadata.as_ref().unwrap().get("job_id").is_none()
         );
-        let task = reg.view(&id, None).expect("the job").task;
-        assert!(task.wait_finished(Duration::from_secs(5)).await);
-        let out = JobTool::new(Arc::clone(&reg))
-            .execute(serde_json::json!({ "action": "output", "job_id": id }), &c)
-            .await;
-        assert!(out.content.contains("last"), "{}", out.content);
         crate::shell::close_session(&c.session_id).await;
     }
 
-    /// A yielded command whose output already spilled to its raw file: the
-    /// hand-over drops that file and points to the job's raw log, and the job
-    /// goes on being read through its logs without writing it again.
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_yielded_command_releases_its_spilled_raw_file() {
-        fn raw_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-            let mut found = Vec::new();
-            let mut todo = vec![dir.to_path_buf()];
-            while let Some(d) = todo.pop() {
-                let Ok(entries) = std::fs::read_dir(&d) else {
-                    continue;
-                };
-                for e in entries.flatten() {
-                    let p = e.path();
-                    if p.is_dir() {
-                        todo.push(p);
-                    } else if p
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with("raw-"))
-                    {
-                        found.push(p);
-                    }
-                }
-            }
-            found
-        }
+    async fn background_ready_pattern_uses_timeout() {
         let dir = tempfile::tempdir().unwrap();
         let (bash, reg, c) = with_jobs(dir.path());
-        c.extensions.insert(ShellConfig {
-            base_dir: dir.path().join("shell"),
-            capture: shell::capture::CaptureLimits {
-                head_bytes: 256,
-                tail_bytes: 256,
-                raw_memory_bytes: 64,
-            },
-            ..ShellConfig::default()
-        });
+        let started = std::time::Instant::now();
         let r = bash
             .execute(
                 serde_json::json!({
-                    "command": "head -c 4000 /dev/zero | tr '\\0' x; echo; sleep 0.8; echo last",
-                    "yield_time_ms": 150
+                    "command": "sleep 30",
+                    "background": true,
+                    "ready_pattern": "never",
+                    "timeout": 200
                 }),
                 &c,
             )
             .await;
-        let rep = r.report.clone().unwrap();
-        assert_eq!(rep.status, ToolStatus::Running, "{}", r.content);
-        let id = job_id_of(&r);
-        let stdout = match &rep.body {
-            ToolBody::Streams { stdout, .. } => stdout.clone(),
-            other => panic!("{other:?}"),
-        };
-        assert!(
-            stdout.contains("complete raw output: the job's raw log (Job action status)"),
-            "the partial output points to the job's raw log: {stdout}"
-        );
-        assert!(
-            raw_files(&dir.path().join("shell")).is_empty(),
-            "the hand-over drops the spill"
-        );
-        let task = reg.view(&id, None).expect("the job").task;
-        assert!(task.wait_finished(Duration::from_secs(5)).await);
-        assert!(
-            raw_files(&dir.path().join("shell")).is_empty(),
-            "not written again"
-        );
-        let out = JobTool::new(Arc::clone(&reg))
-            .execute(serde_json::json!({ "action": "output", "job_id": id }), &c)
-            .await;
-        assert!(out.content.contains("last"), "{}", out.content);
-        crate::shell::close_session(&c.session_id).await;
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn the_timeout_still_ends_a_yielded_command() {
-        let dir = tempfile::tempdir().unwrap();
-        let (bash, reg, c) = with_jobs(dir.path());
-        let r = bash
-            .execute(
-                serde_json::json!({ "command": "sleep 30", "yield_time_ms": 100, "timeout": 700 }),
-                &c,
-            )
-            .await;
-        assert_eq!(r.report.as_ref().unwrap().status, ToolStatus::Running);
-        let id = job_id_of(&r);
-        let task = reg.view(&id, None).expect("the job").task;
-        let started = std::time::Instant::now();
-        assert!(task.wait_finished(Duration::from_secs(5)).await);
-        assert!(started.elapsed() < Duration::from_secs(4), "deadline held");
+        assert!(!r.is_error, "{}", r.content);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(r.content.contains("ready: not yet"), "{}", r.content);
+        reg.stop_all().await;
         crate::shell::close_session(&c.session_id).await;
     }
 
@@ -1014,25 +788,6 @@ mod tests {
         crate::shell::close_session(&c.session_id).await;
     }
 
-    /// A timeout that comes before the hand-over ends the command as a
-    /// timeout: it is not returned as still running.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_timeout_before_the_hand_over_is_a_timeout() {
-        let dir = tempfile::tempdir().unwrap();
-        let c = ctx(dir.path());
-        let r = BashTool::default()
-            .execute(
-                serde_json::json!({ "command": "sleep 30", "timeout": 300, "yield_time_ms": 300 }),
-                &c,
-            )
-            .await;
-        let rep = r.report.clone().unwrap();
-        assert_eq!(rep.status, ToolStatus::TimedOut, "{}", r.content);
-        assert!(r.metadata.is_none() || r.metadata.as_ref().unwrap().get("job_id").is_none());
-        crate::shell::close_session(&c.session_id).await;
-    }
-
     #[tokio::test]
     async fn unknown_and_misplaced_options_are_refused() {
         let dir = tempfile::tempdir().unwrap();
@@ -1048,5 +803,15 @@ mod tests {
             "{}",
             r.content
         );
+        for legacy in ["yield_time_ms", "ready_timeout"] {
+            let r = bash
+                .execute(
+                    serde_json::json!({ "command": "true", legacy: 100 }),
+                    &c,
+                )
+                .await;
+            assert!(r.is_error, "{legacy}: {}", r.content);
+            assert!(r.content.contains(legacy), "{legacy}: {}", r.content);
+        }
     }
 }

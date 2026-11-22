@@ -8,14 +8,14 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Built-in Tools Reference
 
-The built-in tools in `bricks::tools::all()` are in the categories below, and each is available through the composition functions in `bricks::tools`. `CodeSearch` is not in those sets (add `CodeSearchTool::with_embeddings` when embeddings are configured), `PowerShell` is included only on Windows or when `pwsh` is on `PATH`, and `Skill` is added by an agent with a skills service. The sub-agent tools (`Agent`, `Managent`, `Messagent`) are not in those sets either: see [Sub-agent tools](#sub-agent-tools).
+The built-in tools in `bricks::tools::all()` are in the categories below, and each is available through the composition functions in `bricks::tools`. `CodeSearch` is not in those sets (add `CodeSearchTool::with_embeddings` when embeddings are configured), `shell()` and `shell_with_jobs()` expose only the platform-native shell (`Bash` and `Job` on Unix, `PowerShell` on Windows), and `Skill` is added by an agent with a skills service. The sub-agent tools (`Agent`, `Managent`, `Messagent`) are not in those sets either: see [Sub-agent tools](#sub-agent-tools).
 
 ```text
-bricks::tools::all()                     // coding() + planning() (13 or 14 tools)
-bricks::tools::coding()                  // filesystem() + shell_with_jobs() + web() (12 or 13)
+bricks::tools::all()                     // coding() + planning() (13 on Unix, 12 on Windows)
+bricks::tools::coding()                  // filesystem() + shell_with_jobs() + web() (12 on Unix, 11 on Windows)
 bricks::tools::filesystem()              // 8 tools
-bricks::tools::shell()                   // Bash, plus PowerShell when available (no job registry)
-bricks::tools::shell_with_jobs(registry) // Bash, Job, plus PowerShell when available
+bricks::tools::shell()                   // Bash on Unix (no job registry), PowerShell on Windows
+bricks::tools::shell_with_jobs(registry) // Bash and Job on Unix, PowerShell on Windows
 bricks::tools::web()                     // 2 tools: WebFetch, WebSearch
 bricks::tools::planning()                // 1 tool: TodoWrite
 ```
@@ -245,13 +245,8 @@ Execute a shell command. Each call is its own process, started from the session'
     },
     timeout: {
       type: 'integer',
-      description: 'Timeout in milliseconds.',
+      description: 'Timeout in milliseconds (default 120000, max 600000). With `background: true` and `ready_pattern`, milliseconds to wait for readiness (default 10000).',
       default: '120000 (max 600000)',
-    },
-    yield_time_ms: {
-      type: 'integer',
-      description: 'Foreground only: milliseconds before a command still running is handed over as a job (status Running, with its job_id). Not a deadline.',
-      default: '[bash] yield_time_ms (10000)',
     },
     background: {
       type: 'boolean',
@@ -261,11 +256,6 @@ Execute a shell command. Each call is its own process, started from the session'
     ready_pattern: {
       type: 'string',
       description: 'Background only. A regex on output lines: the job is ready when a line matches.',
-    },
-    ready_timeout: {
-      type: 'integer',
-      description: 'Background only. Milliseconds to wait for `ready_pattern`.',
-      default: '10000',
     },
     input: {
       type: 'string',
@@ -278,11 +268,11 @@ Execute a shell command. Each call is its own process, started from the session'
 Bash calls are decided by the session policy at the `Execute` level, whatever the command. No analysis of the command runs before it and none lowers or raises that level. The AST analysis of `bricks_tools::tool_primitives::bash_safety` is an SDK primitive a caller can use on its own; see [Code intelligence](/docs/code-intelligence#bash-command-safety-analysis).
 </Callout>
 
-A command that may become a job (`background: true`, or a `yield_time_ms` below its `timeout`) is recorded by the session's job registry. Without one, as with `bricks::tools::shell()`, it is refused before it starts. A job is followed with [Job](#job).
+A `background: true` command is recorded by the session's job registry. Without one, as with `bricks::tools::shell()`, `background: true` is refused before it starts while foreground commands still run. A job is followed with [Job](#job).
 
 ### Job
 
-The calling agent's background jobs: the commands started with `Bash` and `background: true`, and the foreground commands handed over after `yield_time_ms`. Each job is visible only to the agent that started it. Running is not ready, and ready is not proof that a service works. Stopping a job ends its process group and tree (TERM, then KILL). See [Background Tasks](/docs/background-tasks).
+The calling agent's background jobs, started with `Bash` and `background: true`. Each job is visible only to the agent that started it. Running is not ready, and ready is not proof that a service works. Stopping a job ends its process group and tree (TERM, then KILL). See [Background Tasks](/docs/background-tasks).
 
 **Permission:** Execute for `stop`; ReadOnly for `list`, `status`, `output` and `wait`.
 

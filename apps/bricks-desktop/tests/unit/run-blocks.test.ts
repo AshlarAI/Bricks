@@ -16,6 +16,8 @@ import {
 	currentStep,
 	needsAttention,
 	timelineBlocks,
+	turnWindow,
+	turnsRequiredForKey,
 	type TimelineBlock,
 	type WorkBlock,
 } from '../../src/lib/features/conversation/runBlocks';
@@ -271,5 +273,60 @@ describe('currentStep: what the run does now', () => {
 			{ kind: 'approval', id: 'ap', approval: APPROVAL },
 		];
 		expect(currentStep(items)?.label).toBe('Read');
+	});
+});
+
+describe('turnWindow and turnsRequiredForKey', () => {
+	it('keeps all items when there are no user turns or within maxTurns', () => {
+		const noUsers: TimelineItem[] = [
+			{ kind: 'tool', id: 't1', toolCallId: 'tc1', name: 'Read', input: {}, status: 'ok' },
+			message('a1', 'Done'),
+		];
+		expect(turnWindow(noUsers, 20)).toEqual({
+			visible: noUsers,
+			hiddenTurns: 0,
+			totalTurns: 0,
+			startIndex: 0,
+		});
+
+		const twoTurns: TimelineItem[] = [
+			{ kind: 'user', id: 'u1', text: 'One', attachments: [], runId: 'r1' },
+			message('a1', 'Ans 1', '', false),
+			{ kind: 'user', id: 'u2', text: 'Two', attachments: [], runId: 'r2' },
+			message('a2', 'Ans 2', '', false),
+		];
+		expect(turnWindow(twoTurns, 2).hiddenTurns).toBe(0);
+		expect(turnWindow(twoTurns, 2).visible).toBe(twoTurns);
+	});
+
+	it('slices by user turns and never splits an earlier item sharing the starting runId', () => {
+		const items: TimelineItem[] = [
+			{ kind: 'user', id: 'u1', text: 'First', attachments: [], runId: 'r1' },
+			{ kind: 'tool', id: 't1', toolCallId: 'tc1', name: 'Read', input: {}, status: 'ok', runId: 'r1' },
+			{ kind: 'assistant', id: 'a1', text: 'R1', thinking: '', streaming: false, runId: 'r1' },
+			{ kind: 'assistant', id: 'pre2', text: 'Lead', thinking: '', streaming: false, runId: 'r2' },
+			{ kind: 'user', id: 'u2', text: 'Second', attachments: [], runId: 'r2' },
+			{ kind: 'tool', id: 't2', toolCallId: 'tc2', name: 'Bash', input: {}, status: 'ok', runId: 'r2' },
+			{ kind: 'user', id: 'u3', text: 'Third', attachments: [], runId: 'r3' },
+			{ kind: 'assistant', id: 'a3', text: 'R3', thinking: '', streaming: false, runId: 'r3' },
+		];
+		const win = turnWindow(items, 2);
+		expect(win.totalTurns).toBe(3);
+		expect(win.hiddenTurns).toBe(1);
+		expect(win.startIndex).toBe(3);
+		expect(win.visible.map((i) => i.id)).toEqual(['pre2', 'u2', 't2', 'u3', 'a3']);
+	});
+
+	it('computes the trailing turns required to reveal a user message', () => {
+		const items: TimelineItem[] = [
+			{ kind: 'user', id: 'u1', text: '1', attachments: [] },
+			{ kind: 'assistant', id: 'a1', text: 'R1', thinking: '', streaming: false },
+			{ kind: 'user', id: 'u2', text: '2', attachments: [] },
+			{ kind: 'user', id: 'u3', text: '3', attachments: [] },
+		];
+		expect(turnsRequiredForKey(items, 'u1')).toBe(3);
+		expect(turnsRequiredForKey(items, 'u2')).toBe(2);
+		expect(turnsRequiredForKey(items, 'u3')).toBe(1);
+		expect(turnsRequiredForKey(items, 'missing')).toBeNull();
 	});
 });

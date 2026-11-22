@@ -146,8 +146,8 @@ max_session_bytes = 67108864    # documents kept per session (oldest removed bey
 # high = "deep"                          # a profile's `high` → this model's `deep`
 
 [bash]
-# Foreground Bash commands. See docs/shell.md.
-# yield_time_ms = 10000        # before a still-running command is handed over as a task
+# Bash shell settings. See docs/shell.md.
+# extra_path = []              # directories appended to PATH on Unix (macOS defaults to Homebrew and ~/.cargo/bin)
 
 [background]
 # Background commands (Bash `background: true`, the Job tool). See docs/agents.md.

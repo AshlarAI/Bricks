@@ -88,7 +88,7 @@ Sandboxes do not talk to each other over the network. Messages and shared values
 | Area | State |
 |---|---|
 | `bricks` command-line tool and desktop app | No sandbox is created, no backend is chosen, and no VM tool is registered. Their session tools are `bricks_tools::coding()` (filesystem, shell, web) plus the native sub-agent tools when `[agents] enabled`. |
-| `Bash` tool | Routes through a sandbox when the caller inserts an `Arc<dyn Sandbox>` into `ToolContext.extensions`. The background, `yield_time_ms` and `ready_pattern` options are refused there. |
+| `Bash` tool | Routes through a sandbox when the caller inserts an `Arc<dyn Sandbox>` into `ToolContext.extensions`. The `background` and `ready_pattern` options are refused there. |
 | `vm_tools` (five agent-facing tools) | Compiled with the `vms` feature. They are not in `bricks_tools::all()` or `coding()`: add them to the tool list yourself. See [the API page](/docs/vms-api#agent-facing-tools-bricks_toolsvm_tools). |
 | Sub-agents | `SandboxAllocator` and `DefaultAllocator` exist, but no agent code uses them. Each sub-agent runs on the host. |
 | AgentRL | The production runner isolates proposals in temporary copies of the working directory, not in sandboxes. See [AgentRL](/docs/agentrl-overview). |

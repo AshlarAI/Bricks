@@ -14,8 +14,7 @@
 //! result says so.
 //!
 //! The timeout is a deadline from the start, enforced by the command's
-//! watcher: it still applies after the command was handed over as a task
-//! ([`Command::detach`]). The end is published once, by whichever of the
+//! watcher. The end is published once, by whichever of the
 //! caller and the watcher gets there first, before the caller sees it.
 
 #![cfg(unix)]
@@ -185,24 +184,18 @@ pub struct Command {
 impl Command {
     /// The task behind the command.
     pub fn task(&self) -> &Arc<Task> {
-        &self.run.as_ref().expect("command handed over").task
+        &self.run.as_ref().expect("command already finished").task
     }
 
     /// Waits for the command's end, publishes it and returns its outcome.
     pub async fn finish(&mut self) -> RunOutcome {
-        let run = Arc::clone(self.run.as_ref().expect("command handed over"));
+        let run = Arc::clone(self.run.as_ref().expect("command already finished"));
         let mut watched = run.watched.clone();
         let _ = watched.wait_for(|done| *done).await;
         run.settle();
         let outcome = run.outcome();
         self.run = None;
         outcome
-    }
-
-    /// Hands the command over to the session: it goes on as a task, and
-    /// its end is still published. Nothing is killed when this handle goes.
-    pub fn detach(mut self) -> Arc<Run> {
-        self.run.take().expect("command handed over")
     }
 }
 
@@ -299,11 +292,6 @@ impl ShellSessions {
         let mut commands = self.commands.lock();
         commands.retain(|r| !r.task().state().is_finished());
         commands.push(run);
-    }
-
-    /// Makes a yielded command's task visible to the task tools.
-    pub(crate) fn adopt(&self, task: Arc<Task>) {
-        self.keep_task(task);
     }
 
     /// Remembers what a command was described as for an approval.

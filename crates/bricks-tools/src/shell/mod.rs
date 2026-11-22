@@ -8,8 +8,7 @@
 //!   variables, functions and aliases, shared by the session's commands;
 //! * the ordinary commands ([`bash::Command`]): each one a separate `bash`
 //!   process started from a copy of that state, running side by side (no
-//!   command waits for another), with a deadline, and handed over as a task
-//!   when a call stops waiting for it (`yield_time_ms`);
+//!   command waits for another), with a deadline;
 //! * the background tasks ([`background::Task`]): started from a copy of the
 //!   state, never publishing into it;
 //! * the persistent PowerShell ([`powershell::PwshSession`]), unchanged.
@@ -52,10 +51,6 @@ pub type ProgressSinkFn = dyn Fn(&str, &str) + Send + Sync;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct BashSettings {
-    /// Milliseconds a foreground command runs before the call returns it as
-    /// a job (`Running`, with a `job_id`) while it goes on. A call's
-    /// `yield_time_ms` overrides it; `timeout` still ends the command.
-    pub yield_time_ms: u64,
     /// Directories added at the end of the `PATH` a Bash session starts with
     /// (absolute, or starting with `~`). An entry already there is not added
     /// again, and the session may change its `PATH` afterwards.
@@ -65,7 +60,6 @@ pub struct BashSettings {
 impl Default for BashSettings {
     fn default() -> Self {
         Self {
-            yield_time_ms: 10_000,
             extra_path: if cfg!(target_os = "macos") {
                 vec![
                     "/opt/homebrew/bin".into(),
@@ -82,7 +76,6 @@ impl Default for BashSettings {
 impl BashSettings {
     /// Applies these settings to a shell configuration.
     pub fn apply_to(&self, config: &mut ShellConfig) {
-        config.yield_time = Duration::from_millis(self.yield_time_ms);
         let home = dirs::home_dir();
         config.extra_path = self
             .extra_path
@@ -134,9 +127,6 @@ pub struct ShellConfig {
     pub default_timeout: Duration,
     /// Upper bound of a requested timeout.
     pub max_timeout: Duration,
-    /// Foreground time before a still-running command is handed over as a
-    /// task (see [`BashSettings`]).
-    pub yield_time: Duration,
     /// Between the graceful and the forced signal.
     pub term_grace: Duration,
     /// How long to keep reading outputs after a command ended.
@@ -157,7 +147,6 @@ impl Default for ShellConfig {
             extra_path: Vec::new(),
             default_timeout: Duration::from_secs(120),
             max_timeout: Duration::from_secs(600),
-            yield_time: Duration::from_millis(BashSettings::default().yield_time_ms),
             term_grace: Duration::from_secs(2),
             drain: Duration::from_millis(500),
             progress_every: Duration::from_secs(10),
@@ -177,10 +166,9 @@ pub struct ShellSessions {
     /// Set when the PowerShell of this session ended; reported once by the
     /// next command, which runs in a new one.
     reset_notice: parking_lot::Mutex<Option<String>>,
-    /// Tasks the caller can read and stop: background tasks and handed-over
-    /// commands.
+    /// Tasks the caller can read and stop: background tasks.
     tasks: parking_lot::Mutex<Vec<Arc<background::Task>>>,
-    /// Ordinary commands in flight (possibly handed over too).
+    /// Ordinary commands in flight.
     #[cfg(unix)]
     commands: parking_lot::Mutex<Vec<Arc<bash::Run>>>,
     /// Commands described for an approval: `(command, fingerprint)`.
@@ -498,7 +486,6 @@ mod tests {
         let good = std::env::temp_dir().join("tools");
         let settings = BashSettings {
             extra_path: vec![good.display().to_string(), "bin".into()],
-            ..BashSettings::default()
         };
         let mut config = ShellConfig::default();
         settings.apply_to(&mut config);

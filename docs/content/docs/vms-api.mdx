@@ -415,7 +415,7 @@ pub type Result<T> = std::result::Result<T, VmError>;
 
 ### Transparent routing in `BashTool`
 
-When an `Arc<dyn bricks_vms::Sandbox>` is in `ToolContext.extensions`, `Bash` runs each command in that sandbox instead of on the host. Options that need a supervised host process are refused in that case: `background`, `yield_time_ms`, `ready_pattern` and `ready_timeout`.
+When an `Arc<dyn bricks_vms::Sandbox>` is in `ToolContext.extensions`, `Bash` runs each command in that sandbox instead of on the host. Options that need a supervised host process are refused in that case: `background` and `ready_pattern`.
 
 ```rust
 use bricks::tools::ToolContext;

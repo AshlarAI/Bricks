@@ -50,21 +50,18 @@ The session's permission policy decides before the command runs, from the comman
 | `Bash` input | Default | Meaning |
 |---|---|---|
 | `command` | required | The command. |
-| `timeout` | 120000 ms (max 600000) | Deadline from the start. It still applies after a hand-over. |
-| `yield_time_ms` | `[bash] yield_time_ms`, 10000 | Foreground only. How long the call waits before a still-running command is handed over as a job. It is not a deadline. |
+| `timeout` | 120000 ms (max 600000) | Foreground deadline from the start. With `background: true` and `ready_pattern`, how long to wait for readiness (default 10000 ms). |
 | `input` | none | Text for stdin. Prompts are never answered for you. |
 | `background` | `false` | Start a job at once (section 3). |
-| `ready_pattern`, `ready_timeout` | none, 10 s | Background only. A regex on output lines that means "ready", and how long to wait for it. |
+| `ready_pattern` | none | Background only. A regex on output lines that means "ready". |
 
-A command that may become a job (`background: true`, or a `yield_time_ms` below its `timeout`) needs the session's job registry. Without one (for example `bricks_tools::shell()` alone), it is refused before it starts. To make the call wait for the end, set `yield_time_ms` at least equal to `timeout`.
+A background command (`background: true`) needs the session's job registry. Without one (for example `bricks_tools::shell()` alone), `background: true` is refused before it starts, while foreground commands still run.
 
-Other defaults are in `ShellConfig` (`default_timeout`, `max_timeout`, `yield_time`, `term_grace` 2 s, `drain` 500 ms, `progress_every` 10 s, capture and log limits, `base_dir`, `bash_path`, `pwsh_path`). The `[bash]` section of `bricks.toml` only sets `yield_time_ms` (see `docs/bricks.example.toml`).
+Other defaults are in `ShellConfig` (`default_timeout`, `max_timeout`, `term_grace` 2 s, `drain` 500 ms, `progress_every` 10 s, capture and log limits, `base_dir`, `bash_path`, `pwsh_path`, `extra_path`). The `[bash]` section of `bricks.toml` configures `extra_path` (see `docs/bricks.example.toml`).
 
-**Progress.** While a command runs, a progress message is sent every `progress_every`: elapsed time, bytes so far, and a hint when nothing was printed for a while.
+**Progress.** While a foreground command runs, a progress message is sent every `progress_every`: elapsed time, bytes so far, and a hint when nothing was printed for a while.
 
 **Timeout.** The command's whole process tree gets `SIGTERM`, then `SIGKILL` after `term_grace`. Bricks checks that the processes are gone. The command saves no state. The result has status `timed_out`, no exit code, the partial output and the number of processes stopped. Background jobs are not touched.
-
-**Yield.** A foreground command still running after `yield_time_ms` is not killed. The call returns status `Running` with the job id and read positions, and the command goes on until it ends or its `timeout` expires.
 
 **Leftovers.** When a foreground command ends, any process it left behind (`cmd &`, a daemon) is stopped and listed in the result. A process that leaves its group on purpose (`setsid`, a double-forked daemon) is not found and survives. To keep something running, use `background: true`.
 
@@ -83,20 +80,17 @@ Other defaults are in `ShellConfig` (`default_timeout`, `max_timeout`, `yield_ti
 | A daemon that detached itself | Not found. | Not found. |
 | Bricks killed with SIGKILL or a crash | Nothing cleans up. Commands and jobs survive. | Same. |
 
-## 3. Yielded commands and background jobs
+## 3. Background jobs
 
-A `Bash` call can return while the command still runs, in two ways:
+With `background: true`, a `Bash` call starts a job at once and returns the `job_id` (`job_` and 12 hex characters), pid, state, readiness and directory. If the job already ended, or `ready_pattern` was not seen within `timeout` (default 10 s), the last 50 lines of output follow.
 
-* **At once**, with `background: true`. The call returns the `job_id` (`job_` and 12 hex characters), pid, state, readiness and directory. If the job already ended, or `ready_pattern` was not seen in time, the last 50 lines of output follow.
-* **After `yield_time_ms`**, for a foreground command. The call returns status `Running` with the same details and the stdout and stderr positions. The command keeps its `timeout`. Unlike a background job, it is stopped when the run that started it ends. `Job` with `wait` lets it finish first.
-
-Both are jobs: a separate `bash` that starts from a snapshot of the session state. A job never changes the session state. It has its own pipes, so its output never mixes with other commands.
+Each job is a separate `bash` that starts from a snapshot of the session state. A job never changes the session state. It has its own pipes, so its output never mixes with other commands.
 
 * **States:** `running`, `completed` (exit 0), `failed` (non-zero exit, or a signal Bricks did not send), `stopped`.
 * **Ready is not working.** With `ready_pattern`, readiness is reported when a line matches (for example `port \d+`). Without it, the result says readiness was not checked.
 * **Limit:** `[background] max_jobs` (default 16) running jobs per session. Beyond it, the start is refused. There is no queue.
 * **Owner:** a job is visible and stoppable only by the agent that started it. A frontend sees every job of its session.
-* **Lifetime:** a background job survives its turn and ends with the session. A yielded command ends with the run that started it. A sub-agent's jobs stop when it ends.
+* **Lifetime:** a background job survives its turn and ends with the session. A sub-agent's jobs stop when it ends.
 * **Kept output:** per stream, 1 MiB in memory (`output_buffer_bytes`) and at most 5000 lines. A line over 64 KiB (`max_line_bytes`) is cut and marked. Raw logs are capped at 50 MiB per stream (`raw_log_bytes`) and copied to the session's files when the job ends.
 
 ### The `Job` tool
@@ -120,7 +114,7 @@ Unknown fields and out-of-range values are refused, never adjusted. `stop` needs
 * `stop`: TERM to the group and its tree, a grace period (`stop_grace_ms`, 2 s), then KILL. Stopping an ended job is a success.
 * An unknown id, or another agent's, gets: `No accessible job with this id.`
 
-Prefer `background: true` or a yield to `cmd &` in a foreground command.
+Prefer `background: true` to `cmd &` in a foreground command, and use `Job` `wait` instead of `sleep` polling.
 
 ## 4. PowerShell
 

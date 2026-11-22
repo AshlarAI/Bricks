@@ -3,7 +3,7 @@
 // current step. Once the run has ended the bar says how long it worked (or how it
 // ended, when it did not succeed) and folds by itself: the answer follows it.
 // What asks the person something stays shown folded.
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
@@ -35,7 +35,7 @@ const TONE: Record<RunOutcome, string> = {
   cancelled: '',
 }
 
-export function WorkBlock({
+function WorkBlockComponent({
   conversation,
   runId,
   items,
@@ -146,5 +146,25 @@ export function WorkBlock({
     </Collapsible>
   )
 }
+
+function sameItems(a: readonly TimelineItem[], b: readonly TimelineItem[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function areWorkBlockPropsEqual(prev: WorkBlockProps, next: WorkBlockProps): boolean {
+  return (
+    prev.conversation === next.conversation &&
+    prev.runId === next.runId &&
+    prev.answerReasoning === next.answerReasoning &&
+    sameItems(prev.items, next.items)
+  )
+}
+
+export const WorkBlock = memo(WorkBlockComponent, areWorkBlockPropsEqual)
 
 export default WorkBlock

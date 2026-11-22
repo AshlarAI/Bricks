@@ -148,7 +148,7 @@ describe('The page itself never scrolls nor drags', () => {
 	const base = source('styles/base.css');
 
 	it('pins html and body to the window: no overflow, no rubber band', () => {
-		expect(base).toMatch(/html,\s*body\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*hidden;[^}]*overscroll-behavior:\s*none;/);
+		expect(base).toMatch(/html,\s*body\s*\{[^}]*height:\s*100%;[^}]*overflow:\s*clip;[^}]*overscroll-behavior:\s*none;/);
 		expect(base).not.toContain('min-height: 100dvh');
 	});
 

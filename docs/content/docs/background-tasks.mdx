@@ -8,7 +8,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 # Background Tasks
 
-Bricks keeps long work running without holding the conversation. A shell command can be started in the background with `Bash` (`background: true`), or a foreground command that is still running after its wait is handed over as a background job. The model follows these jobs with `Job`. Delegated work runs in parallel sub-agents, and each one can work in its own git worktree.
+Bricks keeps long work running without holding the conversation. A shell command can be started in the background with `Bash` (`background: true`), and the model follows it with `Job`. Delegated work runs in parallel sub-agents, and each one can work in its own git worktree.
 
 ---
 
@@ -16,10 +16,7 @@ Bricks keeps long work running without holding the conversation. A shell command
 
 ### Starting a Command
 
-`Bash` returns one of two ways when a command is still running:
-
-* **At once**, with `background: true`. The call returns as soon as the job has started, with its `job_id` (`job_` and 12 hexadecimal characters), its pid, its state, its readiness and its working directory.
-* **After `yield_time_ms`**, for a foreground command still running. The call returns with status `Running`, the same `job_id`, pid, state and working directory, and the stdout and stderr cursors. The command is not restarted and not killed, and its `timeout` still applies.
+With `background: true`, `Bash` starts the command in the background and returns its `job_id` (`job_` and 12 hexadecimal characters), its pid, its state, its readiness and its working directory.
 
 <TypeTable
   type={{
@@ -32,15 +29,10 @@ Bricks keeps long work running without holding the conversation. A shell command
       type: 'string',
       description: 'Background only. A regex on output lines: the task is ready when a line matches.',
     },
-    ready_timeout: {
+    timeout: {
       type: 'integer',
-      description: 'Background only. Milliseconds to wait for `ready_pattern`.',
+      description: 'With `background: true` and `ready_pattern`, milliseconds to wait for readiness (capped at 600000).',
       default: '10000',
-    },
-    yield_time_ms: {
-      type: 'integer',
-      description: 'Foreground only. Time before a command still running is handed over as a job. Not a deadline: `timeout` is.',
-      default: '[bash] yield_time_ms (10000)',
     },
   }}
 />
@@ -74,7 +66,7 @@ The full input and output of each action are in `docs/shell.md` in the repositor
 ### Example
 
 ```
-Bash { command: "npm run dev", background: true, ready_pattern: "ready in \\d+", ready_timeout: 30000 }
+Bash { command: "npm run dev", background: true, ready_pattern: "ready in \\d+", timeout: 30000 }
    → Started job job_… (pid …); state running; readiness is reported when a line matches
 
 Job { action: "output", job_id: "job_…", stream: "stdout", offset: 0, limit: 50 }
@@ -90,13 +82,13 @@ Job { action: "stop", job_id: "job_…" }
 
 * **Quota.** `[background] max_jobs` (default 16) counts the running jobs of the session and the places being started. A place is reserved before anything starts. Beyond the limit, the start is refused with nothing launched: there is no queue.
 * **Ownership.** A job is visible and stoppable only to the agent that started it. A frontend sees every job of its session.
-* **Lifetime.** A background job survives the turn that started it and ends with the session. A yielded command is not durable: it ends with the run that started it. A sub-agent's jobs stop when it ends, and no job outlives Bricks.
+* **Lifetime.** A background job survives the turn that started it and ends with the session. A sub-agent's jobs stop when it ends, and no job outlives Bricks.
 * **Bounded capture.** Per stream, 5 000 lines and 1 MiB (`[background] output_buffer_bytes`) are kept in memory; a line longer than 64 KiB is cut and marked. Raw logs are kept up to 50 MiB per stream in the session's directory, and copied there when the job ends.
 * **Events.** `job_started`, `job_output` (throttled counts, never the text) and `job_finished`.
-* **Without a job registry.** `bricks_tools::shell()` has no registry: a command that may become a job is refused before it starts. See [Built-in Tools](/docs/built-in-tools) for the sets.
+* **Without a job registry.** `bricks_tools::shell()` has no registry: `background: true` is refused before it starts, while foreground commands still run. See [Built-in Tools](/docs/built-in-tools) for the sets.
 
 <Callout>
-Prefer `background: true`, or a yield, to `cmd &` inside a foreground command. The leftovers of `cmd &` are stopped when that command ends.
+Prefer `background: true` to `cmd &` inside a foreground command, and use `Job` `wait` instead of `sleep` polling. The leftovers of `cmd &` are stopped when that command ends.
 </Callout>
 
 ---

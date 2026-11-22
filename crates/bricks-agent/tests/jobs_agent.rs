@@ -216,10 +216,10 @@ fn the_plain_shell_gets_no_registry_and_no_handle() {
 // ─── Sub-agents on the session's registry ────────────────────────────────────
 
 /// Two agents on one session registry, as a sub-agent is: the parent starts
-/// a background and a handed-over job; the sub-agent sees neither, and an
-/// unknown id gives the same answer.
+/// two background jobs; the sub-agent sees neither, and an unknown id gives the
+/// same answer.
 #[tokio::test]
-async fn jobs_of_both_kinds_are_followed_by_their_owner_and_not_by_another_agent() {
+async fn background_jobs_are_followed_by_their_owner_and_not_by_another_agent() {
     let work = tempfile::tempdir().unwrap();
     let session = registry();
     let ext = Extensions::default();
@@ -237,7 +237,7 @@ async fn jobs_of_both_kinds_are_followed_by_their_owner_and_not_by_another_agent
             1 => tool_call(
                 "a2",
                 "Bash",
-                json!({ "command": "sleep 30", "yield_time_ms": 100 }),
+                json!({ "command": "sleep 30", "background": true }),
             ),
             2 => tool_call("a3", "Job", json!({})),
             3 => tool_call("a4", "Job", json!({ "action": "stop", "job_id": ids[0] })),
@@ -352,4 +352,108 @@ async fn the_removed_task_tools_are_unknown_to_an_agent() {
         .find(|l| l.starts_with("Available tools"))
         .expect("the list of tools");
     assert!(!listed.contains("BashTask"), "{}", r[0]);
+}
+
+// ─── Push notifications ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn finished_background_job_delivers_push_notification_between_turns() {
+    let work = tempfile::tempdir().unwrap();
+    let seen_requests: Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let seen = Arc::clone(&seen_requests);
+    let mut step = 0usize;
+    let url = serve_with(move |request| {
+        seen.lock().unwrap().push(request.to_string());
+        let reply = match step {
+            0 => tool_call(
+                "p1",
+                "Bash",
+                json!({ "command": "sleep 0.25 && echo bg-done", "background": true }),
+            ),
+            1 => tool_call("p2", "Bash", json!({ "command": "sleep 0.4" })),
+            _ => text("observed"),
+        };
+        step += 1;
+        reply
+    });
+
+    let agent = builder(&url, work.path())
+        .tools(bricks_tools::coding())
+        .build()
+        .unwrap();
+    let out = agent.run("start background work").await.unwrap();
+    assert_eq!(out.text(), "observed");
+
+    {
+        let reqs = seen_requests.lock().unwrap();
+        assert_eq!(reqs.len(), 3, "expected 3 model requests, got {}", reqs.len());
+        let bg_id = job_ids_in(&reqs[1])
+            .into_iter()
+            .next()
+            .expect("background job id in turn 2 request");
+        assert!(
+            reqs[2].contains("[system] Background job(s) finished:"),
+            "turn 3 request should carry push notification: {}",
+            reqs[2]
+        );
+        assert!(reqs[2].contains(&bg_id), "{}", reqs[2]);
+        assert!(reqs[2].contains("completed (exit 0)"), "{}", reqs[2]);
+    }
+
+    // Exactly one push-notification message was injected, and a follow-up reply does not duplicate it.
+    let count_notifications = |a: &Agent| {
+        a.messages()
+            .iter()
+            .filter(|m| {
+                m.get_text()
+                    .is_some_and(|t| t.contains("[system] Background job(s) finished:"))
+            })
+            .count()
+    };
+    assert_eq!(count_notifications(&agent), 1);
+
+    agent.reply("status?").await.unwrap();
+    assert_eq!(count_notifications(&agent), 1);
+}
+
+#[tokio::test]
+async fn waited_background_job_does_not_emit_duplicate_push_notification() {
+    let work = tempfile::tempdir().unwrap();
+    let seen_requests: Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let seen = Arc::clone(&seen_requests);
+    let mut step = 0usize;
+    let url = serve_with(move |request| {
+        seen.lock().unwrap().push(request.to_string());
+        let ids = job_ids_in(request);
+        let reply = match step {
+            0 => tool_call(
+                "w1",
+                "Bash",
+                json!({ "command": "sleep 0.25 && echo bg-waited", "background": true }),
+            ),
+            1 => tool_call(
+                "w2",
+                "Job",
+                json!({ "action": "wait", "job_id": ids[0], "timeout_ms": 5000 }),
+            ),
+            _ => text("done"),
+        };
+        step += 1;
+        reply
+    });
+
+    let agent = builder(&url, work.path())
+        .tools(bricks_tools::coding())
+        .build()
+        .unwrap();
+    let out = agent.run("start and wait").await.unwrap();
+    assert_eq!(out.text(), "done");
+
+    let reqs = seen_requests.lock().unwrap();
+    assert_eq!(reqs.len(), 3, "expected 3 model requests, got {}", reqs.len());
+    assert!(
+        !reqs[2].contains("[system] Background job(s) finished:"),
+        "wait already observed completion, no duplicate push notification expected: {}",
+        reqs[2]
+    );
 }
