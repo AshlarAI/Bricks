@@ -13,7 +13,12 @@ import {
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Button } from '$lib/components/ui/button'
 import { Field, FieldLabel } from '$lib/components/ui/field'
-import { Input } from '$lib/components/ui/input'
+import {
+  PasswordInput,
+  PasswordInputGroup,
+  PasswordInputInput,
+  PasswordInputTrigger,
+} from '$lib/components/ui/password-input'
 import { Item, ItemActions, ItemContent, ItemGroup, ItemMedia, ItemTitle } from '$lib/components/ui/item'
 import { Spinner } from '$lib/components/ui/spinner'
 import { t, useLanguage } from '$lib/i18n/i18n'
@@ -120,16 +125,17 @@ export function ProviderTemplatePicker({
                 <ExternalLinkIcon data-icon="inline-end" />
               </Button>
             </div>
-            <Input
-              id={`${uid}-key`}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              className="font-mono"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              disabled={busy}
-            />
+            <PasswordInput>
+              <PasswordInputGroup>
+                <PasswordInputInput
+                  id={`${uid}-key`}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  disabled={busy}
+                />
+                <PasswordInputTrigger />
+              </PasswordInputGroup>
+            </PasswordInput>
           </Field>
 
           {error && (

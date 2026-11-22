@@ -19,6 +19,10 @@ export type RenderedBlock =
   | { key: string; kind: 'vega'; source: string; complete: boolean }
   /** A top-level ```markdown / ```md fence: its source, or its rendering on demand. */
   | { key: string; kind: 'markdown'; source: string; complete: boolean }
+  /** A top-level ```html fence: the page, shown in a sandbox once the fence is closed, or its source. */
+  | { key: string; kind: 'webpage'; source: string; complete: boolean }
+  /** Any other top-level code block: its source, highlighted by the view. `lang` is the fence's info string. */
+  | { key: string; kind: 'code'; source: string; lang: string; complete: boolean }
   /** A top-level ```diff / ```patch fence: a proposal shown read-only, never an applied change. */
   | { key: string; kind: 'diff'; source: string; complete: boolean }
 

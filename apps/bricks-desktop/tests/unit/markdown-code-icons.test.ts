@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The icons of code block headers (render.ts, document.ts): the file or the language of a fence
-// names its icon, while the block streams and after it closes; the copy button copies the code
+// The icons of code block headers (render.ts, document.ts): a top-level fence is a `code` block the
+// view draws; a nested fence is HTML whose file or language names its icon, while the block streams and after it closes; the copy button copies the code
 // only; a model's raw HTML never makes an image; Mermaid and diff fences are unchanged. The real
 // sanitizer runs here, with the same DOM shims as markdown-hostile.test.ts.
 import { describe, expect, it, vi } from 'vitest'
@@ -72,6 +72,11 @@ function htmlOf(blocks: RenderedBlock[]): string {
 	return blocks.map((block) => (block.kind === 'html' ? block.html : '')).join('')
 }
 
+/** A fence nested in a list item: it stays HTML (a top-level fence is a `code` block the view draws). */
+function nested(source: string): string {
+	return '- étape\n\n' + source.split('\n').map((line) => (line ? `  ${line}` : line)).join('\n')
+}
+
 function icons(html: string): string[] {
 	return html.match(IMG) ?? []
 }
@@ -80,10 +85,18 @@ function srcOf(img: string): string {
 	return /src="([^"]+)"/.exec(img)?.[1] ?? ''
 }
 
-describe('a code fence names its icon while it streams and after it closes', () => {
+describe('a top-level code fence is a code block the view draws', () => {
+	it('keeps its info string, so the view names its file or language', () => {
+		expect(renderReference('```ts src/app.py\nprint(1)\n```\n', OPTIONS)).toEqual([
+			{ key: 'b0', kind: 'code', source: 'print(1)', lang: 'ts src/app.py', complete: true },
+		])
+	})
+})
+
+describe('a nested code fence names its icon while it streams and after it closes', () => {
 	it('a rust fence: one icon in the header while the fence is open', () => {
 		const doc = new MarkdownDocument(OPTIONS)
-		const open = htmlOf(doc.update('```rust\nfn main() {}\n', false))
+		const open = htmlOf(doc.update(nested('```rust\nfn main() {}\n'), false))
 		expect(icons(open)).toHaveLength(1)
 		expect(srcOf(icons(open)[0]!)).toMatch(/file-icons\/svg\/rust\.svg$/)
 		doc.dispose()
@@ -91,8 +104,8 @@ describe('a code fence names its icon while it streams and after it closes', () 
 
 	it('the same header once the fence has closed, with the same icon', () => {
 		const doc = new MarkdownDocument(OPTIONS)
-		doc.update('```rust\nfn main() {}\n', false)
-		const closed = htmlOf(doc.update('```rust\nfn main() {}\n```\n', true))
+		doc.update(nested('```rust\nfn main() {}\n'), false)
+		const closed = htmlOf(doc.update(nested('```rust\nfn main() {}\n```\n'), true))
 		expect(icons(closed)).toHaveLength(1)
 		expect(srcOf(icons(closed)[0]!)).toMatch(/file-icons\/svg\/rust\.svg$/)
 		doc.dispose()
@@ -102,7 +115,7 @@ describe('a code fence names its icon while it streams and after it closes', () 
 		const doc = new MarkdownDocument(OPTIONS)
 		let html = ''
 		for (const source of ['```rust\nfn', '```rust\nfn main() {', '```rust\nfn main() {}\nlet x = 1;\n']) {
-			html = htmlOf(doc.update(source, false))
+			html = htmlOf(doc.update(nested(source), false))
 			expect(icons(html)).toHaveLength(1)
 		}
 		expect(html).toContain('let x')
@@ -110,7 +123,7 @@ describe('a code fence names its icon while it streams and after it closes', () 
 	})
 
 	it('the one-shot rendering of the closed fence has the same icon', () => {
-		const html = htmlOf(renderReference('```rust\nfn main() {}\n```\n', OPTIONS))
+		const html = htmlOf(renderReference(nested('```rust\nfn main() {}\n```\n'), OPTIONS))
 		expect(icons(html)).toHaveLength(1)
 		expect(srcOf(icons(html)[0]!)).toMatch(/file-icons\/svg\/rust\.svg$/)
 	})
@@ -136,7 +149,7 @@ describe('a code fence names its icon while it streams and after it closes', () 
 describe('the icon comes from the file the fence names, or from its language', () => {
 	it('a path in the info string wins over the language', () => {
 		expect(fenceIconId('ts src/app.py')).toBe('python')
-		const html = htmlOf(renderReference('```ts src/app.py\nprint(1)\n```\n', OPTIONS))
+		const html = htmlOf(renderReference(nested('```ts src/app.py\nprint(1)\n```\n'), OPTIONS))
 		expect(srcOf(icons(html)[0]!)).toMatch(/file-icons\/svg\/python\.svg$/)
 	})
 
@@ -147,7 +160,7 @@ describe('the icon comes from the file the fence names, or from its language', (
 
 	it('an unknown language has no icon: no image in its header', () => {
 		expect(fenceIconId('unknownlang')).toBeNull()
-		const html = htmlOf(renderReference('```unknownlang\nfoo\n```\n', OPTIONS))
+		const html = htmlOf(renderReference(nested('```unknownlang\nfoo\n```\n'), OPTIONS))
 		expect(icons(html)).toEqual([])
 		expect(html).toContain('unknownlang')
 	})

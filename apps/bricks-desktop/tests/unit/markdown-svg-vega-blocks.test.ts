@@ -54,10 +54,10 @@ describe('top-level svg and vega-lite fences', () => {
     },
   )
 
-  it('keeps other languages as HTML: vega, xml, svg+xml, and a mermaid fence stays mermaid', () => {
-    expect(kinds(renderReference('```vega\n{}\n```\n', OPTIONS))).toEqual(['html'])
-    expect(kinds(renderReference('```xml\n<svg/>\n```\n', OPTIONS))).toEqual(['html'])
-    expect(kinds(renderReference('```svg+xml\n<svg/>\n```\n', OPTIONS))).toEqual(['html'])
+  it('keeps other languages as code blocks: vega, xml, svg+xml, and a mermaid fence stays mermaid', () => {
+    expect(kinds(renderReference('```vega\n{}\n```\n', OPTIONS))).toEqual(['code'])
+    expect(kinds(renderReference('```xml\n<svg/>\n```\n', OPTIONS))).toEqual(['code'])
+    expect(kinds(renderReference('```svg+xml\n<svg/>\n```\n', OPTIONS))).toEqual(['code'])
     expect(kinds(renderReference('```mermaid\ngraph TD; A-->B\n```\n', OPTIONS))).toEqual(['mermaid'])
   })
 

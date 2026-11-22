@@ -221,6 +221,8 @@ messages! {
     WORD_DOCUMENT: "Word document", "document Word";
     WRITING_THE_DIAGRAM: "writing the diagram", "écriture du diagramme";
     WRITING_THE_IMAGE: "writing the image", "écriture de l'image";
+    WRITING_THE_CODE: "writing the code", "écriture du code";
+    CODE_TOO_LARGE_TO_SAVE_8: "code too large to save (8 MiB at most)", "code trop volumineux pour être enregistré (8 Mio au maximum)";
     ZIP_ARCHIVE: "ZIP archive", "archive ZIP";
     NO_IMAGE_INPUT: "This model doesn’t accept images: remove this attachment.", "Ce modèle n’accepte pas les images : retirez cette pièce jointe.";
     UNKNOWN_PROVIDER: "unknown provider in providers.toml", "fournisseur inconnu dans providers.toml";

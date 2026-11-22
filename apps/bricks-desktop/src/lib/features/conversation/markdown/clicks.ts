@@ -29,7 +29,14 @@ function jumpTo(node: HTMLElement, href: string): void {
   const target = findTarget(node, href.slice(1))
   if (!target) return
   if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1')
-  target.scrollIntoView?.({ block: 'start' })
+  // Only the conversation scrolls: `scrollIntoView` would also scroll the clipped panels around it.
+  const scroller = node.closest<HTMLElement>('[data-conversation-scroll]')
+  if (scroller) {
+    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+    scroller.scrollTo?.({ top })
+  } else {
+    target.scrollIntoView?.({ block: 'start' })
+  }
   target.focus?.({ preventScroll: true })
 }
 

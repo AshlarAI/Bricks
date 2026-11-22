@@ -75,9 +75,9 @@ describe('plainLines', () => {
   })
 })
 
-describe('a Markdown fence', () => {
+describe('a Markdown fence nested in a list', () => {
   it('is escaped text until its language loads, then Shiki tokens with theme variables and no placeholder', async () => {
-    const source = '```py\nprint("<b>hi</b>")\n```\n'
+    const source = '- étape\n\n  ```py\n  print("<b>hi</b>")\n  ```\n'
     const before = codeLanguages.version
     const plain = htmlOf(renderReference(source, OPTIONS))
     expect(plain).toContain('print(&quot;&lt;b&gt;hi&lt;/b&gt;&quot;)')

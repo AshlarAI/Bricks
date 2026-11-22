@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Commit 228 (2026/11/22)
+
+- Render top-level code fences with the React `CodeBlock` (file or language, numbered lines, wrap, download through a new `save_text_file` command, copy), frame blocks over 30 lines as artifacts, and preview `html` fences in a sandboxed `WebPreview` with its console, source view, reload, larger view and download.
+- Add the `Artifact`, `WebPreview` and `PasswordInput` components, use `PasswordInput` for API keys, show the run time in the work bar (`Working for 1h 1m 32s`, then `Worked for`), and redraw usage charts as stacked bars per day and a donut per model.
+- Fix select menus opening at the window corner, sidebar row actions pushed out of view by long titles, the right panel stopping at its minimum width when hidden, and ancestor scrolling from message jumps. Align the top bar controls, define the `scroll-fade` utilities, widen the default sidebar to 320 px, and use the whole window as the input limit of imported models.
+
 ### Commit 227 (2026/11/21)
 
 - Migrate `apps/bricks-desktop` from Svelte 5 (`shadcn-svelte`, `bits-ui`, `paneforge`, `layerchart`, `@lucide/svelte`, `svelte-sonner`) to React 19 with official React `shadcn/ui` components, `lucide-react`, `recharts`, `react-resizable-panels`, and `sonner`, replacing all `.svelte` and `.svelte.ts` modules with `.tsx` and `.ts`.

@@ -161,7 +161,7 @@ mod tests {
     fn preferences_round_trip_and_are_clamped() {
         let dir = tempfile::tempdir().unwrap();
         let store = PrefsStore::at(dir.path().join("desktop").join("preferences.json"));
-        assert_eq!(store.get().left_width, 260, "defaults when absent");
+        assert_eq!(store.get().left_width, 320, "defaults when absent");
         let p = Preferences {
             theme: Theme::Dark,
             left_width: 9_000,

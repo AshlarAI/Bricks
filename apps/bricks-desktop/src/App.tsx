@@ -90,7 +90,7 @@ export function App() {
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [leftWidth, setLeftWidth] = useState(260)
+  const [leftWidth, setLeftWidth] = useState(320)
   const [rightWidth, setRightWidth] = useState(280)
   // Terminal share of the centre column. `legacyTerminalHeight` is the
   // saved pixel height, read by AppShell once to derive the ratio when none is saved.

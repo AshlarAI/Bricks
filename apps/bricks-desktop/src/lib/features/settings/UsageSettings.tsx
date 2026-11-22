@@ -6,7 +6,14 @@ import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Label, Pie, PieChart, XAxis } from 'recharts'
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Button } from '$lib/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '$lib/components/ui/card'
 import {
   ChartContainer,
   ChartTooltip,
@@ -54,6 +61,17 @@ const LEVELS = [
 const isGoProvider = (id: string, list: ProviderView[]) => {
   const p = list.find((x) => x.id === id)
   return !!p && /^https:\/\/opencode\.ai\/(inference|zen)\/go(\/|$)/i.test(p.endpoint.trim())
+}
+
+/** Space between two stacked segments of a day, in px. */
+const STACK_GAP = 2
+
+/** One segment of a day's stacked bar: rounded, a small gap above the one under it. */
+function StackSegment(props: { x?: number; y?: number; width?: number; height?: number; fill?: string }) {
+  const { x = 0, y = 0, width = 0, fill } = props
+  const height = (props.height ?? 0) - STACK_GAP
+  if (height <= 0 || width <= 0) return null
+  return <rect x={x} y={y} width={width} height={height} rx={Math.min(3, width / 2, height / 2)} fill={fill} />
 }
 
 export function UsageSettings() {
@@ -136,8 +154,9 @@ export function UsageSettings() {
     series.map((s) => [s.key, { label: s.label, color: s.color }]),
   ) satisfies ChartConfig
   const chartData = points.map((p) => {
-    const out: Record<string, string | number> = { date: p.date }
-    for (const s of series) out[s.key] = p[s.share.key] ?? 0
+    // A model unused that day has no segment and no line in the tooltip.
+    const out: Record<string, string | number | null> = { date: p.date }
+    for (const s of series) out[s.key] = p[s.share.key] || null
     return out
   })
   const pieData = series.map((s) => ({
@@ -145,9 +164,9 @@ export function UsageSettings() {
     tokens: s.share.tokens,
     fill: `var(--color-${s.key})`,
   }))
-  const activePieSlices = pieData.filter((d) => d.tokens > 0).length
 
   const isGo = isGoProvider(provider, providers)
+  const rangeLabel = range === '7' ? t('usage.last7') : t('usage.last30')
 
   const dayLabel = (key: string) =>
     dateTimeFormat({ day: 'numeric', month: 'short' }).format(fromKey(key))
@@ -381,11 +400,12 @@ export function UsageSettings() {
             </ToggleGroup>
           </div>
 
-          <Card className="gap-3 py-4">
-            <CardHeader className="px-4">
-              <CardTitle className="text-ui">{t('usage.dailyTokens')}</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('usage.dailyTokens')}</CardTitle>
+              <CardDescription>{rangeLabel}</CardDescription>
             </CardHeader>
-            <CardContent className="px-4">
+            <CardContent>
               {rangeTokens === 0 ? (
                 <Empty className="h-40 border border-dashed">
                   <EmptyHeader>
@@ -393,7 +413,7 @@ export function UsageSettings() {
                   </EmptyHeader>
                 </Empty>
               ) : (
-                <ChartContainer config={chartConfig} className="aspect-auto h-56 w-full">
+                <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
                   <BarChart accessibilityLayer data={chartData}>
                     <CartesianGrid vertical={false} />
                     <XAxis
@@ -410,6 +430,7 @@ export function UsageSettings() {
                       cursor={false}
                       content={
                         <ChartTooltipContent
+                          indicator="dot"
                           labelFormatter={(value) =>
                             typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
                               ? dayLabel(value)
@@ -418,13 +439,15 @@ export function UsageSettings() {
                         />
                       }
                     />
-                    {series.map((s, index) => (
+                    {series.map((s) => (
                       <Bar
                         key={s.key}
                         dataKey={s.key}
                         stackId="tokens"
                         fill={`var(--color-${s.key})`}
-                        radius={index === series.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                        shape={<StackSegment />}
+                        maxBarSize={56}
+                        isAnimationActive={false}
                       />
                     ))}
                   </BarChart>
@@ -433,29 +456,32 @@ export function UsageSettings() {
             </CardContent>
           </Card>
 
-          <Card className="gap-3 py-4">
-            <CardHeader className="px-4">
-              <CardTitle className="text-ui">{t('usage.byModel')}</CardTitle>
+          <Card className="flex flex-col">
+            <CardHeader className="items-center pb-0 text-center">
+              <CardTitle>{t('usage.byModel')}</CardTitle>
+              <CardDescription>{rangeLabel}</CardDescription>
             </CardHeader>
-            <CardContent className="px-4">
-              {rangeTokens === 0 ? (
+            {rangeTokens === 0 ? (
+              <CardContent>
                 <Empty className="h-40 border border-dashed">
                   <EmptyHeader>
                     <EmptyTitle>{t('usage.noData')}</EmptyTitle>
                   </EmptyHeader>
                 </Empty>
-              ) : (
-                <div className="grid items-center gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
-                  <ChartContainer config={chartConfig} className="mx-auto aspect-square h-48">
+              </CardContent>
+            ) : (
+              <>
+                <CardContent className="flex-1 pb-0">
+                  <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[250px]">
                     <PieChart>
                       <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
                       <Pie
                         data={pieData}
                         dataKey="tokens"
                         nameKey="key"
-                        innerRadius={56}
-                        strokeWidth={0}
-                        paddingAngle={activePieSlices > 1 ? 2 : 0}
+                        innerRadius={60}
+                        strokeWidth={5}
+                        isAnimationActive={false}
                       >
                         <Label
                           content={({ viewBox }) => {
@@ -469,15 +495,15 @@ export function UsageSettings() {
                                 >
                                   <tspan
                                     x={viewBox.cx}
-                                    y={(viewBox.cy ?? 0) - 6}
-                                    className="fill-foreground text-lg font-semibold"
+                                    y={viewBox.cy}
+                                    className="fill-foreground text-3xl font-bold"
                                   >
                                     {count(rangeTokens)}
                                   </tspan>
                                   <tspan
                                     x={viewBox.cx}
-                                    y={(viewBox.cy ?? 0) + 14}
-                                    className="fill-muted-foreground text-xs"
+                                    y={(viewBox.cy ?? 0) + 24}
+                                    className="fill-muted-foreground"
                                   >
                                     {t('usage.tokensUnit')}
                                   </tspan>
@@ -490,37 +516,31 @@ export function UsageSettings() {
                       </Pie>
                     </PieChart>
                   </ChartContainer>
-                  <div className="flex flex-col">
-                    {series.map((s, index) => (
-                      <Fragment key={s.key}>
-                        {index > 0 && <Separator />}
-                        <div
-                          className="flex flex-col gap-1 py-3"
-                          title={t('usage.requests', { count: s.share.requests })}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span
-                              className="size-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: s.color }}
-                              aria-hidden="true"
-                            />
-                            <span className="min-w-0 flex-1 truncate font-mono text-ui text-foreground">
-                              {s.label}
-                            </span>
-                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                              {share.format(s.share.tokens / rangeTokens)}
-                            </span>
-                          </div>
-                          <span className="pl-5 text-xs text-muted-foreground tabular-nums">
-                            {t('usage.tokensCount', { amount: count(s.share.tokens) })}
-                          </span>
-                        </div>
-                      </Fragment>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
+                </CardContent>
+                <CardFooter className="flex-col items-stretch gap-2 text-sm">
+                  {series.map((s) => (
+                    <div
+                      key={s.key}
+                      className="flex items-center gap-2 leading-none"
+                      title={t('usage.requests', { count: s.share.requests })}
+                    >
+                      <span
+                        className="size-2.5 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: s.color }}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">{s.label}</span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {count(s.share.tokens)}
+                      </span>
+                      <span className="w-12 text-right text-muted-foreground tabular-nums">
+                        {share.format(s.share.tokens / rangeTokens)}
+                      </span>
+                    </div>
+                  ))}
+                </CardFooter>
+              </>
+            )}
           </Card>
         </>
       )}

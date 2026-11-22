@@ -50,8 +50,10 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  // Popper: the list opens under its trigger. Item-aligned needs a SelectValue in the trigger to
+  // place itself, and the triggers here show their own label, so it opened at the window corner.
+  position = "popper",
+  align = "start",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The work block (timeline/WorkBlock.tsx): the steps of a run under a thin bar. While the run
-// works, the bar reads « Travaille… » and shows the steps; folded, it names the current step. When the
-// run ends it reads how it ended, folds by itself, and what asks the person something stays
+// works, the bar reads « Travaille depuis 3s » and shows the steps; folded, it names the current step. When
+// the run ends it reads how long it worked, or how it ended, folds by itself, and what asks the person something stays
 // visible while it is folded. Mounted in happy-dom and fed by the reducer.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
@@ -112,12 +112,12 @@ afterEach(() => {
 });
 
 describe('WorkBlock while the run works', () => {
-	it('is open at first: the bar reads Travaille… and every step is shown', () => {
+	it('is open at first: the bar reads how long it has worked and every step is shown', () => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Read');
 		conv.apply(feed.next({ type: 'tool_started', tool_call_id: 'tc-2', name: 'Grep', input: { pattern: 'x' } }));
 		show(conv);
-		expect(text()).toContain('Travaille…');
+		expect(text()).toMatch(/Travaille depuis \d/);
 		expect(expanded()).toBe('true');
 		// Open, the steps are in their own lines: the current step is not repeated on the bar.
 		expect(text()).not.toContain('Grep');
@@ -132,7 +132,7 @@ describe('WorkBlock while the run works', () => {
 		show(conv);
 		toggle();
 		expect(expanded()).toBe('false');
-		expect(text()).toContain('Travaille…');
+		expect(text()).toMatch(/Travaille depuis \d/);
 		expect(text()).toContain('Grep');
 		expect(text()).not.toContain('A lu a.ts');
 	});
@@ -141,7 +141,7 @@ describe('WorkBlock while the run works', () => {
 		const { conv } = runningRun();
 		show(conv);
 		expect(trigger()).toBeNull();
-		expect(text()).toBe('Travaille…');
+		expect(text()).toMatch(/^Travaille depuis \d+[jhms]/);
 	});
 
 	it('a pending approval stays visible when the bar is folded, and goes once it is decided', () => {
@@ -166,7 +166,7 @@ describe('WorkBlock while the run works', () => {
 });
 
 describe('WorkBlock once the run has ended', () => {
-	it('reads « Terminé » and folds by itself', () => {
+	it('reads how long it worked and folds by itself', () => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Read');
 		show(conv);
@@ -175,14 +175,14 @@ describe('WorkBlock once the run has ended', () => {
 		sync(conv, () => {
 			conv.apply(feed.next({ type: 'run_finished', outcome: 'succeeded', text: '', turns: 1 }, { at: T0 + 6_000 }));
 		});
-		expect(text()).toBe('Terminé');
+		expect(text()).toBe('A travaillé 6s');
 		expect(expanded()).toBe('false');
 	});
 
 	it.each([
-		['failed', 'Échec'],
-		['incomplete', 'Incomplet'],
-		['cancelled', 'Annulé'],
+		['failed', 'Échec après 6s'],
+		['incomplete', 'Incomplet après 6s'],
+		['cancelled', 'Annulé après 6s'],
 	] as const)('a run that ended as %s says « %s »', (outcome, label) => {
 		const { conv, feed } = runningRun();
 		readCall(conv, feed, 'tc-1', 'Bash');

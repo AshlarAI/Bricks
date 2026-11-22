@@ -98,7 +98,11 @@ export function MessageRail({ marks, scroller }: MessageRailProps) {
     const turn = turnOf(key)
     if (!turn || !scroller) return
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    turn.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' })
+    // Only the timeline scrolls: `scrollIntoView` would also scroll the clipped panels around it.
+    const margin = parseFloat(getComputedStyle(turn).scrollMarginTop) || 0
+    const top =
+      turn.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - margin
+    scroller.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' })
     setActive(key)
   }
 

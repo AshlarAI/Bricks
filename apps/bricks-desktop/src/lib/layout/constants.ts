@@ -27,7 +27,7 @@ export const TOP_BAR = {
 
 /** Starting sizes used when the caller provides no saved preference. */
 export const LAYOUT_DEFAULTS = {
-	leftWidth: 260,
+	leftWidth: 320,
 	rightWidth: 280
 } as const;
 

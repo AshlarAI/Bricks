@@ -220,12 +220,16 @@ pub fn from_catalog(
 fn model_patch(id: &str, m: &Value, protocol: &str) -> Option<ModelPatch> {
     let context = m["limit"]["context"].as_u64().filter(|n| *n > 0)?;
     let output = m["limit"]["output"].as_u64().filter(|n| *n > 0)?;
-    // The prompt budget: the declared input limit, else what the window
-    // leaves once the output is reserved.
-    let (input, output) = match m["limit"]["input"].as_u64().filter(|n| *n > 0) {
-        Some(input) => (input, output),
-        None if context > output => (context - output, output),
-        None => (context - context / 4, context / 4),
+    // The prompt budget: the declared input limit, else the whole window.
+    // An output limit that fills the window is cut to a quarter of it.
+    let input = m["limit"]["input"]
+        .as_u64()
+        .filter(|n| *n > 0)
+        .unwrap_or(context);
+    let output = if output < context {
+        output
+    } else {
+        context / 4
     };
     Some(ModelPatch {
         name: Some(m["name"].as_str().unwrap_or(id).to_string()),
@@ -466,7 +470,8 @@ mod tests {
         )
         .remove(0);
         let p = m.patch;
-        assert_eq!(p.max_input_tokens, Some(800));
+        // No declared input limit: the whole window.
+        assert_eq!(p.max_input_tokens, Some(1000));
         assert_eq!(p.max_output_tokens, Some(200));
         assert_eq!(p.input_modalities.unwrap(), ["text", "image", "document"]);
         let price = p.pricing.unwrap();

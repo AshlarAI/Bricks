@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { FolderIcon } from 'lucide-react'
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '$lib/components/ui/item'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { app, useApp } from '$lib/state/app'
 import { errorMessage, type SessionSearchHit } from '$lib/ipc/client'
@@ -137,38 +139,33 @@ export function SearchResults({ query = '', onQueryChange, onOpened }: SearchRes
           <p role="status" className="px-2 text-xs text-muted-foreground">
             {countLabel}
           </p>
-          <ul className="flex flex-col gap-0.5">
+          <ItemGroup className="gap-0.5">
             {hits.map((hit) => (
-              <li key={hit.session.id}>
-                <button
-                  type="button"
-                  className="flex w-full min-w-0 flex-col items-start gap-1 rounded-md px-2 py-2 text-left hover:bg-sidebar-accent/60"
-                  onClick={() => void openHit(hit)}
-                >
-                  <span className="flex w-full min-w-0 items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      <Highlighted text={displayTitle(hit.session.title)} query={debounced} />
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {relativeDate(hit.session.updated_at, now)}
-                    </span>
-                  </span>
-                  <span className="flex w-full min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="truncate">{projectName(hit)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="shrink-0">
-                      {hit.matched === 'title' ? t('navigation.inTheTitle') : t('navigation.inAMessage')}
-                    </span>
-                  </span>
-                  {hit.matched === 'message' && hit.snippet && (
-                    <span className="line-clamp-2 text-xs text-muted-foreground">
-                      <Highlighted text={hit.snippet} query={debounced} />
-                    </span>
-                  )}
+              <Item key={hit.session.id} asChild size="sm" className="px-2 py-2 hover:bg-accent/60">
+                <button type="button" className="w-full text-left" onClick={() => void openHit(hit)}>
+                  <ItemContent className="min-w-0 gap-1">
+                    <ItemTitle className="w-full">
+                      <span className="min-w-0 flex-1 truncate">
+                        <Highlighted text={displayTitle(hit.session.title)} query={debounced} />
+                      </span>
+                      <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                        {relativeDate(hit.session.updated_at, now)}
+                      </span>
+                    </ItemTitle>
+                    <ItemDescription className="flex min-w-0 items-center gap-1.5 text-xs line-clamp-none">
+                      <FolderIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{projectName(hit)}</span>
+                    </ItemDescription>
+                    {hit.matched === 'message' && hit.snippet && (
+                      <ItemDescription className="text-xs">
+                        <Highlighted text={hit.snippet} query={debounced} />
+                      </ItemDescription>
+                    )}
+                  </ItemContent>
                 </button>
-              </li>
+              </Item>
             ))}
-          </ul>
+          </ItemGroup>
         </>
       )}
     </section>

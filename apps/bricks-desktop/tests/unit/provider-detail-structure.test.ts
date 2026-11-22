@@ -20,13 +20,12 @@ describe('provider detail: shared UI parts, the model test and the field patch',
 		expect(detail).toContain('Field,');
 		expect(detail).toContain('FieldGroup,');
 		expect(detail).toContain('FieldLabel');
-		expect(detail).toContain("from '$lib/components/ui/input-group'");
-		expect(detail).toContain('InputGroup,');
+		expect(detail).toContain("from '$lib/components/ui/password-input'");
+		expect(detail).toContain('PasswordInputGroup,');
 		expect(detail).toContain("from '$lib/components/ui/select'");
 		expect(detail).toContain('Select,');
 		expect(detail).toContain("from '$lib/components/ui/dropdown-menu'");
 		expect(detail).toContain('DropdownMenu,');
-		expect(detail).toContain("import { Toggle } from '$lib/components/ui/toggle'");
 		expect(detail).toContain("from '$lib/components/ui/item'");
 		expect(detail).toContain('ItemGroup,');
 	});

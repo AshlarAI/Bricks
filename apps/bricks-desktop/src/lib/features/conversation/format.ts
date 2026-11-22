@@ -281,6 +281,22 @@ export function formatDuration(ms: number | undefined): string {
     .filter(Boolean).join(' ')
 }
 
+/** A run's elapsed time from its largest unit down to seconds: `1h 1m 32s`, `2d 0h 4m 9s`. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const units: [number, string][] = [
+    [Math.floor(total / 86_400), t('conversation.dayShort')],
+    [Math.floor((total % 86_400) / 3600), 'h'],
+    [Math.floor((total % 3600) / 60), 'm'],
+    [total % 60, 's'],
+  ]
+  const first = units.findIndex(([value]) => value > 0)
+  return units
+    .slice(first === -1 ? 3 : first)
+    .map(([value, unit]) => `${value}${unit}`)
+    .join(' ')
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
   const units = [t('conversation.byte'), t('conversation.kb'), t('conversation.mb'), t('conversation.gb')]

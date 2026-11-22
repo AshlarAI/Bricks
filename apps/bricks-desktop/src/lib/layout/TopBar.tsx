@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import { Button } from '$lib/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '$lib/components/ui/tooltip'
-import { Separator } from '$lib/components/ui/separator'
 import PanelToggle from './PanelToggle'
 import { TOP_BAR } from './constants'
 import type { IconComponent } from './types'
@@ -111,7 +110,7 @@ export function TopBar({
   return (
     <header
       data-tauri-drag-region
-      className={cn('flex shrink-0 items-center gap-2 bg-sidebar px-3', className)}
+      className={cn('flex shrink-0 items-center gap-2 bg-sidebar pr-2 pl-3', className)}
       style={{
         height: `${TOP_BAR.height}px`,
         paddingLeft: systemButtons ? `${TOP_BAR.macSystemButtons}px` : undefined,
@@ -141,11 +140,11 @@ export function TopBar({
         {title}
       </div>
 
-      <div data-tauri-drag-region className="flex shrink-0 items-center gap-1">
-        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-
+      {/* One row, one gap: every control is a 32 px square, and the last one ends on the edge of the panels below. */}
+      <div data-tauri-drag-region role="group" aria-label={t('layout.view')} className="flex shrink-0 items-center gap-1">
+        {actions}
         {hasRightToggles && (
-          <div role="group" aria-label={t('layout.view')} className="ml-1 flex shrink-0 items-center gap-0.5">
+          <>
             {onToggleRight && (
               <PanelToggle
                 ariaLabel={t('layout.rightPanel')}
@@ -155,9 +154,6 @@ export function TopBar({
                 icon={rightPressed ? PanelRightCloseIcon : PanelRightOpenIcon}
                 onclick={onToggleRight}
               />
-            )}
-            {onToggleRight && (onToggleTerminal || onToggleChanges || onToggleReader) && (
-              <Separator orientation="vertical" decorative className="mx-1 h-5 self-center" />
             )}
             {onToggleTerminal && (
               <PanelToggle
@@ -189,10 +185,9 @@ export function TopBar({
                 onclick={onToggleReader}
               />
             )}
-          </div>
+          </>
         )}
-
-        {trailing && <div className="ml-1 flex shrink-0 items-center">{trailing}</div>}
+        {trailing}
       </div>
     </header>
   )

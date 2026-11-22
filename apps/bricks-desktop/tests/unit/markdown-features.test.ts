@@ -306,25 +306,24 @@ describe('clicks on a rendered message', () => {
     expect(openUrl).not.toHaveBeenCalled()
   })
 
-  it('an in-page anchor scrolls to and focuses its target in the same conversation only', () => {
+  it('an in-page anchor scrolls its own conversation to its target and focuses it', () => {
     // Another conversation container holds an element with the same id: it must not be touched.
     const other = document.createElement('div')
     other.setAttribute('data-conversation-scroll', '')
     other.innerHTML = '<h3 id="x-titre">Autre</h3>'
     document.body.append(other)
-    const otherHeading = other.querySelector<HTMLElement>('h3')!
     const otherScroll = vi.fn()
-    otherHeading.scrollIntoView = otherScroll
+    other.scrollTo = otherScroll
 
     const { scroll, message } = mount('## Titre\n\nVoir [la section](#Titre).')
     const heading = scroll.querySelector<HTMLElement>('#x-titre')!
-    const scrollIntoView = vi.fn()
-    heading.scrollIntoView = scrollIntoView
+    const scrollTo = vi.fn()
+    scroll.scrollTo = scrollTo
     const focus = vi.spyOn(heading, 'focus')
 
     const event = click(message.querySelector('a[data-local-anchor]')!)
     expect(event.defaultPrevented).toBe(true)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledTimes(1)
     expect(focus).toHaveBeenCalledTimes(1)
     expect(otherScroll).not.toHaveBeenCalled()
     expect(openUrl).not.toHaveBeenCalled()
@@ -332,12 +331,12 @@ describe('clicks on a rendered message', () => {
 
   it('a footnote back link is an in-page anchor too', () => {
     const { scroll, message } = mount('Texte[^1].\n\n[^1]: note')
-    const target = scroll.querySelector<HTMLElement>('[id="x-fnref:1-1"]')!
-    const scrollIntoView = vi.fn()
-    target.scrollIntoView = scrollIntoView
+    expect(scroll.querySelector('[id="x-fnref:1-1"]')).not.toBeNull()
+    const scrollTo = vi.fn()
+    scroll.scrollTo = scrollTo
     const event = click(message.querySelector('a[data-fn-back]')!)
     expect(event.defaultPrevented).toBe(true)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -484,7 +483,11 @@ describe('a final stream keeps the text it received', () => {
 
   it.each(cases)('an open %s', (_name, source, received) => {
     const doc = new MarkdownDocument({ idPrefix: 't' })
-    const text = textOf(htmlOf(doc.update(source, true)))
+    // A code block's text is its source, shown by the view.
+    const text = doc
+      .update(source, true)
+      .map((block) => (block.kind === 'html' ? textOf(block.html) : block.source))
+      .join('\n')
     for (const piece of received) expect(text).toContain(piece)
   })
 

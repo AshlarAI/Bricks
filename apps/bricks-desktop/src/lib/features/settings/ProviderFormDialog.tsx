@@ -1,15 +1,18 @@
 // Form of a provider: a new one (`provider` null) or an existing one, from its values when opened.
 // Cancel discards.
 import { useId, useState, type FormEvent } from 'react'
-import { LockKeyholeIcon, LockKeyholeOpenIcon } from 'lucide-react'
 import { Button } from '$lib/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '$lib/components/ui/dialog'
 import { Field, FieldError, FieldLabel } from '$lib/components/ui/field'
 import { Input } from '$lib/components/ui/input'
-import { InputGroup, InputGroupAddon, InputGroupInput } from '$lib/components/ui/input-group'
+import {
+  PasswordInput,
+  PasswordInputGroup,
+  PasswordInputInput,
+  PasswordInputTrigger,
+} from '$lib/components/ui/password-input'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select'
-import { Toggle } from '$lib/components/ui/toggle'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import type { ProviderPatch } from '$lib/ipc/bindings/ProviderPatch'
 import type { ProviderView } from '$lib/ipc/bindings/ProviderView'
@@ -192,37 +195,19 @@ export function ProviderFormDialog({
             {needsKey && (
               <Field data-invalid={shown.apiKey ? 'true' : undefined}>
                 <FieldLabel htmlFor={`${uid}-key`}>{t('settings.apiKey')}</FieldLabel>
-                <InputGroup>
-                  <InputGroupInput
-                    id={`${uid}-key`}
-                    type={revealed ? 'text' : 'password'}
-                    value={form.apiKey}
-                    onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className={cn(
-                      'font-mono text-sm transition-colors',
-                      revealed ? 'text-foreground' : 'tracking-[0.2em] text-muted-foreground',
-                    )}
-                    aria-invalid={shown.apiKey ? 'true' : undefined}
-                    aria-describedby={shown.apiKey ? `${uid}-key-error` : undefined}
-                  />
-                  <InputGroupAddon align="inline-end">
-                    <Toggle
-                      size="sm"
-                      aria-label={revealed ? t('settings.hideKey') : t('settings.showKey')}
-                      className="size-8 rounded-md px-0 active:scale-[0.96] aria-pressed:bg-muted data-[state=on]:bg-muted"
-                      pressed={revealed}
-                      onPressedChange={setRevealed}
-                    >
-                      {revealed ? (
-                        <LockKeyholeOpenIcon aria-hidden="true" />
-                      ) : (
-                        <LockKeyholeIcon aria-hidden="true" />
-                      )}
-                    </Toggle>
-                  </InputGroupAddon>
-                </InputGroup>
+                <PasswordInput visible={revealed} onVisibleChange={setRevealed}>
+                  <PasswordInputGroup>
+                    <PasswordInputInput
+                      id={`${uid}-key`}
+                      value={form.apiKey}
+                      onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                      className={cn('text-sm', !revealed && 'text-muted-foreground')}
+                      aria-invalid={shown.apiKey ? 'true' : undefined}
+                      aria-describedby={shown.apiKey ? `${uid}-key-error` : undefined}
+                    />
+                    <PasswordInputTrigger />
+                  </PasswordInputGroup>
+                </PasswordInput>
                 {shown.apiKey && (
                   <FieldError id={`${uid}-key-error`}>{shown.apiKey}</FieldError>
                 )}

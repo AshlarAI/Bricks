@@ -1,12 +1,14 @@
 // The steps of one run under a thin bar. While the run works, the bar reads
-// « Travaille… » and the steps are shown; folded, the bar names the current
-// step. Once the run has ended the bar says how it ended and folds by itself:
-// the answer follows it. What asks the person something stays shown folded.
-import { useState } from 'react'
+// « Travaille depuis 1m 32s » and the steps are shown; folded, the bar names the
+// current step. Once the run has ended the bar says how long it worked (or how it
+// ended, when it did not succeed) and folds by itself: the answer follows it.
+// What asks the person something stays shown folded.
+import { useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
 import { Separator } from '$lib/components/ui/separator'
+import { cn } from '$lib/utils'
 import {
   useConversation,
   type AssistantItem,
@@ -14,7 +16,7 @@ import {
   type TimelineItem,
 } from '$lib/state/conversation'
 import type { RunOutcome } from '$lib/ipc/engine'
-import { OUTCOME_LABEL } from '../format'
+import { OUTCOME_LABEL, formatElapsed } from '../format'
 import { currentStep, needsAttention } from '../runBlocks'
 import AssistantMessage from './AssistantMessage'
 import TimelineEntry from './TimelineEntry'
@@ -47,6 +49,10 @@ export function WorkBlock({
     liveConversation,
     (c) => c.runs.get(runId)?.outcome ?? null,
   )
+  const subscribedWorked = useConversation(
+    liveConversation,
+    (c) => c.runs.get(runId)?.workedMs ?? null,
+  )
 
   const running = liveConversation
     ? (subscribedRunning ?? false)
@@ -54,6 +60,20 @@ export function WorkBlock({
   const outcome: RunOutcome | null = liveConversation
     ? (subscribedOutcome ?? null)
     : (conversation?.runs?.get(runId)?.outcome ?? null)
+
+  const startedAt = conversation?.runs?.get(runId)?.startedAt ?? null
+  const workedMs = liveConversation
+    ? (subscribedWorked ?? null)
+    : (conversation?.runs?.get(runId)?.workedMs ?? null)
+
+  // The clock of the bar: ticks every second while the run works.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!running) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [running])
 
   const hasSteps = items.length > 0 || answerReasoning !== null
   const step = running ? currentStep(items) : null
@@ -63,10 +83,22 @@ export function WorkBlock({
   const [override, setOverride] = useState<{ forRunning: boolean; open: boolean } | null>(null)
   const open = override && override.forRunning === running ? override.open : running
 
+  const ended = outcome ?? 'succeeded'
+  const endLabel =
+    workedMs === null
+      ? OUTCOME_LABEL[ended]
+      : ended === 'succeeded'
+        ? t('conversation.workedFor', { duration: formatElapsed(workedMs) })
+        : t('conversation.endedAfter', { outcome: OUTCOME_LABEL[ended], duration: formatElapsed(workedMs) })
+
   const bar = running ? (
-    <span className="shimmer motion-reduce:shimmer-none">{t('conversation.working')}</span>
+    <span className="shimmer tabular-nums motion-reduce:shimmer-none">
+      {t('conversation.workingFor', {
+        duration: formatElapsed(startedAt === null ? 0 : now - startedAt),
+      })}
+    </span>
   ) : (
-    <span className={outcome ? TONE[outcome] : ''}>{OUTCOME_LABEL[outcome ?? 'succeeded']}</span>
+    <span className={cn('tabular-nums', outcome && TONE[outcome])}>{endLabel}</span>
   )
 
   const StepIcon = step?.icon

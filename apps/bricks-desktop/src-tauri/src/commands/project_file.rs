@@ -414,12 +414,70 @@ pub async fn save_png_file(
     Ok(Some(shown))
 }
 
+/// A code block too large to be written (8 MiB).
+const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+
+/// The proposed name of a saved code block: a bare file name, `code.txt` when empty.
+pub fn text_file_name(requested: &str) -> String {
+    let cleaned = requested.replace('\0', "");
+    Path::new(cleaned.trim())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("code.txt")
+        .to_string()
+}
+
+/// Shows the native save dialog and writes a code block to the file the user
+/// picked. `None` when the dialog is cancelled; otherwise the path written.
+#[tauri::command]
+pub async fn save_text_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    contents: String,
+) -> IpcResult<Option<String>> {
+    if contents.len() > TEXT_LIMIT {
+        return Err(invalid(tr!(msg::CODE_TOO_LARGE_TO_SAVE_8)));
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(text_file_name(&default_name))
+        .save_file(move |picked| {
+            let _ = tx.send(picked);
+        });
+    let picked = rx.await.map_err(|_| IpcError {
+        code: IpcErrorCode::Internal,
+        message: tr!(msg::THE_SAVE_DIALOG_CLOSED_WITHOUT_AN),
+    })?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = picked
+        .into_path()
+        .map_err(|e| io_error(&tr!(msg::SAVE_PATH), e))?;
+    let shown = path.display().to_string();
+    tokio::task::spawn_blocking(move || std::fs::write(&path, contents.as_bytes()))
+        .await
+        .map_err(join_error)?
+        .map_err(|e| io_error(&tr!(msg::WRITING_THE_CODE), e))?;
+    Ok(Some(shown))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::contract::IpcErrorCode;
 
     const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+    #[test]
+    fn a_saved_code_block_proposes_a_bare_file_name() {
+        assert_eq!(text_file_name("src/app/route.ts"), "route.ts");
+        assert_eq!(text_file_name("  "), "code.txt");
+        assert_eq!(text_file_name("a\0b.rs"), "ab.rs");
+    }
 
     #[test]
     fn a_png_with_its_signature_is_accepted() {

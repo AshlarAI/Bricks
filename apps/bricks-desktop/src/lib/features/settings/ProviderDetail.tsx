@@ -6,8 +6,6 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   EllipsisIcon,
   ExternalLinkIcon,
-  LockKeyholeIcon,
-  LockKeyholeOpenIcon,
   PencilIcon,
   PlusIcon,
   TrashIcon,
@@ -22,7 +20,12 @@ import {
 } from '$lib/components/ui/dropdown-menu'
 import { Field, FieldError, FieldGroup, FieldLabel } from '$lib/components/ui/field'
 import { Input } from '$lib/components/ui/input'
-import { InputGroup, InputGroupAddon, InputGroupInput } from '$lib/components/ui/input-group'
+import {
+  PasswordInput,
+  PasswordInputGroup,
+  PasswordInputInput,
+  PasswordInputTrigger,
+} from '$lib/components/ui/password-input'
 import { ItemGroup, ItemSeparator } from '$lib/components/ui/item'
 import {
   Select,
@@ -31,7 +34,6 @@ import {
   SelectItem,
   SelectTrigger,
 } from '$lib/components/ui/select'
-import { Toggle } from '$lib/components/ui/toggle'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { errorMessage, modelTest } from '$lib/ipc/client'
 import type { ModelView } from '$lib/ipc/bindings/ModelView'
@@ -257,32 +259,21 @@ export function ProviderDetail({
                 </Button>
               )}
             </div>
-            <InputGroup>
-              <InputGroupInput
-                id={`${uid}-key`}
-                type={revealed ? 'text' : 'password'}
-                className={cn('font-mono', !revealed && 'text-muted-foreground')}
-                spellCheck={false}
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                disabled={saving === 'key'}
-                aria-invalid={fieldError?.field === 'key' ? 'true' : undefined}
-                onBlur={saveKey}
-                onKeyDown={(e) => onEnter(e, saveKey)}
-              />
-              <InputGroupAddon align="inline-end">
-                <Toggle
-                  size="sm"
-                  className="size-8 px-0"
-                  aria-label={revealed ? t('settings.hideKey') : t('settings.showKey')}
-                  pressed={revealed}
-                  onPressedChange={setRevealed}
-                >
-                  {revealed ? <LockKeyholeOpenIcon /> : <LockKeyholeIcon />}
-                </Toggle>
-              </InputGroupAddon>
-            </InputGroup>
+            <PasswordInput visible={revealed} onVisibleChange={setRevealed}>
+              <PasswordInputGroup>
+                <PasswordInputInput
+                  id={`${uid}-key`}
+                  className={cn(!revealed && 'text-muted-foreground')}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  disabled={saving === 'key'}
+                  aria-invalid={fieldError?.field === 'key' ? 'true' : undefined}
+                  onBlur={saveKey}
+                  onKeyDown={(e) => onEnter(e, saveKey)}
+                />
+                <PasswordInputTrigger />
+              </PasswordInputGroup>
+            </PasswordInput>
             {fieldError?.field === 'key' && <FieldError>{fieldError.message}</FieldError>}
           </Field>
         )}

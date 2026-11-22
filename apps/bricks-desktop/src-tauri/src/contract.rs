@@ -689,7 +689,7 @@ impl Default for Preferences {
             theme: Theme::System,
             left_open: true,
             right_open: true,
-            left_width: 260,
+            left_width: 320,
             right_width: 280,
             terminal_open: false,
             terminal_height: 240,

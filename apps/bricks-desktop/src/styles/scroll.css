@@ -1,0 +1,105 @@
+/*
+ * Scroll fade: an edge of a scroller fades only where there is more to see. A scroll-driven
+ * animation (scroll(self)) moves the opacity of each edge: at the top of the content the top edge
+ * is opaque, at its end the bottom edge is. A scroller with nothing to scroll has no timeline, so
+ * its edges stay opaque.
+ *
+ *   scroll-fade / scroll-fade-y   both vertical edges, 1.5rem each
+ *   scroll-fade-x                 both horizontal edges
+ *   scroll-fade-<n>               size of both edges (spacing scale)
+ *   scroll-fade-t-<n> / -b-<n>    size of one edge
+ *   scroll-fade-offset-<n>        the top fade starts this far down, under a sticky header that
+ *                                 must stay sharp
+ */
+@property --scroll-fade-ta {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 1;
+}
+@property --scroll-fade-ba {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 1;
+}
+
+@keyframes scroll-fade-start {
+	from {
+		--scroll-fade-ta: 1;
+	}
+	to {
+		--scroll-fade-ta: 0;
+	}
+}
+@keyframes scroll-fade-end {
+	from {
+		--scroll-fade-ba: 0;
+	}
+	to {
+		--scroll-fade-ba: 1;
+	}
+}
+
+@utility scroll-fade {
+	mask-image: linear-gradient(
+		to bottom,
+		#000 var(--scroll-fade-offset, 0px),
+		rgb(0 0 0 / var(--scroll-fade-ta)) var(--scroll-fade-offset, 0px),
+		#000 calc(var(--scroll-fade-offset, 0px) + var(--scroll-fade-t, 1.5rem)),
+		#000 calc(100% - var(--scroll-fade-b, 1.5rem)),
+		rgb(0 0 0 / var(--scroll-fade-ba)) 100%
+	);
+	animation: scroll-fade-start linear both, scroll-fade-end linear both;
+	animation-timeline: scroll(self block), scroll(self block);
+	animation-range: 0px var(--scroll-fade-t, 1.5rem), calc(100% - var(--scroll-fade-b, 1.5rem)) 100%;
+}
+
+@utility scroll-fade-y {
+	mask-image: linear-gradient(
+		to bottom,
+		#000 var(--scroll-fade-offset, 0px),
+		rgb(0 0 0 / var(--scroll-fade-ta)) var(--scroll-fade-offset, 0px),
+		#000 calc(var(--scroll-fade-offset, 0px) + var(--scroll-fade-t, 1.5rem)),
+		#000 calc(100% - var(--scroll-fade-b, 1.5rem)),
+		rgb(0 0 0 / var(--scroll-fade-ba)) 100%
+	);
+	animation: scroll-fade-start linear both, scroll-fade-end linear both;
+	animation-timeline: scroll(self block), scroll(self block);
+	animation-range: 0px var(--scroll-fade-t, 1.5rem), calc(100% - var(--scroll-fade-b, 1.5rem)) 100%;
+}
+
+@utility scroll-fade-x {
+	mask-image: linear-gradient(
+		to right,
+		rgb(0 0 0 / var(--scroll-fade-ta)),
+		#000 var(--scroll-fade-t, 1.5rem),
+		#000 calc(100% - var(--scroll-fade-b, 1.5rem)),
+		rgb(0 0 0 / var(--scroll-fade-ba)) 100%
+	);
+	animation: scroll-fade-start linear both, scroll-fade-end linear both;
+	animation-timeline: scroll(self inline), scroll(self inline);
+	animation-range: 0px var(--scroll-fade-t, 1.5rem), calc(100% - var(--scroll-fade-b, 1.5rem)) 100%;
+}
+
+@utility scroll-fade-* {
+	--scroll-fade-t: --spacing(--value(integer));
+	--scroll-fade-b: --spacing(--value(integer));
+}
+@utility scroll-fade-t-* {
+	--scroll-fade-t: --spacing(--value(integer));
+}
+@utility scroll-fade-b-* {
+	--scroll-fade-b: --spacing(--value(integer));
+}
+@utility scroll-fade-offset-* {
+	--scroll-fade-offset: --spacing(--value(integer));
+}
+
+@utility scrollbar-none {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+@utility scrollbar-thin {
+	scrollbar-width: thin;
+}

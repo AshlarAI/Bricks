@@ -369,24 +369,27 @@ describe('frozen blocks are not rendered again', () => {
   })
 })
 
-describe('an open code block while streaming', () => {
-  it('is highlighted again only once its unhighlighted tail is long, and equals the one-shot rendering once closed', () => {
+describe('a code block while streaming', () => {
+  it('is a code block whose source grows, never highlighted by the document, and equals the one-shot rendering once closed', () => {
     const code = Array.from({ length: 400 }, (_, k) => `const v${k} = ${k}; // ligne ${k}`).join('\n')
-    const open = `Avant.\n\n\`\`\`ts\n${code}`
+    const open = `Avant.\n\n\`\`\`ts src/a.ts\n${code}`
     const doc = new MarkdownDocument(OPTIONS)
     let calls = 0
-    let updates = 0
     for (let at = 6; at <= open.length; at += 60) {
       doc.update(open.slice(0, at), false)
       calls += doc.stats.highlightCalls
-      updates += 1
     }
-    // About one highlight per 1500 characters of code, not one per update.
-    expect(calls).toBeLessThanOrEqual(Math.ceil(open.length / 1500) + 2)
-    expect(updates).toBeGreaterThan(calls * 5)
+    expect(calls).toBe(0)
+    const growing = doc.update(open, false).at(-1)
+    expect(growing).toEqual({ key: growing?.key, kind: 'code', source: code, lang: 'ts src/a.ts', complete: false })
     const closed = `${open}\n\`\`\`\n`
     expect(projection(doc.update(closed, false))).toEqual(projection(renderReference(closed, OPTIONS)))
-    expect(doc.stats.highlightCalls).toBeGreaterThan(0)
+    expect(doc.update(closed, true).at(-1)).toMatchObject({ kind: 'code', complete: true })
+  })
+
+  it('an indented code block is complete', () => {
+    const doc = new MarkdownDocument(OPTIONS)
+    expect(doc.update('Avant.\n\n    let a = 1\n', true).at(-1)).toMatchObject({ kind: 'code', lang: '', complete: true })
   })
 })
 
@@ -394,7 +397,7 @@ describe('a truncated final stream keeps what it received', () => {
   it('an open fence and an open formula are shown, the mermaid fence is not complete', () => {
     const doc = new MarkdownDocument(OPTIONS)
     const code = doc.update('Avant.\n\n```ts\nconst a = 1', true)
-    expect(code.map((block) => (block.kind === 'html' ? block.html : '')).join('')).toContain('const')
+    expect(code.at(-1)).toMatchObject({ kind: 'code', source: 'const a = 1', complete: false })
     const formula = doc.update('Avant.\n\n$$\nx^2 + y', true)
     expect(formula.map((block) => (block.kind === 'html' ? block.html : '')).join('')).toContain('x^2 + y')
     const mermaid = doc.update('```mermaid\ngraph TD\n', true)

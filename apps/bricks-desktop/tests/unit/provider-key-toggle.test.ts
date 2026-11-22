@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The API key field of the provider form: masked by default (muted, spaced), and the lock toggle
-// shows it in clear and back. Mounted in happy-dom.
+// The API key field of the provider form: a password input, masked by default (muted), whose eye
+// button shows it in clear and back. Mounted in happy-dom.
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushReact, mountReact, tickReact, type MountedComponent } from './react-test-utils';
 import ProviderFormDialog, { type ProviderFormDialogProps } from '../../src/lib/features/settings/ProviderFormDialog';
@@ -41,21 +41,22 @@ describe('provider key toggle', () => {
 		});
 		await tickReact();
 		const input = document.querySelector<HTMLInputElement>('input[id$="-key"]')!;
-		const toggle = document.querySelector<HTMLButtonElement>('[data-slot="toggle"]')!;
+		const toggle = document.querySelector<HTMLButtonElement>('[data-slot="password-input-trigger"]')!;
 		expect(input.type).toBe('password');
 		expect(input.value).toBe('sk-test-1234');
-		expect(input.className).toContain('text-muted-foreground');
+		expect(input.className.split(' ')).toContain('text-muted-foreground');
 		expect(toggle.getAttribute('aria-label')).toBe('Afficher la clé');
-		expect(toggle.querySelector('.lucide-lock-keyhole')).not.toBeNull();
+		expect(toggle.getAttribute('aria-pressed')).toBe('false');
+		expect(toggle.querySelector('.lucide-eye')).not.toBeNull();
 
 		flushReact(() => {
 			toggle.click();
 		});
 		expect(input.type).toBe('text');
-		expect(input.className).toContain('text-foreground');
-		expect(input.className).not.toContain('tracking-');
-		expect(toggle.getAttribute('data-state')).toBe('on');
-		expect(toggle.querySelector('.lucide-lock-keyhole-open')).not.toBeNull();
+		expect(input.className.split(' ')).not.toContain('text-muted-foreground');
+		expect(toggle.getAttribute('aria-pressed')).toBe('true');
+		expect(toggle.getAttribute('aria-label')).toBe('Masquer la clé');
+		expect(toggle.querySelector('.lucide-eye-off')).not.toBeNull();
 
 		flushReact(() => {
 			toggle.click();

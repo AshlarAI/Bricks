@@ -285,7 +285,9 @@ export function AppShell({
     targets['bricks-center'] = centerPct
     if (rightMounted) targets['bricks-right'] = rightInline ? rightPct : 0
     applyLayout(hGroupRef.current, targets)
-  }, [bodyWidth, leftMounted, rightMounted, leftInline, rightInline, leftPct, centerPct, rightPct, hGroupRef])
+    // `animating` re-applies the targets once the panels hold their new constraints: a side that
+    // closes is collapsible from then on, so it reaches 0 instead of stopping at its minimum width.
+  }, [bodyWidth, leftMounted, rightMounted, leftInline, rightInline, leftPct, centerPct, rightPct, hGroupRef, animating])
 
   useLayoutEffect(() => {
     if (centerHeight <= 0) return
@@ -543,13 +545,17 @@ export function AppShell({
                     collapsible={animating || !rightInline}
                     collapsedSize="0%"
                   >
-                    <aside
-                      aria-label={t('common.context')}
-                      inert={!rightInline}
-                      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-r-xl border-y border-r border-border-subtle bg-background text-foreground"
-                    >
-                      {right}
-                    </aside>
+                    {/* While it closes, the panel keeps its width and slides out: nothing in it reflows or stays visible. */}
+                    <div className="flex h-full min-h-0 justify-end overflow-hidden">
+                      <aside
+                        aria-label={t('common.context')}
+                        inert={!rightInline}
+                        className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-r-xl border-y border-r border-border-subtle bg-background text-foreground"
+                        style={{ minWidth: rightInline ? undefined : `${sides.right ?? rightWidth}px` }}
+                      >
+                        {right}
+                      </aside>
+                    </div>
                   </ResizablePanel>
                 </>
               )}

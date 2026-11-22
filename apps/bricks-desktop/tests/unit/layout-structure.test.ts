@@ -21,7 +21,7 @@ describe('top bar: the « Plus » menu comes after the panel toggles', () => {
 		const topbar = src(TOPBAR);
 		const group = topbar.indexOf(bound('aria-label', 'Affichage'));
 		const lastToggle = topbar.indexOf('{onToggleReader && (');
-		const trailing = topbar.indexOf('{trailing &&');
+		const trailing = topbar.indexOf('{trailing}');
 		expect(group).toBeGreaterThan(-1);
 		expect(lastToggle).toBeGreaterThan(group);
 		expect(trailing).toBeGreaterThan(lastToggle);

@@ -4,5 +4,9 @@
 @import './styles/tokens.generated.css';
 @import './styles/tailwind.css';
 @import './styles/base.css';
+@import './styles/scroll.css';
 
 @custom-variant dark (&:is(.dark *));
+/* Hover without the (hover: hover) media query: the webview of the app does not always report a
+   hovering pointer, and the row actions of the sidebar only show on hover. */
+@custom-variant hover (&:hover);

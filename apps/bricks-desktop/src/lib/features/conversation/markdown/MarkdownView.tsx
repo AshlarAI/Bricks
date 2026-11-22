@@ -12,11 +12,13 @@ import { createMermaidCache } from './mermaid'
 import type { CitationSource } from './citations'
 import type { FileReference, MarkdownHeading, MathRenderer } from './types'
 import CitationCard, { type CitationCardHandle } from './CitationCard'
+import CodeFence from './CodeFence'
 import DiffBlock from './DiffBlock'
 import MarkdownBlock from './MarkdownBlock'
 import MermaidBlock from './MermaidBlock'
 import SvgBlock from './SvgBlock'
 import VegaBlock from './VegaBlock'
+import WebPageBlock from './WebPageBlock'
 import './markdown-view.css'
 
 export interface MarkdownViewProps {
@@ -193,6 +195,12 @@ export function MarkdownView({
           }
           if (block.kind === 'vega') {
             return <VegaBlock key={block.key} source={block.source} complete={block.complete} />
+          }
+          if (block.kind === 'webpage') {
+            return <WebPageBlock key={block.key} source={block.source} complete={block.complete} />
+          }
+          if (block.kind === 'code') {
+            return <CodeFence key={block.key} source={block.source} lang={block.lang} complete={block.complete} />
           }
           if (block.kind === 'markdown') {
             return (

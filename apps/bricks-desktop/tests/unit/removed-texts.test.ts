@@ -99,19 +99,20 @@ describe('header: controls, then the title, then the actions', () => {
 		const text = src('lib/layout/TopBar.tsx');
 		const left = text.indexOf('<div data-tauri-drag-region className="flex shrink-0 items-center gap-0.5">');
 		const centre = text.indexOf('<div data-tauri-drag-region className="ml-3 flex min-w-0 flex-1 items-center">');
-		const right = text.indexOf('<div data-tauri-drag-region className="flex shrink-0 items-center gap-1">');
+		const right = text.indexOf(`<div data-tauri-drag-region role="group" aria-label={t('layout.view')} className="flex shrink-0 items-center gap-1">`);
 		expect(left).toBeGreaterThan(0);
 		expect(centre).toBeGreaterThan(left);
 		expect(right).toBeGreaterThan(centre);
 	});
 
-	it('the title sits in the middle group, the view toggles and the trailing menu in the last', () => {
+	it('the title sits in the middle group, the view toggles and the trailing menu in the last, one evenly spaced row', () => {
 		const text = src('lib/layout/TopBar.tsx');
 		const centre = text.indexOf('flex min-w-0 flex-1 items-center');
 		expect(text.indexOf('{title}', centre)).toBeGreaterThan(centre);
-		const right = text.indexOf('<div data-tauri-drag-region className="flex shrink-0 items-center gap-1">');
-		expect(text.indexOf("aria-label={t('layout.view')}", right)).toBeGreaterThan(right);
-		expect(text.indexOf('{trailing &&', right)).toBeGreaterThan(right);
+		const right = text.indexOf(`<div data-tauri-drag-region role="group" aria-label={t('layout.view')} className="flex shrink-0 items-center gap-1">`);
+		expect(right).toBeGreaterThan(centre);
+		expect(text.indexOf('{onToggleRight && (', right)).toBeGreaterThan(right);
+		expect(text.indexOf('{trailing}', right)).toBeGreaterThan(right);
 	});
 });
 

@@ -216,6 +216,9 @@ export const projectFileRead = (
 /** Native save dialog for an SVG document: the path written, or null when cancelled. */
 export const saveSvgFile = (defaultName: string, contents: string) =>
   call<string | null>('save_svg_file', { defaultName, contents })
+/** The save dialog for a code block; `null` when it is cancelled. */
+export const saveTextFile = (defaultName: string, contents: string) =>
+  call<string | null>('save_text_file', { defaultName, contents })
 /** The save dialog for a PNG image; `null` when it is cancelled. */
 export const savePngFile = (defaultName: string, contents: Uint8Array) =>
   call<string | null>('save_png_file', { defaultName, contents: Array.from(contents) })

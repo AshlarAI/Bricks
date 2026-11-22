@@ -51,8 +51,9 @@ export function NavigationPanel() {
         <NewConversationButton className="w-full justify-start px-2 text-ui" />
       </div>
 
-      {/* Native scrolling, like shadcn's Sidebar.Content, and scroll-fade: an edge fades only where there is more to see. */}
-      <ScrollArea className="min-h-0 flex-1" viewportClass="scroll-fade scroll-fade-6">
+      {/* Scroll-fade: an edge fades only where there is more to see. The top fade starts under the
+          sticky section title (h-6), so the title of the section being read stays sharp. */}
+      <ScrollArea className="min-h-0 flex-1" viewportClass="scroll-fade scroll-fade-6 scroll-fade-offset-6">
         <div className="flex flex-col gap-4 pb-6">
           {pinnedSessions.length > 0 && (
             <section className="flex flex-col gap-1 px-2">
@@ -107,8 +108,8 @@ export function NavigationPanel() {
             <TooltipTrigger asChild>
               <Button
                 variant="default"
-                size="icon-sm"
-                className="shrink-0 rounded-full bg-emerald-600 text-white hover:bg-emerald-600/90 dark:bg-emerald-600 dark:hover:bg-emerald-500 [&_svg]:size-3.5"
+                size="icon-xs"
+                className="mr-1 shrink-0 rounded-full bg-emerald-600 text-white hover:bg-emerald-600/90 dark:bg-emerald-600 dark:hover:bg-emerald-500 [&_svg]:size-3"
                 aria-label={updateTooltip}
                 onClick={() => ui.setUpdateDialogOpen(true)}
               >

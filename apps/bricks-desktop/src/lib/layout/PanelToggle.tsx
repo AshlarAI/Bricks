@@ -2,6 +2,7 @@ import { Toggle } from '$lib/components/ui/toggle'
 import { Kbd } from '$lib/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '$lib/components/ui/tooltip'
 import type { IconComponent } from './types'
+import { cn } from '$lib/utils'
 
 export interface PanelToggleProps {
   /** Stable accessible name, e.g. "Panneau de gauche". Does not change with state. */
@@ -41,7 +42,7 @@ export function PanelToggle({
             pressed={pressed}
             onPressedChange={() => onclick()}
             disabled={disabled}
-            className={className}
+            className={cn('size-8 min-w-8 px-0', className)}
           >
             <Icon aria-hidden="true" />
           </Toggle>

@@ -4,20 +4,13 @@
 // labels (definitions), its heading ids (earlier headings), its footnote numbers and the math
 // renderer/macro state in source order. `final` re-lexes everything and reuses every unchanged block, so it equals
 // `renderReference` of the same source.
-import { t } from '$lib/i18n/i18n'
 import type { Token } from 'marked'
 import { DUPLICATE_MARK, fenceClosed, fenceLanguage, forEachNode, labelsOf, plainText, slugify, type Tok } from './extensions'
 import {
-  codeShell,
-  fenceIconId,
-  withCodeIcons,
   escapeHtml,
   finishHtml,
   footnotesHtml,
   highlightCount,
-  highlightedBody,
-  withHighlights,
-  knownLanguage,
   lexBlocks,
   marked,
   withScope,
@@ -26,14 +19,6 @@ import {
 } from './render'
 import type { MarkdownDocumentOptions, MarkdownHeading, MathRenderer, RenderStats, RenderedBlock } from './types'
 
-/** Output signature of a block rendered progressively: never equal to a dependency signature. */
-const OPEN_SIG = 'open'
-/**
- * An open code block (streaming) is highlighted in full once its unhighlighted tail passes
- * these bounds; in between, the tail is appended escaped.
- */
-const PROGRESSIVE_CHARS = 1500
-const PROGRESSIVE_LINES = 40
 /** Budget of the render cache, in approximate bytes (two per UTF-16 unit of raw and html). */
 const CACHE_BYTES = 8 * 1024 * 1024
 
@@ -53,16 +38,6 @@ interface MacroState {
   values: Record<string, string>
 }
 
-/** A fence still open at the end of the source (streaming): the last block, always re-rendered while it grows. */
-function isOpenFence(entry: Entry): boolean {
-  return (
-    entry.token !== null &&
-    (entry.token as Tok).type === 'code' &&
-    /^ {0,3}(`{3,}|~{3,})/.test(entry.raw) &&
-    !fenceClosed(entry.raw)
-  )
-}
-
 /** One top-level token (or a text marked dropped, such as a repeated link definition) with its dependencies. */
 interface Entry {
   /** `b<start offset>`: stable while the block keeps its place. */
@@ -71,7 +46,7 @@ interface Entry {
   raw: string
   /** Null for a text range marked emitted no token for. */
   token: Token | null
-  kind: 'none' | 'html' | 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown'
+  kind: 'none' | 'html' | 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown' | 'webpage' | 'code'
   footnote: { id: string; text: string } | null
   /** Normalized link labels the block refers to, and the definitions they resolved to when lexed. */
   labels: string[]
@@ -112,8 +87,15 @@ function kindOf(node: Tok | null): Entry['kind'] {
     if (language === 'vega-lite' || language === 'vegalite') return 'vega'
     if (language === 'diff' || language === 'patch') return 'diff'
     if (language === 'markdown' || language === 'md') return 'markdown'
+    if (language === 'html' || language === 'htm') return 'webpage'
+    return 'code'
   }
   return 'html'
+}
+
+/** True for a fenced code block; an indented one is always complete. */
+function isFence(raw: string): boolean {
+  return /^ {0,3}(`{3,}|~{3,})/.test(raw)
 }
 
 function makeEntry(start: number, raw: string, token: Token | null): Entry {
@@ -134,7 +116,7 @@ function makeEntry(start: number, raw: string, token: Token | null): Entry {
     refs: [],
     fnSig: '',
     mathCount: 0,
-    complete: kind !== 'html' && kind !== 'none' ? fenceClosed(raw) : false,
+    complete: kind === 'html' || kind === 'none' ? false : isFence(raw) ? fenceClosed(raw) : true,
     output: null,
     outputSig: '',
     macros: null,
@@ -241,8 +223,6 @@ export class MarkdownDocument {
   private readonly cache = new Map<string, CachedBlock>()
   private cacheBytes = 0
   private language = ''
-  /** The highlighted body of the open code block: the text it covers, and its body. */
-  private openCode: { key: string; language: string; text: string; body: string } | null = null
   private lastSource: string | null = null
   /** Every entry of the last update, frozen ones first. */
   private entries: Entry[] = []
@@ -290,7 +270,6 @@ export class MarkdownDocument {
   setCodeVersion(version: number): void {
     if (version === this.codeVersion) return
     this.codeVersion = version
-    this.openCode = null
   }
 
   /** Rendered blocks hold interface words (a copy button): a new language renders them again. */
@@ -307,7 +286,6 @@ export class MarkdownDocument {
     this.disposed = true
     this.cache.clear()
     this.cacheBytes = 0
-    this.openCode = null
     this.entries = []
     this.frozen = []
     this.lastSource = null
@@ -332,11 +310,10 @@ export class MarkdownDocument {
     // Never throws: an inconsistency falls back to a full lex, and a failing full lex to the
     // source as one escaped paragraph, so no text of the message is lost.
     let blocks: RenderedBlock[] | null = null
-    const live = !final
-    if (incremental) blocks = this.attempt(text, true, previous, math, stats, live)
+    if (incremental) blocks = this.attempt(text, true, previous, math, stats)
     if (blocks === null) {
       stats.fullLex = true
-      blocks = this.attempt(text, false, previous, math, stats, live)
+      blocks = this.attempt(text, false, previous, math, stats)
     }
     if (blocks === null) {
       stats.fallback = true
@@ -355,10 +332,9 @@ export class MarkdownDocument {
     previous: Entry[],
     math: MathSettings,
     stats: RenderStats,
-    live: boolean,
   ): RenderedBlock[] | null {
     try {
-      return this.resolve(text, incremental, previous, math, stats, live)
+      return this.resolve(text, incremental, previous, math, stats)
     } catch {
       return null
     }
@@ -371,19 +347,16 @@ export class MarkdownDocument {
     this.lastSource = null
     this.linksSig = ''
     this.section = null
-    this.openCode = null
     const html = `<p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>`
     return [{ key: 'source', kind: 'html', html }]
   }
 
-  /** `live` is false for the final update: every block is then highlighted and rendered in full. */
   private resolve(
     text: string,
     incremental: boolean,
     previous: Entry[],
     math: MathSettings,
     stats: RenderStats,
-    live: boolean,
   ): RenderedBlock[] {
     if (!incremental) this.reset()
     // Every pass starts at the beginning of this source, including source replacements.
@@ -471,7 +444,7 @@ export class MarkdownDocument {
       if (entry.kind === 'none') {
         entry.output = null
       } else if (entry.kind === 'html') {
-        this.renderEntry(entry, previousByKey, math, stats, live)
+        this.renderEntry(entry, previousByKey, math, stats)
       } else {
         this.renderSource(entry, previousByKey)
       }
@@ -561,16 +534,19 @@ export class MarkdownDocument {
     }
     const node = entry.token as Tok
     const source = node.text as string
-    const kind = entry.kind as 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown'
-    entry.output = { key: entry.key, kind, source, complete: entry.complete }
+    entry.output =
+      entry.kind === 'code'
+        ? { key: entry.key, kind: 'code', source, lang: (node.lang as string | undefined) ?? '', complete: entry.complete }
+        : {
+            key: entry.key,
+            kind: entry.kind as 'mermaid' | 'svg' | 'vega' | 'diff' | 'markdown' | 'webpage',
+            source,
+            complete: entry.complete,
+          }
     entry.outputSig = entry.raw
   }
 
-  private renderEntry(entry: Entry, previousByKey: Map<string, Entry>, math: MathSettings, stats: RenderStats, live: boolean): void {
-    if (live && isOpenFence(entry)) {
-      this.renderOpen(entry, stats)
-      return
-    }
+  private renderEntry(entry: Entry, previousByKey: Map<string, Entry>, math: MathSettings, stats: RenderStats): void {
     const sig = [entry.labelSig, entry.idsSig, entry.fnSig, entry.mathCount > 0 ? `m${this.mathVersion}:${this.macroVersion}` : '', `c${this.codeVersion}`].join('\u0004')
     if (entry.output !== null && entry.outputSig === sig) {
       this.restoreMacros(entry.macros)
@@ -615,40 +591,6 @@ export class MarkdownDocument {
     entry.outputSig = sig
   }
 
-  /**
-   * An open code block while streaming: its highlighted body is kept, the text received since is
-   * appended escaped, and the whole block is highlighted again once that tail is long. Nothing
-   * here is cached: each tick replaces the open block. The output is safe by construction (the
-   * body is Shiki tokens with escaped text, or escaped text, the frame is ours), so it is not sanitized.
-   */
-  private renderOpen(entry: Entry, stats: RenderStats): void {
-    const node = entry.token as Tok
-    const text = node.text as string
-    const language = knownLanguage(node.lang as string | undefined)
-    const state = this.openCode
-    let body: string
-    if (state !== null && state.key === entry.key && state.language === language && text.startsWith(state.text)) {
-      const tail = text.slice(state.text.length)
-      if (tail.length <= PROGRESSIVE_CHARS && countNewlines(tail) <= PROGRESSIVE_LINES) {
-        body = state.body + escapeHtml(tail)
-      } else {
-        body = withHighlights(highlightedBody(text, language))
-        this.openCode = { key: entry.key, language, text, body }
-      }
-    } else {
-      body = withHighlights(highlightedBody(text, language))
-      this.openCode = { key: entry.key, language, text, body }
-    }
-    const info = node.lang as string | undefined
-    entry.output = {
-      key: entry.key,
-      kind: 'html',
-      html: withCodeIcons(codeShell(fenceLanguage(info) || t('conversation.codeLanguageText'), body, fenceIconId(info))),
-    }
-    entry.outputSig = OPEN_SIG
-    stats.renderedBlocks += 1
-  }
-
   /** Stores the rendering of a block under its key, replacing the previous one; evicts the least recently used within the budget. */
   private clearMacros(): void {
     for (const name of Object.keys(this.macros)) delete this.macros[name]
@@ -678,12 +620,6 @@ export class MarkdownDocument {
       this.cache.delete(oldest.value)
     }
   }
-}
-
-function countNewlines(text: string): number {
-  let count = 0
-  for (let index = text.indexOf('\n'); index >= 0; index = text.indexOf('\n', index + 1)) count += 1
-  return count
 }
 
 /**
