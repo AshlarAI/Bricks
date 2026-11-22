@@ -88,8 +88,12 @@ bricks --providers ./providers.toml --model my-provider/my-model
 The Models settings page of the desktop app edits `providers.toml` in place,
 and creates it when the first provider is saved if it does not exist yet.
 
-* **Adding.** Adding a provider writes a `[[providers]]` table, and adding a model
-  writes a `[[providers.models]]` table with its `[limits]`.
+* **Adding.** "Add a provider" opens a picker with two OpenCode gateways, OpenCode Go
+  and OpenCode Zen, each through Chat Completions, Responses or Anthropic Messages, and
+  with "Create a custom provider". An OpenCode template asks for a key and writes the
+  provider with its models, read from models.dev and kept to the models the gateway
+  lists at that moment. Adding a provider writes a `[[providers]]` table, and adding a
+  model writes a `[[providers.models]]` table with its `[limits]`.
   Identifiers use letters, digits, `.`, `_` and `-`, start with a letter or a digit,
   and are unique.
 * **Required fields.** A provider needs `name`, `endpoint`, `protocol` and `auth`, and
@@ -127,7 +131,7 @@ identifier the server receives), and optionally its own `protocol`, `endpoint`,
 | `input_modalities`, `output_modalities` | Subsets of `text`, `image`, `audio`, `video`, `document`. Default `["text"]`. |
 | `document_mime_types` | Accepted MIME types when `document` is an input. |
 | `streaming` | **Default `false`**: an undeclared streaming is a blocking request. |
-| `limits` | `max_input_tokens`, the input usable with the maximum output reserved, and `max_output_tokens`. |
+| `limits` | `max_input_tokens`, the input usable with the maximum output reserved (models imported from models.dev differ, see below), and `max_output_tokens`. |
 | `pricing` | USD per million tokens (see *Prices and usage*). |
 | `reasoning` | Reasoning profiles (see *Reasoning profiles*). |
 | `parameters` | Request parameters sent with every request. |
@@ -138,6 +142,11 @@ Limits are declarative. They never change the server's own limits: Bricks uses
 them to cap `max_tokens` and to budget the prompt. Local token counts are
 estimates; only a usage reported by the server, or a configured counting
 endpoint, measures tokens.
+
+**Models imported from models.dev.** The OpenCode templates take `max_input_tokens` from
+the input limit the catalogue declares, or else from the whole context window, without
+deducting the output limit. An output limit as large as the window, or larger, is replaced
+by a quarter of the window.
 
 ## Protocols and authentication
 
@@ -153,6 +162,10 @@ The request URL is the `endpoint` plus the relative path. A version segment at
 the end of the endpoint is not repeated, and an absolute `path` URL is used as
 it is. A model can override the protocol; it then takes that protocol's path,
 authentication style and headers, and explicit `headers` override by name.
+
+Every request carries `User-Agent: Bricks/<version>`, unless `headers` sets its own.
+A request to `opencode.ai` (or a subdomain) also carries `x-opencode-session`, the id
+of the conversation, which OpenCode uses for routing and prompt caching.
 
 `compat` adjusts the protocol for servers that differ:
 
@@ -267,7 +280,10 @@ which bounds only the single rate-limit wait of a web-search provider.
   price is unknown, not free, and a hand-written file may omit any of the three.
 * `input_tokens` is always the uncached prompt; cache reads and writes are
   counted apart. `output_tokens` includes reasoning tokens.
-* No price list or catalogue is ever downloaded.
+* Gateway billing: when OpenCode reports what it charged, `Usage.billing` carries it and
+  `cost_usd` is that charged amount, not an estimate. Session totals add the billings.
+* The engine never downloads a price list or a catalogue. The desktop app reads models.dev
+  once for each OpenCode provider it adds.
 
 ## Verification status
 

@@ -196,9 +196,16 @@ pub struct ChangeSet {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum RebaseOutcome {
-    Rebased(ChangeSet),
-    Conflict { files: Vec<String>, message: String },
-    VerifyFailed { exit_code: i32, output: String },
+    /// Boxed: a ChangeSet is far larger than the other outcomes.
+    Rebased(Box<ChangeSet>),
+    Conflict {
+        files: Vec<String>,
+        message: String,
+    },
+    VerifyFailed {
+        exit_code: i32,
+        output: String,
+    },
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1270,7 +1277,7 @@ pub async fn rebase_changeset(
         let new_patch_path = patch_dir.join(format!("{new_id}.patch"));
         std::fs::write(&new_patch_path, &fresh_patch).map_err(|e| WsError::Io(e.to_string()))?;
 
-        Ok(RebaseOutcome::Rebased(ChangeSet {
+        Ok(RebaseOutcome::Rebased(Box::new(ChangeSet {
             id: new_id,
             agent_id: changeset.agent_id.clone(),
             task: changeset.task.clone(),
@@ -1287,7 +1294,7 @@ pub async fn rebase_changeset(
             validations: changeset.validations.clone(),
             note: None,
             rebased_from: Some(changeset.id.clone()),
-        }))
+        })))
     }
     .await;
 
@@ -1604,7 +1611,7 @@ mod rebase_tests {
         assert!(!patch.contains("b1-head"), "{patch}");
 
         // Rebased ChangeSet applies cleanly to the moved HEAD!
-        mgr.register_changeset(rebased.clone());
+        mgr.register_changeset((*rebased).clone());
         let applied = mgr.apply(&rebased.id, repo.path()).await.unwrap();
         assert_eq!(applied.state, ChangeSetState::Applied);
         assert_eq!(

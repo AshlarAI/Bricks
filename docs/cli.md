@@ -69,7 +69,7 @@ A session of the `bricks` command or of Bricks Desktop has these tools:
 * **With skills** (both frontends): `Skill`.
 * **`Ask`**: lets the model ask you a question.
 * **When `[agents] enabled` is true (the default)**: `Agent`, `Managent`, and `Messagent`.
-* **With `[memory] enabled = true`**: `memory_search` and `memory_write`.
+* **With `[memory] enabled = true`**: the memory tools, `memory_search`, `memory_list`, `memory_write`, `memory_update` and `memory_delete`.
 * **MCP tools**, named `mcp__server__tool`.
 
 Every call goes through the session's permission policy (see [Permissions](#permissions)). Each call is one of four classes (read, write, execute, network), and the policy allows it, asks, or refuses it. The built-in tools page of the site (`docs/content/docs/built-in-tools.mdx`) describes each tool.
@@ -425,16 +425,20 @@ When a call the policy says to ask about is waiting:
 
 ## The desktop application
 
-The interactive interface is the desktop application, `apps/bricks-desktop` (Tauri 2, Svelte 5 and shadcn-svelte, in English and French). It drives the same engine contract as `bricks run`. The `/` commands below have the same names in its command palette, which is built from the shared registry (`bricks_agent::control::slash`).
+The interactive interface is the desktop application, `apps/bricks-desktop` (Tauri 2, React 19 and shadcn/ui, in English and French). It drives the same engine contract as `bricks run`. The `/` commands below have the same names in its command palette, which is built from the shared registry (`bricks_agent::control::slash`).
 
 * **Projects and conversations.** A project is a folder. The sidebar lists its conversations. Choosing one opens it, and a new one starts in the project.
 * **Provider keys.** Keys are kept in `providers.toml` (see `docs/providers.md`).
 * **Resume.** `/resume` opens the session picker. `/resume <id>` resumes that session, the same way as `bricks run --session <id>` (see [Sessions and resume](#sessions-and-resume)).
 * **Approvals.** A pending approval shows the change before anything is written. You can allow this call or refuse it. The policy is the one of [Permissions](#permissions).
 * **Questions.** When the model uses `Ask`, the question appears in the conversation. You can pick an option, type your own answer, or skip.
-* **Runs and files.** Each run ends with a card: its duration, the files it changed (the sum of the applied edits, not a Git diff) and its commands. A reader in the right column shows the files, with the source, a preview for Markdown, and the recorded patches.
+* **Runs and files.** Each run ends with a card: its duration, the files it changed (the sum of the applied edits, not a Git diff) and its commands. A reader in the right column shows the files, each read whole up to 2 MiB, with the source, a preview for Markdown, and the recorded patches.
 * **Images.** A successful `Read` of an image shows a thumbnail under its line.
 * **Diagrams.** The conversation renders SVG and Vega-Lite diagrams.
+* **Code blocks.** A code block shows its file name or language, with line numbers and buttons to wrap, copy and download it. A block of more than 30 lines is shown as an artifact.
+* **HTML.** An `html` block runs in a sandboxed preview, with its console. While it streams, its source is shown.
+* **Work bar.** While a run works, the work bar shows its elapsed time.
+* **Usage.** Settings › Usage shows the token totals, the daily use as stacked bars, and each model's share as a donut.
 * **Plan.** A block under the conversation shows the plan (`TodoWrite`): done out of total, and the steps.
 * **Memory view.** `/memory` shows the stored notes. You can delete an entry (see `docs/memory.md`).
 * **Context breakdown.** `/context` shows how the context window is used (see below).
@@ -527,18 +531,13 @@ folder, which holds the plan (`plan.json`).
 ## Long-term memory
 
 With `[memory] enabled = true` (see `docs/memory.md`), each run's prompt
-recalls stored facts (`memory_recalled`). After the answer, the exchange
+recalls stored notes (`memory_recalled`). After the answer, the exchange
 is processed as a separate, cancellable phase
 (`memory_maintenance_started` / `_finished`). That phase is durable and
 resumable: an interrupted pass leaves its work pending, and a successful
 extraction is never repeated. A maintenance failure is reported on its
 own; it never turns into a "memory success", and the delivered answer is
 unaffected.
-
-
-## Long-term memory
-
-With `[memory] enabled = true` (see `docs/memory.md`), each run's prompt recalls stored notes (`memory_recalled`). After the answer, the exchange is processed as a separate, cancellable phase (`memory_maintenance_started` / `_finished`). An interrupted pass leaves its work pending, and a finished extraction is never repeated. A maintenance failure is reported on its own. It never changes the answer you already got.
 
 ## A demonstration without any key
 

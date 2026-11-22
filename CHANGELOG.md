@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 229 (2026/11/22)
+
+- Replace the macOS icons (black bricks on a white tile in light mode, white bricks on a black tile in dark mode, on the 824 px grid) and redraw the Windows `icon.ico` at all 14 Windows 11 sizes as black bricks on a transparent background.
+- Box `RebaseOutcome::Rebased` and name the memory loader's return type, so `cargo clippy --workspace -D warnings` passes, and align the documentation with Markdown memory, the `general` and `explore` sub-agents, `Managent`, the React desktop and whole-window input limits.
+
 ### Commit 228 (2026/11/22)
 
 - Render top-level code fences with the React `CodeBlock` (file or language, numbered lines, wrap, download through a new `save_text_file` command, copy), frame blocks over 30 lines as artifacts, and preview `html` fences in a sandboxed `WebPreview` with its console, source view, reload, larger view and download.

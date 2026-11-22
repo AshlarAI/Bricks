@@ -19,7 +19,7 @@ Each set is a function in `bricks::tools`:
 
 `CodeSearch` is not in `filesystem()`: add `CodeSearchTool::with_embeddings(...)` when an embedding provider is configured.
 
-The `bricks` CLI and the desktop app start a session with `coding()` and add `TodoWrite` on their own. They also add the memory tools (`memory_search`, `memory_write`) when long-term memory is enabled, and the sub-agent tools (`Agent`, `Managent`, `Messagent`) when `[agents] enabled = true` is set in `bricks.toml`. `Agent::builder()` does not add those automatically. VM tools from `bricks-tools` (feature `vms`) are also added separately.
+The `bricks` CLI and the desktop app start a session with `coding()` and add `TodoWrite` on their own. They also add the memory tools (`memory_list`, `memory_search`, `memory_write`, `memory_update`, `memory_delete`) when long-term memory is enabled, and the sub-agent tools (`Agent`, `Managent`, `Messagent`) when `[agents] enabled` is true, which is the default. `Agent::builder()` does not add those automatically. VM tools from `bricks-tools` (feature `vms`) are also added separately.
 
 ## Permission levels
 

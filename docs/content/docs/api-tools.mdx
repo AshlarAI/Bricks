@@ -165,7 +165,7 @@ The permission level is the one each tool declares in code (`permission_level()`
 
 | Tool | Permission | Description |
 |------|-----------|-------------|
-| `bricks_agent::agents::MessagentTool` | Execute | Native runtime tool: send and read team messages between agents in a run. Registered with the native agent tools, not by `bricks::tools::all()`. |
+| `bricks_agent::agents::MessagentTool` | ReadOnly | Native runtime tool: `send`, `read` and `members` for the team mail of a session. Registered with the native agent tools, not by `bricks::tools::all()`. |
 
 **Other (1 tool)**
 
@@ -388,9 +388,10 @@ session.
 
 ## Bash Safety Analysis
 
-`BashTool` always asks the `PermissionPolicy` at the `Execute` level; nothing
-classifies the command before it runs, and the approval does not depend on
-the command text.
+`BashTool` is an `Execute`-level call. The session policy decides it: asked
+under ASK, allowed under EXECUTE, and decided by its own rule under CUSTOM.
+Nothing classifies the command text before it runs, and the decision does not
+depend on it.
 
 `bricks_tools::tool_primitives::bash_safety::analyze_command` is a separate
 primitive: it parses a command with tree-sitter and reports a risk level

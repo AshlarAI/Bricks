@@ -5,7 +5,7 @@ description: Every crate of the Bricks workspace, its role, and what depends on 
 
 # Crate Map
 
-The Bricks workspace is at version `1.0.0-alpha.1`. Its crates are named `bricks-*`,
+The Bricks workspace is at version `2026.11.15`. Its crates are named `bricks-*`,
 except the facade, `bricks`. Each crate lives under `crates/`, and the desktop
 application lives under `apps/`. The workspace layers are described in
 [Architecture](/docs/architecture).
@@ -15,7 +15,7 @@ application lives under `apps/`. The workspace layers are described in
 | Path | Package | What it is |
 |---|---|---|
 | `crates/bricks-cli` | `bricks-cli` (binary `bricks`) | The command. Parses arguments, loads the configuration, starts the engine, and presents its events as text or as versioned JSONL: `bricks run`, `bricks sessions`. Installed with `cargo install --path crates/bricks-cli`. |
-| `apps/bricks-desktop` | `bricks-desktop` (product "Bricks") | Bricks Desktop, the interactive interface. A Tauri 2 application with a Svelte front end. It renders the engine's events and turns the person's actions into engine commands. It holds no agent logic. |
+| `apps/bricks-desktop` | `bricks-desktop` (product "Bricks") | Bricks Desktop, the interactive interface. A Tauri 2 application with a React 19 front end, built with shadcn/ui components. It renders the engine's events and turns the person's actions into engine commands. It holds no agent logic. |
 
 The command and the desktop application use the engine's command/event
 contract, `bricks_agent::control`. The commands and the output format of the `bricks` command are in
@@ -55,7 +55,7 @@ Providers are configuration, not types: the facade exports
 | `bricks-provider` | The `Provider` trait, the provider registry read from `providers.toml`, and the three protocol adapters: `chat_completions`, `responses` and `anthropic_messages`. Retries, prices and reasoning profiles. |
 | `bricks-tools` | The `Tool` trait and the built-in tools, grouped in sets: `all()`, `coding()`, `filesystem()`, `shell()`, `web()` and `planning()`. Also the `PermissionPolicy` trait, the change previews, and the shell sessions and background jobs. |
 | `bricks-tools-derive` | The `#[derive(Tool)]` procedural macro. |
-| `bricks-memory` | The `Memory` and `LongTermMemory` traits and their backends: `JsonlMemory` for session transcripts, `InMemory` for tests, `session_storage` helpers, and structured long-term memory (`structured` feature, with `StructuredMemory` and `ScopedMemory`). |
+| `bricks-memory` | The `Memory` and `LongTermMemory` traits and their backends: `JsonlMemory` for session transcripts, `InMemory` for tests, `session_storage` helpers, and `FileNoteStore` for long-term notes. Each note is a Markdown file, with a generated `MEMORY.md` index, in the `project` or `global` scope (`ScopedFileMemory`). |
 | `bricks-embeddings` | Embedding providers behind one trait, and a USearch vector index. |
 | `bricks-compression` | Reduction of tool outputs: command-aware rules and tree-sitter skeletons of long files. |
 | `bricks-semantic` | The code understanding engine shared per workspace: lexical search, syntax context, and optional language servers. It backs `CodeScout` and `/search`. |
@@ -81,7 +81,6 @@ tool sets above. The engine adds it to an agent that has skills, set with
 |---|---|
 | `bricks-testkit` (not published) | Test helpers for the workspace: a local scripted HTTP server. |
 | `bricks-tbench` | The Terminal-Bench coding agent, built on the engine and AgentRL. Its binary is `tbench-agent`. |
-| `longmem-bench` (in `bench/long-mem`, not published) | The LongMemEval benchmark for the memory stack, with the binary `longmem-recall`. |
 
 `bricks-cli` and `bricks-desktop` are not library crates, and the publication
 script leaves them out. The publication order and the list of published crates

@@ -9,3 +9,5 @@ This page is a summary. The full reference is [Tool API, Permission Levels](/doc
 - On `AgentBuilder`: `.permission_policy(approver)` sets the approver, `.permission_profile(SessionPolicy)` sets the policy, and `.permission_cell(...)` shares a policy within a session.
 - Sub-agents share their parent's policy. Changing the policy bumps its revision so pending requests are not answered by the new rules.
 - Policy storage lives outside `bricks.toml`: the default for new sessions is `~/.bricks/permissions.json` (or `$BRICKS_HOME/permissions.json`), and each session keeps its own `permissions.json`.
+- Launching a sub-agent is never asked. `Agent` runs under EXECUTE, or under CUSTOM when its rule allows it, and is refused under ASK. A sub-agent's own calls follow its profile's `permissions` (`inherit`, `read_only`, `ask`, or `execute`).
+- `bricks --permissions ask|execute` sets the profile of a run's session. The default for new sessions is chosen once and stored in `permissions.json`.

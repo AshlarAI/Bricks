@@ -2,7 +2,7 @@
 
 ## Installation
 
-The workspace version is `1.0.0-alpha.1` (`Cargo.toml`). To use the SDK in a Rust project, depend on the `bricks` facade crate in `crates/bricks`:
+The workspace version is `2026.11.15` (`Cargo.toml`). To use the SDK in a Rust project, depend on the `bricks` facade crate in `crates/bricks`:
 
 ```toml
 [dependencies]
@@ -69,7 +69,7 @@ cargo run
 - [Tools](03-tools.md): built-in tool sets, permission levels, and custom tools
 - [Agent Lifecycle](04-agent-lifecycle.md): how the agent loop runs and compacts history
 - [Events & Streaming](05-events-streaming.md): callbacks, broadcast channels, streams, and reporters
-- [Memory](06-memory.md): session transcripts and structured long-term memory
+- [Memory](06-memory.md): session transcripts and long-term notes kept as Markdown
 - [Hooks](07-hooks.md): intercepting turns and tool calls
 - [Permissions](08-permissions.md): controlling what tools can do
 - [Architecture](09-architecture.md): workspace crates and data flow

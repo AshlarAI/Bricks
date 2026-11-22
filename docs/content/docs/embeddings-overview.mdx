@@ -1,6 +1,6 @@
 ---
 title: "Embeddings Overview"
-description: bricks-embeddings provides text embeddings behind a provider trait, with a usearch-backed HNSW vector index. Used by long-term memory and by the CodeSearch tool, and usable on its own for search and retrieval.
+description: bricks-embeddings provides text embeddings behind a provider trait, with a usearch-backed HNSW vector index. Used by the CodeSearch tool, and usable on its own for search and retrieval.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -91,7 +91,7 @@ println!("{} ({}-d)", provider.name(), provider.dimensions());
 
 ## Where Bricks uses it
 
-- **Long-term memory.** In `bricks.toml`, `[memory] embeddings` selects the provider: `hashing[:dims]` (local, the value in the example configuration), `openai[:model]` or `gemini[:model]`. Memory is attached only when `[memory] enabled = true`.
+- **Long-term memory does not use embeddings.** Its notes are Markdown files searched by their text. Memory is attached only when `[memory] enabled = true` in `bricks.toml`.
 - **CodeSearch.** `CodeSearchTool::with_embeddings(provider)` (in `bricks-tools`) adds a vector score to the BM25 score: 60 % BM25 and 40 % vector. A provider is needed for this; the repository has no command-line flag that sets one.
 
 ## Keep reading

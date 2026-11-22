@@ -275,7 +275,7 @@ Execute a shell command. Each call is its own process, started from the session'
 />
 
 <Callout>
-Bash calls are approved by the permission policy at the `Execute` level, whatever the command. No analysis of the command runs before it and none lowers or raises that level. The AST analysis of `bricks_tools::tool_primitives::bash_safety` is an SDK primitive a caller can use on its own; see [Code intelligence](/docs/code-intelligence#bash-command-safety-analysis).
+Bash calls are decided by the session policy at the `Execute` level, whatever the command. No analysis of the command runs before it and none lowers or raises that level. The AST analysis of `bricks_tools::tool_primitives::bash_safety` is an SDK primitive a caller can use on its own; see [Code intelligence](/docs/code-intelligence#bash-command-safety-analysis).
 </Callout>
 
 A command that may become a job (`background: true`, or a `yield_time_ms` below its `timeout`) is recorded by the session's job registry. Without one, as with `bricks::tools::shell()`, it is refused before it starts. A job is followed with [Job](#job).
@@ -447,7 +447,7 @@ Available profiles (`general`, `explore`, plus custom `.bricks/agents/*.md` and 
 
 Sub-agents always run in parallel. `Agent` returns their ids at once; `Managent wait` and `result` give the results.
 
-**Permission:** `Agent`: Execute. Allowing it allows that delegation only: each child's own tool calls go through the policy one by one. `Managent`: ReadOnly for `list`, `status`, `result`, `wait`, `inspect_changes`, and `check_changes`; Execute for `resume` and `cancel`; Write for `apply_changes` and `discard_changes`. `Messagent`: Execute.
+**Permission:** `Agent`: Execute. Allowing it allows that delegation only. A child's own calls follow the same policy: a call the policy would ask is allowed for the child, because launching it was the approval, while refusals still hold. A profile's `permissions` can narrow this (see `docs/agents.md` in the repository). `Managent`: ReadOnly for `list`, `status`, `result`, `wait`, `inspect_changes`, and `check_changes`; Execute for `resume`, `cancel`, and `rebase_changes` with `verify_cmd`; Write for `apply_changes`, `discard_changes`, and `rebase_changes` without `verify_cmd`. `Messagent`: ReadOnly.
 
 The `Managent` actions, by their parameters:
 
@@ -469,21 +469,34 @@ Their parameters, the limits (`max_depth` = 1, `max_concurrent` = 16, `max_queue
 
 ### Messagent
 
-Send a message to one of your running sub-agents, or to `"main"`. It is a native tool registered with the agent runtime, outside `bricks::tools::all()` (see [Sub-agent tools](#sub-agent-tools)). The recipient reads it at its next model request, never between a tool call and its result. Refusals are explicit (unknown or out of scope, not running, empty, over 16 KiB, 32 messages already waiting); nothing is reported as sent when it was not. Without an agent runtime in the session, nothing is sent.
+Team mail between the agents of a session: `send`, `read` (new messages, or the whole thread with `all`), and `members`. It is a native tool registered with the agent runtime, outside `bricks::tools::all()` (see [Sub-agent tools](#sub-agent-tools)).
 
-**Permission:** Execute
+Recipients read a message between two turns, after the tool calls of the turn in progress; a message never interrupts a running command. A message does not restart an ended sub-agent. Refusals are explicit (unknown recipient, empty content, over 16 KiB, 32 messages already waiting for a recipient); nothing is reported as sent when it was not. Without an agent runtime in the session, nothing is sent or read.
+
+**Permission:** ReadOnly
 
 <TypeTable
   type={{
-    to: {
+    action: {
       type: 'string',
-      description: 'The sub-agent ID (`agent_…`).',
+      description: '"send", "read" or "members".',
       required: true,
+    },
+    to: {
+      type: 'string | string[]',
+      description: 'send: `main`, a sub-agent id (`sub_0000`), a list of ids, or `"team"`.',
     },
     content: {
       type: 'string',
-      description: 'Message content.',
-      required: true,
+      description: 'send: the message, 16 KiB at most.',
+    },
+    reply_to: {
+      type: 'string',
+      description: 'send: the id of the message answered (`m0001`).',
+    },
+    all: {
+      type: 'boolean',
+      description: 'read: the whole thread instead of the new messages.',
     },
   }}
 />
@@ -532,6 +545,6 @@ See `docs/skills.md` in the repository for sources, the store, activation, withd
 | Level | Tools |
 |-------|-------|
 | **None** (1) | TodoWrite |
-| **ReadOnly** (8) | Read, Glob, Grep, CodeScout, CodeStats, WebFetch, WebSearch, Skill (ReadOnly except `install`) |
+| **ReadOnly** (9) | Read, Glob, Grep, CodeScout, CodeStats, WebFetch, WebSearch, Skill (ReadOnly except `install`), Messagent |
 | **Write** (3) | Write, Edit, ApplyPatch |
-| **Execute** (4) | Bash, PowerShell (when available), Messagent, Job (ReadOnly for `list`, `status`, `output`, `wait`) |
+| **Execute** (3) | Bash, PowerShell (when available), Job (ReadOnly for `list`, `status`, `output`, `wait`) |

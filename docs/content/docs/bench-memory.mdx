@@ -11,7 +11,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) is the 500-question long-term-memory benchmark Mastra used for its [*Observational Memory*](https://mastra.ai/research/observational-memory) research, Zep reports on in the [Graphiti paper](https://arxiv.org/abs/2501.13956), and Supermemory cites in its comparisons. We run the same 500 questions through four Bricks memory configurations, so the numbers line up with what those frameworks publish.
 
 <Callout type="warn">
-**Dated measurement, before later changes.** The runs below took place on **2026-04-25**, with the memory stack of version 0.1.8. They predate the native sub-agents of 0.4.6 and the change that runs each `Bash` call in its own process (commit `4263cd9`). They are a record of that run. They are not a measurement of the current code, and the result files are not kept in the repository.
+**Dated measurement, before later changes.** The runs below took place on **2026-04-25**, with the memory stack of version 0.1.8. They predate the native sub-agents of 0.4.6 and the change that runs each `Bash` call in its own process (commit `4263cd9`). They are a record of that run. They are not a measurement of the current code, and the result files are not kept in the repository. Configurations C and D used the Grafeo graph store and the `structured` memory, which have since been removed. The current long-term memory is a Markdown note store, which this benchmark has not measured.
 </Callout>
 
 ## TL;DR
@@ -57,7 +57,7 @@ The third-party figures below are as their authors published them at the time. T
 
 - **Bricks Baseline @ 87.6 %** and **Hybrid @ 86.3 %** both clear Supermemory on `gemini-3-pro-preview` (85.2 %) and `gpt-5` (84.6 %), Mastra OM on `gpt-4o` (84.23 %), Mastra RAG on `gpt-4o` (80.05 %), Zep on `gpt-4o` (71.2 %), and EmergenceMem Internal on `gpt-4o` (86.0 %).
 - **0.1.8's Memory++ stack (Omega RAG prompts + query expansion + abstention floors + dedup)** delivered a **+2.5 pp lift on `multi-session`** (the hybrid's weakest type), the targeted gain the plan called for.
-- The remaining gap to Mastra OM / `gemini-3-flash-preview` (89.2 %) and `gpt-5-mini` (94.87 %) is concentrated on **(a)** answerer-model tier and **(b)** full-text search + three-way RRF + per-type `RetrievalProfile` (now part of `bricks-memory::structured`).
+- The remaining gap to Mastra OM / `gemini-3-flash-preview` (89.2 %) and `gpt-5-mini` (94.87 %) is concentrated on **(a)** answerer-model tier and **(b)** full-text search + three-way RRF + per-type `RetrievalProfile` (a part of the structured memory that was later removed).
 - **Pure semantic retrieval (`EmbeddingMemory`, 86.6 %)** beats Mastra OM / `gpt-4o` (84.23 %) and Supermemory / `gpt-4o` (81.6 %) with **19× fewer input tokens** than our own full-context baseline.
 - **Graph-substring (2.2 %)** is the honest floor: substring match can't paraphrase-match. It still hits 96.7 % abstention because it returns junk, so the answerer correctly refuses.
 
@@ -95,7 +95,7 @@ The per-question wall time difference between embed (39.1 s) and hybrid (183.7 s
 | **D. `hybrid`** | **LLM fact extractor → EmbeddingMemory + GraphMemory → RRF fusion** | The configuration that actually competes with Mastra's observational memory. |
 
 <Callout type="info">
-On current `main`, the old `embed`, `graph`, and `hybrid` configs have been replaced by `structured-vector` and `structured-hybrid` backed by `bricks-memory::structured`.
+The `embed`, `graph`, `hybrid`, `structured-vector` and `structured-hybrid` configs ran on memory stores that were removed. They are kept here as a record.
 </Callout>
 
 ## Methodology (non-negotiable)
@@ -169,7 +169,7 @@ API keys have leaked from this repo **twice** before we tightened things up: a h
 - Per-config retrieval: `bench/long-mem/src/configs/{baseline,structured}.rs`
 - Runner + RRF fusion: `bench/long-mem/src/runner.rs`, `configs/structured.rs`
 - Aggregation: `bench/long-mem/src/report.rs`
-- SDK wiring behind the current configs: `crates/bricks-memory/src/structured/` (the earlier `embedding_memory.rs` and `graph.rs` modules from 0.1.8 have been removed).
+- SDK wiring of the measured configs: the graph store and structured memory, both removed from `bricks-memory`.
 
 ## Credits
 
@@ -197,4 +197,4 @@ results/
 
 - The numbers on this page use `gemini-2.5-flash` as answerer, judge and observer (see the TL;DR). Mastra's *Observational Memory* research tests several judge/answerer combinations: when comparing numbers, make sure the model pair matches. `--answerer-model` and `--judge-model` are required flags of the runner, so choose the pair explicitly; `--extractor-model` is optional.
 - `concurrency=4` (outer) × `INNER_EXTRACT_CONCURRENCY=6` (hybrid fact extraction) keeps us under OpenAI tier-1 rate limits. If you have higher tier throughput, bumping `--concurrency 8` will halve wall time.
-- A one-shot bench like this measures recall quality with *fixed* retrieval: it does not exercise agents calling tools during answering. If you need tool-use-in-the-loop behaviour, add a `bricks::Agent` wrapper; the structured memory backend plugs in via [`.long_term_memory(...)`](/docs/api-memory) on the builder.
+- A one-shot bench like this measures recall quality with *fixed* retrieval: it does not exercise agents calling tools during answering. If you need tool-use-in-the-loop behaviour, add a `bricks::Agent` wrapper; a long-term memory plugs in via [`.long_term_memory(...)`](/docs/api-memory) on the builder.

@@ -126,10 +126,6 @@ per_source = 2                  # first pass: at most this many per page
 [web.store]
 max_session_bytes = 67108864    # documents kept per session (oldest removed beyond)
 
-# ── Long-term memory (docs/memory.md) ────────────────────────────────────────
-# Read by `bricks_memory::structured::MemoryConfig::from_bricks_toml` (feature
-# `structured`). The values below are the defaults, except `space`.
-
 [agents]
 # Native sub-agents (the Agent tool). See docs/agents.md. Runtime limits, not
 # profile rules. Profiles: <workspace>/.bricks/agents/*.md > ~/.bricks/agents/*.md
@@ -143,8 +139,9 @@ max_session_bytes = 67108864    # documents kept per session (oldest removed bey
 # max_queued = 64              # children waiting for a slot (beyond: AgentQueueFull)
 # admission_timeout_ms = 60000 # a child waits this long for a slot, then AgentAdmissionTimeout
 # background_drain_ms = 600000 # headless: sub-agents still running get this long after the main run, then are cancelled (exit 6)
-# default_isolation = "auto"   # auto (a worktree per sub-agent: they run in parallel) | shared | worktree
+# default_isolation = "auto"   # accepted, not used yet: a child runs in its isolation argument, else its profile's
 # skills_max_bytes = 24000     # profile skills loaded into a child, in total
+# subagent_memory_write = false  # children without a memory setting may write memory (false: read only)
 # [agents.reasoning_aliases]
 # high = "deep"                          # a profile's `high` → this model's `deep`
 
@@ -195,39 +192,12 @@ max_session_bytes = 67108864    # documents kept per session (oldest removed bey
 # file_patterns = ["*.rs"]
 # extension_to_language = { ".rs" = "rust" }
 
+# ── Long-term memory (docs/memory.md) ────────────────────────────────────────
+# Markdown notes: <workspace>/.bricks/memory (project) and
+# ~/.bricks/memory/global (shared). The CLI attaches it when `enabled` is true.
+# The desktop app has its own switch; it reads the two index limits here.
+
 [memory]
-enabled = false                 # the CLI attaches the long-term memory only when true
-# path = "/absolute/path/memory.grafeo"   # default: ~/.bricks/memory/memory.grafeo
-embeddings = "hashing"          # hashing[:dims] (local) | openai[:model] | gemini[:model]
-# extractor_model = "my-provider/small-model"   # facts extraction; absent: turns only
-space = "project:bricks"        # user:<id> | project:<name> | space:<name>
-recall_spaces = []              # other spaces searched too, e.g. ["user:me"]
-# Predicates with one value per subject at a time: an explicit change replaces
-# the old value; a silent different value is recorded as a contradiction.
-exclusive_predicates = ["uses_framework", "framework", "lives_in", "employer", "works_at", "job_title", "language", "database", "deadline", "status", "owner", "version"]
-
-[memory.recall]
-seeds = 10                      # vector candidates that seed the relational expansion
-candidates = 30                 # candidates taken from each list
-hops = 2                        # relational hops (0, 1 or 2)
-max_neighbors = 8               # neighbours followed per node
-max_visited = 200               # nodes visited per expansion
-expansion_budget_ms = 50
-rrf_k = 60                      # score = Σ w / (rrf_k + rank), ranks from 1
-weight_vector = 1.0
-weight_relational = 1.2
-weight_lexical = 0.8
-max_results = 8
-scoped_max_results = 5
-project_weight = 1.5
-global_weight = 1.0
-max_tokens = 1200               # the agent also caps it at a tenth of the prompt budget
-passage_chars = 600
-
-[memory.extraction]
-max_input_chars = 12000
-max_output_tokens = 2000
-max_output_chars = 32000
-timeout_ms = 60000
-max_facts = 40
-max_attempts = 3
+enabled = false                 # the CLI attaches the note memory only when true
+max_index_notes = 200           # notes listed in the index injected into the prompt
+max_index_tokens = 1500         # estimated tokens of that index

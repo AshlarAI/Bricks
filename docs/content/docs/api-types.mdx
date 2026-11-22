@@ -88,7 +88,7 @@ A block a provider cannot carry is refused before the request is sent, with `Bri
 ## Usage
 
 ```rust
-use bricks::types::CostEstimate;
+use bricks::types::{Billing, CostEstimate};
 pub struct Usage {
     pub input_tokens: u64,                      // uncached prompt tokens
     pub output_tokens: u64,                     // includes reasoning tokens
@@ -99,6 +99,15 @@ pub struct Usage {
     pub cost_usd: Option<f64>,                  // None when no price is known: unknown, never free
     pub cost_estimate: Option<CostEstimate>,    // how the estimate was made (tariff, partial)
     pub provider_usage: Value,                  // the provider's own usage object, as received
+    pub billing: Option<Billing>,               // what a gateway (OpenCode) charged, when it reports it
+}
+
+pub struct Billing {
+    pub source: String,                         // free, balance, go, go-plus or byok
+    pub charged_usd: f64,                       // when present, cost_usd is this amount
+    pub list_usd: Option<f64>,                  // the same tokens at the list price
+    pub allowance_usd: Option<f64>,             // OpenCode Go only: counted toward the plan limits
+    pub estimated: bool,
 }
 ```
 

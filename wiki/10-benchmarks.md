@@ -2,7 +2,7 @@
 
 The figures on this page come from the benchmark report of **2026-10-08** (`docs/benchmarks-bricks-2026-10-08.md`), measured on Bricks 0.4.6 (commit `dee981e`) on an Apple A18 Pro (6 cores, 8 GiB RAM, macOS 27.2, Rust 1.98.1, release build with `opt-level = "z"`, thin LTO, stripped symbols). No live LLM calls were made during these runs.
 
-Note that some subsystems changed after 2026-10-08 (for example, `Grep` now runs in-process, `Bash` runs each call in its own process, and `bricks-memory` removed legacy file/graph modules in favor of structured memory). Re-run the commands below to measure your own hardware and build.
+Note that some subsystems changed after 2026-10-08 (for example, `Grep` now runs in-process, `Bash` runs each call in its own process, and `bricks-memory` replaced the graph store with a Markdown note store). Re-run the commands below to measure your own hardware and build.
 
 ## How to Run
 

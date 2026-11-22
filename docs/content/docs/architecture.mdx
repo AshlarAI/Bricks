@@ -71,6 +71,10 @@ and `Messagent`.
   same time (`missions`, up to 16). Parallel writers can run in isolated git
   worktrees (`isolation: "worktree"`), and their changes come back as a
   ChangeSet that is inspected and applied separately via `Managent`.
+* `profile` picks the sub-agent's definition. Two are built in: `general`
+  (the default, for coding, debugging and research) and `explore` (read-only,
+  for reading code and mapping changes). Your own profiles are Markdown files in
+  `.bricks/agents/` of the project, or in `~/.bricks/agents/`.
 * A sub-agent is cancelled with the run that started it.
 
 

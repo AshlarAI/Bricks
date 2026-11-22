@@ -554,7 +554,7 @@ Use `scripts/bench_cli.py` for CLI startup measurements and the active
 
 * **`ViewImage` merged into `Read`:** `Read` now handles both text files and images (PNG, JPEG, GIF, WebP). `ViewImage` is no longer a separate tool.
 * **`SendMessage` replaced by `Messagent`:** Team messaging between agents uses `Messagent` (`bricks_agent::agents::MessagentTool`).
-* **Legacy memory modules removed:** `memdir`, `claudemd`, `manager`, `graph`, and `embedding_memory` have been removed from `bricks-memory`. Use `StructuredMemory` and `ScopedMemory` (behind the `structured` feature) with `memory_search`, `memory_write` (notes capped at `NOTE_MAX_CHARS = 280`), and `delete_entry(EntryKind, id)`.
+* **Legacy memory modules removed:** `memdir`, `claudemd`, `manager`, `graph`, and `embedding_memory` have been removed from `bricks-memory`. Use `StructuredMemory` and `ScopedMemory` (behind the `structured` feature) with `memory_search`, `memory_write` (notes capped at `NOTE_MAX_CHARS = 280`), and `delete_entry(EntryKind, id)`. `StructuredMemory` was removed later: see section 22.
 
 ## 21. Breaking changes and migration (sub-agents and Managent)
 
@@ -565,3 +565,14 @@ Use `scripts/bench_cli.py` for CLI startup measurements and the active
   * Rename `reasoning:` to `effort:`.
   * Replace `isolation: auto` with `shared` or `worktree`.
   * Remove `background:`, `max_turns`, `maxTurns`, and `max-turns`.
+
+## 22. Changed: the graph memory is replaced by note files
+
+The Grafeo graph memory is removed: `StructuredMemory`, `ScopedMemory` with `delete_entry`, the `structured` feature and the Grafeo database. Long-term memory is now a set of Markdown note files.
+
+* **Where notes live:** each note is an `<id>.md` file, with a generated `MEMORY.md` index. Project notes are in `<workspace>/.bricks/memory/` (CLI) or `~/.bricks/memory/projects/<project_id>/` (desktop). Global notes are in `~/.bricks/memory/global/`.
+* **No feature flag:** the note store is part of `bricks-memory`, and the crate no longer depends on Grafeo.
+* **Rust API:** `LongTermMemory` has `list_notes`, `update_note` and `delete_note`. `write_note` returns the id of the note. `delete_entry(EntryKind, id)` becomes `delete_note(scope, id)`. Episodes, facts, entities and `recall` have no replacement: keep the text you need as notes.
+* **Agent tools:** `memory_list`, `memory_search`, `memory_write`, `memory_update` and `memory_delete`. Each takes a `scope` (`project` or `global`).
+* **`[memory]` in `bricks.toml`:** only `enabled`, `max_index_notes` and `max_index_tokens` are read. The other keys (`path`, `embeddings`, `space`, `recall_spaces`, `exclusive_predicates`, `extractor_model`, `[memory.recall]` and `[memory.extraction]`) are ignored. Remove them.
+* **Existing data:** the old `memory.grafeo` file is not read or converted. Before you upgrade, read out what you need with the previous version, then save it again with `memory_write` or `LongTermMemory::write_note`.

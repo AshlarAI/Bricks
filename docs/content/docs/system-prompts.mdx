@@ -114,7 +114,7 @@ the sub-agents rely on that catalog and do not announce `Skill` here.
 
 #### Memory Guidance
 
-**Included when:** `has_memory` is true (a memory backend is configured).
+**Included when:** the run has a long-term memory (its `memory_search` tool is offered). It says that recalled notes may be stale and that current code wins over them. The memory tools carry their own guidance: search before asking the user to repeat context, and save, update or delete only brief, durable notes.
 
 #### Context Management
 
@@ -234,7 +234,7 @@ Recent commits:
 
 #### Memory Content
 
-Long-term memory recalled for the run (`StructuredMemory` / `ScopedMemory`), injected when `LongTermMemory` is enabled.
+The notes index of the run's long-term memory (`ScopedFileMemory`): the project and global notes, each with its id, within the recall budget. It is added after the built prompt, when the run has a memory.
 
 #### MCP Server Instructions
 

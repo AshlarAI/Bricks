@@ -1,6 +1,6 @@
 ---
 title: "Cookbook: ML Coding Agent"
-description: Build a coding agent for machine-learning work: run training scripts with custom tools, read model code with the code-intelligence primitives, and keep experiment results in structured memory.
+description: Build a coding agent for machine-learning work: run training scripts with custom tools, read model code with the code-intelligence primitives, and keep experiment results in file memory.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -195,40 +195,34 @@ for intel in code_intel::scan_project(Path::new("./"), 20) {
 }
 ```
 
-## Experiment tracking with structured memory
+## Experiment tracking with file memory
 
-Record each run in `StructuredMemory`, so a later session can recall the results. This needs the `structured` feature of `bricks-memory` (see [Structured Graph Memory](/docs/cookbook-graph-memory)):
+Record each run as a note, so a later session can find the results. Notes are Markdown files in the project's `.bricks/memory` folder:
 
 ```rust
-use bricks_embeddings::HashingEmbeddings;
-use bricks_memory::structured::{EpisodeInput, RecallQuery, StructuredMemory, GLOBAL_SPACE};
+use bricks::memory::{FileNoteStore, LongTermMemory, MemoryScope, ScopedFileMemory};
 use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
 
-let memory = StructuredMemory::builder(Arc::new(HashingEmbeddings::new(384)))
-    .path("./memory.db")
-    .open()?;
+let memory = ScopedFileMemory::new(
+    Some(Arc::new(FileNoteStore::new("./.bricks/memory"))),
+    None,
+    Some("ml-project".into()),
+);
 
 memory
-    .record(EpisodeInput {
-        space: GLOBAL_SPACE.into(),
-        project_id: Some("ml-project".into()),
-        session_id: Some("train-run-1".into()),
-        role: "user".into(),
-        author: None,
-        content: "experiment-results: lr=1e-4, epochs=10, val_loss=0.23, val_acc=0.91".into(),
-        occurred_at: None,
-        source_ref: None,
-    })
+    .write_note(
+        MemoryScope::Project,
+        Some("train-run-1"),
+        "experiment-results: lr=1e-4, epochs=10, val_loss=0.23, val_acc=0.91",
+    )
     .await?;
-memory.process(&CancellationToken::new()).await?;
 
 // In a later session:
-let recalled = memory.recall(&RecallQuery::new("experiment-results val_loss")).await?;
-for item in recalled.items {
-    if let Some(ep) = item.episode {
-        println!("{}", ep.content);
-    }
+if let Some(recalled) = memory
+    .search(MemoryScope::Project, "experiment-results val_loss", 5)
+    .await?
+{
+    println!("{}", recalled.text);
 }
 ```
 

@@ -86,7 +86,7 @@ pub struct ModelLimits {
 }
 ```
 
-The limits are declared in the configuration. They never change what the server enforces; Bricks uses them to cap `max_tokens` and to budget the prompt.
+The limits are declared in the configuration. They never change what the server enforces; Bricks uses them to cap `max_tokens` and to budget the prompt. A model imported from models.dev takes its `max_input_tokens` from the catalogue's input limit, or else from the whole context window; an output limit as large as the window is replaced by a quarter of it.
 
 ## CompletionRequest
 
@@ -98,7 +98,7 @@ use bricks::provider::CompletionRequest;
 let request = CompletionRequest::new("vendor-flash"); // max_tokens defaults to 16384
 ```
 
-`ProviderOptions` carries the engine-level options an adapter understands: `tool_choice = "required"` (a forced tool call) and `reasoning_profile` (the profile id for this call). Everything else a model needs is configuration, not a request option.
+`ProviderOptions` carries the engine-level options an adapter understands: `tool_choice = "required"` (a forced tool call), `reasoning_profile` (the profile id for this call) and `session_id` (`SESSION_ID_OPTION`, the conversation the request belongs to). For an OpenCode endpoint, the engine sends the session id as the `x-opencode-session` header. Everything else a model needs is configuration, not a request option.
 
 ```rust
 let mut options = ProviderOptions::default();

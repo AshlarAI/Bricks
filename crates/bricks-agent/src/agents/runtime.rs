@@ -1005,10 +1005,10 @@ impl AgentRuntime {
         let outcome = super::workspace::rebase_changeset(&cs, &repo_root, verify_cmd).await?;
         match &outcome {
             RebaseOutcome::Rebased(new_cs) => {
-                self.workspaces.register_changeset(new_cs.clone());
-                self.emit(AgentEvent::SubAgent(SubAgentEvent::ChangesReady(Box::new(
+                self.workspaces.register_changeset((**new_cs).clone());
+                self.emit(AgentEvent::SubAgent(SubAgentEvent::ChangesReady(
                     new_cs.clone(),
-                ))));
+                )));
             }
             RebaseOutcome::Conflict { files, message } => {
                 self.workspaces.set_changeset_state(

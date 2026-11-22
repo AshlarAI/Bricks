@@ -8,7 +8,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 # Sessions
 
-Every conversation in Bricks is a session. Messages are persisted as append-only JSONL, compacted when the context window fills up, and consolidated into long-term memory overnight. Sessions survive agent restarts, provider switches, and schema migrations.
+Every conversation in Bricks is a session. Messages are persisted as JSONL, compacted when the context window fills up, and loaded again when the session resumes. Sessions survive agent restarts, provider switches, and schema migrations.
 
 ---
 
@@ -334,7 +334,7 @@ Or open it in the desktop application with `/resume abc12345`.
 
 ### Concurrent Access
 
-Session files use append-only writes, so multiple processes can safely append to the same file. However, loading is not atomic: if process A appends while process B is reading, B may see a partial last line. For multi-agent setups sharing a session, use file-level locking or separate session IDs per agent.
+`JsonlMemory` replaces a session's file atomically on each save: a reader sees the previous file or the new one, never a partial one. Two processes saving the same session at the same time are not coordinated, and the last save wins. For multi-agent setups, use a separate session ID per agent.
 
 ### Cleanup
 

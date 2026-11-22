@@ -41,10 +41,11 @@ impl MemoryConfig {
     }
 }
 
+/// A long-term memory and a label that names where it is stored.
+type MemoryAndLabel = (Arc<dyn LongTermMemory>, String);
+
 /// The long-term memory, when `[memory] enabled = true`.
-pub(crate) fn long_term_memory(
-    wd: &Path,
-) -> Result<Option<(Arc<dyn LongTermMemory>, String)>, String> {
+pub(crate) fn long_term_memory(wd: &Path) -> Result<Option<MemoryAndLabel>, String> {
     let text = match std::fs::read_to_string(wd.join("bricks.toml")) {
         Ok(t) => t,
         Err(_) => return Ok(None),

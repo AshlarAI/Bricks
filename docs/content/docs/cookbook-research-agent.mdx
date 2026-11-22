@@ -1,6 +1,6 @@
 ---
 title: "Cookbook: Research Agent"
-description: Build a research agent that combines web search and page reading with local code search and code intelligence, and keeps its findings in graph memory across sessions.
+description: Build a research agent that combines web search and page reading with local code search and code intelligence, and keeps its findings in file memory across sessions.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -14,7 +14,7 @@ User query → research agent
   ├── WebSearch / WebFetch   → results and page passages
   ├── Read / Glob / Grep     → local code and documents
   ├── LspTool                → code symbols and references
-  └── StructuredMemory       → store and recall findings
+  └── ScopedFileMemory       → store and recall findings
 ```
 
 ## The agent
@@ -93,44 +93,36 @@ let answers = futures::future::join_all(runs).await;
 
 `join_all` comes from the `futures` crate. Then ask a final agent to combine the answers. This keeps the coordination in your code, where you can see it, instead of in the model's choice of tools.
 
-## Persistent findings with structured memory
+## Persistent findings with file memory
 
-Store findings in `StructuredMemory` and recall them in later sessions. This needs the `structured` feature of `bricks-memory` (see [Structured Graph Memory](/docs/cookbook-graph-memory)):
+Store findings as notes and search them in later sessions. Each note is a Markdown file, capped at 280 characters:
 
 ```rust
-use bricks_embeddings::HashingEmbeddings;
-use bricks_memory::structured::{EpisodeInput, RecallQuery, StructuredMemory, GLOBAL_SPACE};
+use bricks::memory::{FileNoteStore, LongTermMemory, MemoryScope, ScopedFileMemory};
 use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
 
-let memory = StructuredMemory::builder(Arc::new(HashingEmbeddings::new(384)))
-    .path("./research.db")
-    .open()?;
+let memory = ScopedFileMemory::new(
+    Some(Arc::new(FileNoteStore::new("./.bricks/memory"))),
+    None,
+    Some("rust-async".into()),
+);
 
 memory
-    .record(EpisodeInput {
-        space: GLOBAL_SPACE.into(),
-        project_id: Some("rust-async".into()),
-        session_id: Some("research-session-1".into()),
-        role: "user".into(),
-        author: None,
-        content: "tokio: <throughput figure and source URL, as found>".into(),
-        occurred_at: None,
-        source_ref: None,
-    })
+    .write_note(
+        MemoryScope::Project,
+        Some("research-session-1"),
+        "tokio: <throughput figure and source URL, as found>",
+    )
     .await?;
-memory.process(&CancellationToken::new()).await?;
 
 // In a later session:
-let recalled = memory.recall(&RecallQuery::new("rust-async benchmarks")).await?;
-for item in recalled.items {
-    if let Some(ep) = item.episode {
-        println!("{}", ep.content);
-    }
+if let Some(recalled) = memory
+    .search(MemoryScope::Project, "rust-async benchmarks", 5)
+    .await?
+{
+    println!("{}", recalled.text);
 }
 ```
-
-Store the text of a finding, with its source, and not only a conclusion, so that a later session can check it.
 
 ## The report format
 

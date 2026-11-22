@@ -9,7 +9,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 # bricks-agent
 
-The high-level Agent API. Builder pattern for configuration, an agentic loop that handles tool dispatch and multi-turn conversations, a set of 36 event variants for observation, and automatic context management.
+The high-level Agent API. Builder pattern for configuration, an agentic loop that handles tool dispatch and multi-turn conversations, a set of 39 event variants for observation, and automatic context management.
 
 <Callout type="info">
 Most users interact with Bricks through this crate. The `bricks` facade re-exports `Agent`, `AgentBuilder`, `AgentOutput`, `AgentEvent`, and `AgentStream` directly.
@@ -100,7 +100,7 @@ let agent = Agent::builder()
     },
     '.long_term_memory(m)': {
       type: 'Arc<dyn LongTermMemory>',
-      description: 'Long-term memory. Recall is added to the system prompt of each run; each exchange is recorded.',
+      description: 'Long-term memory. The notes index is added to the system prompt of each run (within the recall budget). The note store records no exchanges.',
     },
     '.session_id(s)': {
       type: 'impl Into<String>',
@@ -291,7 +291,7 @@ for call in &output.tool_calls {
 
 ## AgentEvent
 
-36 variants covering every observable moment in the agentic loop. The most useful are listed below; the enum in `bricks_agent::events` is the reference.
+39 variants covering every observable moment in the agentic loop. The most useful are listed below; the enum in `bricks_agent::events` is the reference.
 
 ### Content Events
 
@@ -334,6 +334,9 @@ for call in &output.tool_calls {
 | `SubAgentSpawned { agent_id, prompt }` | sub-agent ID, task description | Sub-agent created |
 | `SubAgentComplete { agent_id, result }` | sub-agent ID, `AgentOutput` | Sub-agent finished |
 | `SkillActivated` / `SkillNotActivated` | skill name, source, revision or reason | An Agent Skill was activated, refused, or withdrawn because it was removed, reinstalled or changed |
+| `MemoryRecalled { items, tokens, omitted, budget }` | counts and token budget | The memory index was added to the run's prompt |
+| `MemoryMaintenanceStarted` / `MemoryMaintenanceFinished(result)` | maintenance report | Deferred memory work started, or ended with its report |
+| `SubAgent(SubAgentEvent)` / `Job(JobEvent)` | sub-agent or background job event | A sub-agent or background command changed state |
 
 ### Terminal Events
 

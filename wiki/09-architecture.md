@@ -1,15 +1,15 @@
 # Architecture
 
-## Workspace Layers (Bricks 1.0.0-alpha.1)
+## Workspace Layers (Bricks 2026.11.15)
 
 ```text
 bricks-cli            `bricks` binary: CLI arguments, config loading, headless / JSONL runs
 bricks-config         shared engine assembly for the CLI and desktop app
-apps/bricks-desktop   desktop application (Tauri 2 + Svelte 5)
+apps/bricks-desktop   desktop application (Tauri 2 + React 19)
 bricks-agent          runtime: agent loop, controller, permissions, compaction, sub-agents
   bricks-provider     model registry and HTTP/SSE protocol clients
   bricks-tools        built-in tools and PermissionPolicy
-  bricks-memory       session storage and structured long-term memory
+  bricks-memory       session storage and long-term notes kept as Markdown
   bricks-hooks        lifecycle hooks (Hook, ShellHook)
   bricks-mcp          Model Context Protocol client
   bricks-skills       SKILL.md discovery, loading, and activation
@@ -22,7 +22,7 @@ bricks-agent          runtime: agent loop, controller, permissions, compaction, 
 bricks-types          shared types, BricksError, and shared HTTP client
 ```
 
-The workspace in `Cargo.toml` has 25 members, including `bricks` (the facade crate), `bricks-tools-derive` (`#[derive(Tool)]`), `bricks-agentlang`, `bricks-agentrl`, `bricks-workflows`, `bricks-tbench`, `bricks-testkit`, and `bench/long-mem`. See `docs/content/docs/crate-map.mdx` for the full list.
+The workspace in `Cargo.toml` has 24 members, including `bricks` (the facade crate), `bricks-tools-derive` (`#[derive(Tool)]`), `bricks-agentlang`, `bricks-agentrl`, `bricks-workflows`, `bricks-tbench`, `bricks-testkit`, and the desktop's `apps/bricks-desktop/src-tauri`. See `docs/content/docs/crate-map.mdx` for the full list.
 
 ## Dependency Flow
 
@@ -39,15 +39,15 @@ bricks-compression    depends on bricks-types
 bricks-web            depends on bricks-types
 bricks-embeddings     depends on bricks-types
 bricks-vms            depends on bricks-types
-bricks-memory         depends on bricks-types (feature `structured` adds bricks-provider, bricks-embeddings)
+bricks-memory         depends on bricks-types
 bricks-lsp            no internal dependencies
 bricks-semantic       depends on bricks-lsp, bricks-types
 bricks-skills         no internal dependencies
     ^
     |
 bricks-tools          depends on bricks-mcp, bricks-web, bricks-compression, bricks-embeddings,
-                      bricks-semantic, bricks-skills, bricks-lsp, bricks-types,
-                      and bricks-vms (optional `vms` feature)
+                      bricks-semantic, bricks-skills, bricks-lsp, bricks-memory,
+                      bricks-types, and bricks-vms (optional `vms` feature)
     ^
     |
 bricks-agent          depends on bricks-hooks, bricks-memory, bricks-provider, bricks-tools,

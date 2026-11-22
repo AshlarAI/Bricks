@@ -1,6 +1,6 @@
 ---
 title: Changelog
-description: Release history for the Bricks ADK (formerly Cersei SDK) and the Abstract CLI.
+description: Release history for the Bricks ADK (formerly Cersei SDK) and the Bricks desktop app and CLI.
 ---
 
 # Changelog
@@ -39,10 +39,11 @@ export function Tag({ type }) {
 <Tag type="changed" /> **Sub-agent tools and profiles (`Managent` and `Agent`).**
 - `AgentControl` is renamed to `Managent`, with enriched `list` and `status` output (`description`, `elapsed_ms`, `last_action`, ChangeSet state), `wait` with `mode: "any" | "all"` and `agent_ids`, and `rebase_changes` with optional `verify_cmd`.
 - `AgentProfiles` is removed as a built-in tool. Available profiles are now loaded dynamically and listed directly in the `Agent` tool description.
+- `Agent` takes a top-level `description` next to `missions`, used by any mission that has none.
 - The 7 legacy built-in profiles (`backend_coder`, `frontend_coder`, `inspecteur`, `orchestrateur`, `redactor`, `testeur`, `web_searcher`) are removed and replaced by `general` and `explore`. Unknown profile names are now rejected.
 - Custom Markdown profiles in `.bricks/agents/*.md` and `~/.bricks/agents/*.md` now enforce strict YAML frontmatter validation: rename `reasoning:` to `effort:`, replace `isolation: auto` with `shared` or `worktree`, and remove `background:`, `max_turns`, and `maxTurns` (unknown fields and turn caps now fail explicitly).
 
-<Tag type="changed" /> **Memory cleanup and entry deletion.** Removed legacy memory modules (`claudemd`, `embedding_memory`, `graph`, `manager`, `memdir`) in `bricks-memory`. Long-term memory uses `StructuredMemory` and `ScopedMemory` (`structured` feature), with `memory_search` and `memory_write` tools. Notes are capped at `NOTE_MAX_CHARS` (`280` characters), and individual entries can be deleted with `delete_entry(EntryKind, id)`. Desktop memory uses configured providers (with fallback to `HashingEmbeddings`) and respects `[memory]` in `bricks.toml`, while sub-agents inherit memory tools consistently across spawn and resume.
+<Tag type="changed" /> **Memory is a Markdown note store.** Grafeo is removed. Long-term memory keeps one `<id>.md` file per note, in `.bricks/memory` for the project and in `memory/global` under Bricks home, with a generated `MEMORY.md` index. The tools are `memory_search`, `memory_write`, `memory_list`, `memory_update` and `memory_delete`, and sub-agents inherit them when they start and when they resume. Notes are capped at 280 characters. The unused memory modules `claudemd`, `embedding_memory`, `graph`, `manager` and `memdir` are removed, and `[memory]` keeps `enabled` and the index limits.
 
 <Tag type="changed" /> **Tools and error type updates.** `ViewImage` was merged into `Read` (which now reads both text files and images). `Messagent` (`bricks_agent::agents::MessagentTool`) handles team messaging between agents. `CerseiError` was renamed to `BricksError`.
 
@@ -70,19 +71,19 @@ export function Tag({ type }) {
 
 <Tag type="added" /> **`CodeStats`.** A read-only tool that counts the code, comment and blank lines of a file or a tree, in total, per language or per file (Tokei 15, in process). `top_n` limits the rows shown, never the analysis; `partial` says when something expected was not counted. It is in `filesystem()`, `coding()` and `all()`, and the system prompt names it in one bullet when it is announced.
 
-<Tag type="removed" /> **Fifteen native tools removed (breaking change for ADK users).** `EnterPlanMode`, `ExitPlanMode`, `CronCreate`, `CronList`, `CronDelete`, the six `Task*` tools, `RemoteTrigger`, `Config`, `AskUserQuestion` and `Sleep` are gone, with their modules (`plan_mode`, `cron`, `tasks`, `remote_trigger`, `config_tool`, `ask_user`, `sleep`) and registries. `bricks_tools::all()` has 22 tools (was 38; `SendMessage` moved to the agent runtime, see below). A call to a removed tool is an unknown tool. The replacements are in the migration guide, section 12; background commands are still `Bash` with `background: true`, `BashTaskStatus`, `BashTaskOutput`, `BashTaskStop` and `Job`.
+<Tag type="removed" /> **Fifteen native tools removed (breaking change for ADK users).** `EnterPlanMode`, `ExitPlanMode`, `CronCreate`, `CronList`, `CronDelete`, the six `Task*` tools, `RemoteTrigger`, `Config`, `AskUserQuestion` and `Sleep` are gone, with their modules (`plan_mode`, `cron`, `tasks`, `remote_trigger`, `config_tool`, `ask_user`, `sleep`) and registries. `bricks_tools::all()` has 22 tools (was 38; `Messagent` moved to the agent runtime, see below). A call to a removed tool is an unknown tool. The replacements are in the migration guide, section 12; background commands are still `Bash` with `background: true`, `BashTaskStatus`, `BashTaskOutput`, `BashTaskStop` and `Job`.
 
 <Tag type="changed" /> **Crates renamed: Bricks ADK.** The facade is `bricks` (was `cersei`); the crates use the `bricks-` prefix (`bricks-agent`, `bricks-tools`, `bricks-memory`, …) and `bricks_*` imports. `bricks-config`, `bricks-semantic`, `bricks-skills`, `bricks-cli` and `bricks-desktop` keep their names. `BricksError` (renamed from `CerseiError`) is the SDK error type; `CERSEI_*` variables and a few external identities keep theirs. The table of names is in the migration guide.
 
 <Tag type="removed" /> **`delegate` and `MultiEdit` are removed.** The `delegate` tool and the `delegate` batch module (`run_batch`, `DelegateConfig`, …) are gone; use the native `Agent` and `Agents` tools, whose parameters differ. `MultiEdit` is gone; `Edit` takes `edits`. Stored histories still display both.
 
-<Tag type="changed" /> **Native sub-agent tools**: `Agent`, `Agents`, `AgentControl` and `AgentProfiles`. Sub-agents always run in parallel: the call returns their ids at once, and `AgentControl wait` and `result` give the results. Each one works in its own git worktree by default, with ChangeSets, and the depth is bounded. `AgentTool` stays for embedders.
+<Tag type="changed" /> **Native sub-agent tools**: `Agent` (with `missions` to start several sub-agents at once) and `Managent`. Sub-agents run in parallel: the call returns their ids at once, and `Managent` `wait` and `result` give the results. The built-in profiles work in the shared working directory. `isolation: worktree` gives a sub-agent its own git worktree, whose changes come back as a ChangeSet that `Managent` can inspect, check, apply or discard.
 
-<Tag type="added" /> **Messages and resumes.** `AgentControl message` queues a message for a running sub-agent, read at its next model request; a refusal is explicit, and nothing is reported as sent. `AgentControl resume` starts a new execution of an ended sub-agent under the same id, with its launch's profile, model, tools, skills and workspace. `agent_state` and the result of `agent_finished` carry `execution`.
+<Tag type="added" /> **Messages and resumes.** `Messagent` `send` queues a message for a running sub-agent, read at its next model request; a refusal is explicit, and nothing is reported as sent. `Managent` `resume` starts a new run of an ended sub-agent under the same id, with its launch's profile, model, tools, skills and workspace. `agent_state` and the result of `agent_finished` carry `execution`.
 
 <Tag type="removed" /> **Turn limits and per-run caps.** `max_turns` is gone from the `[agent]` and `[agents]` settings, from profiles, from `Agent` and `Agents`, and `tbench-agent --max-turns` is no longer accepted. `[agents] max_total_per_run`, `max_batch` and the `background` argument of `Agent` and `Agents` are removed. Old keys are unknown keys: ignored, with a diagnostic. A stored end of an unknown kind (`max_turns`) reads as `Historical { kind }`, an incomplete end, never a success.
 
-<Tag type="changed" /> **`SendMessage`** is a native tool of the agent runtime (`bricks_agent::agents::SendMessageTool`), registered with the other agent tools; it replaces `AgentControl message`, keeps the same delivery, scope and bounds, and needs the `Execute` permission. A sub-agent gets it only when it may start sub-agents of its own. `bricks_tools::send_message`, `MessageRouter` and `MessageRouterHandle` are removed.
+<Tag type="changed" /> **`Messagent`** is the agent mail tool (`bricks_agent::agents::MessagentTool`), with the `send`, `read` and `members` actions. It delivers messages between the agents of one session. It replaces the `message` action of the former `AgentControl` tool, and a sub-agent gets it only when it may start sub-agents of its own.
 
 <Tag type="changed" /> **The plan after an answer.** A plan whose run ended with its answer, or whose steps are all done, is cleared when the next message is accepted. After an interruption, a failure or a reopened conversation, unfinished steps stay. If clearing cannot be saved, the message is still sent and a notice says the plan was kept.
 
@@ -98,7 +99,7 @@ export function Tag({ type }) {
 
 <Tag type="changed" /> **JSONL schema 6.** `tool_finished` and `agent_tool_finished` gain `executed` and `status`; `agent_tool_finished` also gains `output` and `output_truncated`; `edit_applied` files gain `absolute`, `patch` and `patch_truncated`. See `docs/cli.md`.
 
-<Tag type="added" /> **Plan, request context and file icons.** TodoWrite keeps the conversation's plan in `plan.json` (a revision per update, restored when the conversation is reopened) and the desktop shows it in a collapsible block; the new `plan_updated` event is in JSONL schema 7 (`docs/cli.md`). The Bricks system prompt is rebuilt for each request from the tools it announces, with the date, environment, model, git state and plan after the cache boundary; the data in those blocks is escaped. Files, folders and code blocks show icons from a bundled local catalogue, with no network access.
+<Tag type="added" /> **Plan, request context and file icons.** TodoWrite keeps the conversation's plan in `plan.json` (a revision per update, restored when the conversation is reopened) and the desktop shows it in a collapsible block; the new `plan_updated` event is in JSONL schema 7 (`docs/cli.md`). The Bricks system prompt is rebuilt for each request from the tools it announces, with the date, environment, model, git state and plan after the cache boundary; the data in those blocks is escaped. Files, folders and code block headers show icons from a bundled `vscode-symbols` set, with no network access.
 
 <Tag type="changed" /> **Run end card is compact.** `Terminé · A travaillé MM:SS` (`HH:MM:SS` past one hour; durations are rounded down to the second), then two groups closed by default: `N fichiers modifiés +A −D`, the sum of the applied edit operations (not a Git diff; binary files have no line counts), and `N commandes exécutées`, the commands of the response and of its sub-agents. Refused calls and background polling are not counted, and a command still running is never shown as successful. Tool durations elsewhere stay in milliseconds.
 
@@ -106,7 +107,7 @@ export function Tag({ type }) {
 
 <Tag type="changed" /> **Edit rows are compact**: the file name and its counts. The full path is in the tooltip, and a click opens the file in the reader.
 
-<Tag type="added" /> **Read-only reader.** The « Lecteur » toggle, top right, opens a column with one tab per file. Source shows numbered, highlighted lines, read in windows of 400 lines (2 MiB limit) with Précédentes and Suivantes. Aperçu renders Markdown files. Modifications lists each recorded patch per operation, never merged. Paths are confined to the project folder or the agent workspace.
+<Tag type="added" /> **Read-only reader.** The « Lecteur » toggle, top right, opens a column with one tab per file. Source shows numbered, highlighted lines, read whole (2 MiB limit). Aperçu renders Markdown files. Modifications lists each recorded patch per operation, never merged. Paths are confined to the project folder or the agent workspace.
 
 <Tag type="changed" /> **Display details.** The reasoning label is « Réfléchit », and the diff additions and deletions use brighter colours.
 
@@ -117,6 +118,42 @@ export function Tag({ type }) {
 <Tag type="removed" /> **`BashTaskStatus`, `BashTaskOutput` and `BashTaskStop` removed (breaking change for ADK users).** `Job` (`list`, `status`, `output`, `wait`, `stop`) follows the background commands and the commands handed over after `yield_time_ms`, and is the only tool for them. A background or handed-over command is a `job_id`; the `task_id` is gone. `bricks::tools::shell()` no longer has `Job`, and refuses a command that may become a job without a registry; `shell_with_jobs(registry)` has Bash, Job and PowerShell. Migration: section 17 of the migration guide.
 
 <Tag type="changed" /> **`Job` output.** `tail` returns the last lines. Page limits are checked (`limit` 1 to 2000, `timeout_ms` 1 to 600000) and out-of-range values are refused, not clamped. A line longer than a page is cut and marked, and the offset moves past it. An id that is not yours answers the same as an unknown one.
+
+### Desktop, interface and release
+
+<Tag type="changed" /> **Desktop app rebuilt in React.** Bricks Desktop moves from Svelte 5 to React 19, with the official shadcn/ui components and `lucide-react` icons.
+
+<Tag type="added" /> **HTML previews and code artifacts.** A top-level `html` code block opens in a sandboxed preview, with its console, source view, reload, larger view and download. Code blocks show the file or language, numbered lines, wrapping, download and copy, and a block over 30 lines opens as an artifact.
+
+<Tag type="added" /> **Run time in the work bar.** The work bar shows how long the run has worked: `Working for 1h 1m 32s`, then `Worked for` when it ends.
+
+<Tag type="changed" /> **Usage charts.** Settings › Usage draws the tokens per day as stacked bars, and the share of each model as a donut.
+
+<Tag type="fixed" /> **Desktop layout fixes.** Select menus open beside their control instead of at the window corner. Sidebar row actions stay in view with long titles. The right panel no longer stops at its minimum width when hidden, and message jumps no longer scroll the ancestors. The default sidebar is 320 px wide.
+
+<Tag type="changed" /> **macOS title bar and scrolling.** The window uses an overlay title bar. The top bar is 52 px high and leaves room for the system buttons, except in full screen. Panes do not bounce on overscroll, and a long conversation title fades out instead of ending in an ellipsis.
+
+<Tag type="added" /> **Revising a sent message.** « Modifier » and « Copier » appear on a sent message. « Enregistrer et relancer » runs the conversation again from that message, and « Annuler » leaves it unchanged. The replaced messages are kept in `<session>.revised.jsonl`. In the control protocol, the `revise` command replaces a past user message, and `history_revised` reports it.
+
+<Tag type="added" /> **Projects whose folder moved.** A project whose folder is missing stays in the list, with its conversations and a red icon. Opening one of its conversations, or starting one, asks for the folder again. The project keeps its id and its conversations.
+
+<Tag type="added" /> **Search across projects.** A magnifier beside « Nouvelle conversation » searches the titles and messages of every project. The « Tous les projets » switch is removed.
+
+<Tag type="changed" /> **Chat file links and icons.** File links in chat show an inline icon, and one `file://` link can name several paths. The icons come from the `vscode-symbols` set, which follows the theme.
+
+<Tag type="changed" /> **Light and dark surfaces.** The surfaces use a new palette: `#ffffff` and `#fafafa` in light mode, and `#070708`, `#111114` and `#15151a` in dark mode.
+
+<Tag type="changed" /> **One code highlighter.** Shiki is the only highlighter, in Markdown, streamed code and the reader. The reader shows whole files and whole diffs. The model context badge counts only input tokens.
+
+<Tag type="changed" /> **Limits of imported models.** When an OpenCode template imports a model from models.dev, `max_input_tokens` is the declared input limit, or else the whole context window. It used to be the window minus the output limit. An output limit that fills the window is cut to a quarter of it. The providers page explains the limits.
+
+<Tag type="changed" /> **Tool results follow the model.** The default budget for tool results kept in the active history is the model's declared input limit, read as characters, and never under 50,000 characters. The fixed 50,000-character cap is gone, and `.tool_result_budget(n)` still sets a fixed budget.
+
+<Tag type="added" /> **Images returned by tools (SDK).** A tool can return images with `ToolResult::with_images`. The model receives them as its provider allows: inside the tool result, or after the results of the same round in one user turn, each under a label with its path. A model that does not declare image input receives a note instead. MCP image results are still text placeholders.
+
+<Tag type="changed" /> **Release versions and installers.** Versions use four-digit years in CalVer, such as `2026.11.15`, with no leading zeros. The Windows `.msi` bundle is dropped, because WiX refuses a major version above 255. Windows ships as `.setup.exe` and `.zip`.
+
+<Tag type="fixed" /> **Release workflow.** Version tags are checked as four-digit CalVer, and CI enforces `cargo fmt --check` and `cargo clippy -D warnings`.
 
 </Version>
 

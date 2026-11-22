@@ -126,6 +126,6 @@ Hickory 0.26 is plugged in through `reqwest::dns::Resolve`. The workspace
 keeps the WebPKI roots (`rustls-tls-webpki-roots`) on purpose.
 
 Advisories known to remain unfixed at the last check, all unmaintained
-crates and not known vulnerabilities: `bincode` (through `grafeo`), `fxhash`
-(through `bm25`) and `paste` (through `tikv-jemalloc-ctl`, benchmark feature
-only). Run `cargo audit` for the current list.
+crates and not known vulnerabilities: `fxhash` (through `bm25`, in `bricks-web`)
+and `paste` (through `tikv-jemalloc-ctl`, benchmark feature only). Run
+`cargo audit` for the current list.

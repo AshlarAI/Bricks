@@ -1,102 +1,84 @@
 ---
-title: "Cookbook: Structured Graph Memory"
-description: Store episodes and facts in Grafeo with bricks-memory::structured, embed them with bricks-embeddings, and recall them with three-way hybrid search.
+title: "Cookbook: Note Memory"
+description: Keep durable notes as Markdown files with bricks-memory, put them in an agent's prompt as an index, and let the agent search and edit them.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-# Cookbook: Structured Graph Memory
+# Cookbook: Note Memory
 
-`bricks-memory` stores long-term memory in `StructuredMemory` (`crates/bricks-memory/src/structured/`). It uses Grafeo as an embedded graph database (`:Episode`, `:Entity`, `:Alias`, `:Fact`, `:MemoryMeta` nodes) alongside a `usearch` vector index and Grafeo full-text search.
+`bricks-memory` keeps long-term memory as short notes. Each note is a Markdown file, and a generated `MEMORY.md` lists them. There is no database and no feature flag.
 
 <Callout type="info">
-The older `GraphMemory`, `MemoryManager`, and `memdir` modules were removed. Structured memory (`bricks-memory` with the `structured` feature) is the current graph-backed memory system.
+The Grafeo graph store, `StructuredMemory` and the `structured` feature were removed. Nothing is extracted from conversations: a note is saved when the agent or the application writes it.
 </Callout>
 
-Add `bricks-memory` with the `structured` feature (and `bricks-embeddings`) to your `Cargo.toml`:
+## Opening the stores
 
-```toml
-bricks-memory = { version = "1.0.0-alpha.1", features = ["structured"] }
-bricks-embeddings = "1.0.0-alpha.1"
-tokio-util = "0.7"
-```
-
-## Opening a store
-
-`StructuredMemory::builder` takes an `Arc<dyn EmbeddingProvider>`. Use `HashingEmbeddings` for local tests or offline use, or `OpenAiEmbeddings` / `GeminiEmbeddings` for semantic search.
+A scope is one directory with one store. Use one store for the project and one for the global memory:
 
 ```rust
-use bricks_embeddings::HashingEmbeddings;
-use bricks_memory::structured::StructuredMemory;
 use std::sync::Arc;
+use bricks_memory::{FileNoteStore, ScopedFileMemory};
 
-let embedder = Arc::new(HashingEmbeddings::new(384));
+let project = Arc::new(FileNoteStore::new("./.bricks/memory"));
+let global = Arc::new(FileNoteStore::new(home.join(".bricks/memory/global")));
 
-// File-backed store (or omit .path(...) for in-memory)
-let memory = StructuredMemory::builder(embedder)
-    .path("./memory.db")
-    .open()?;
+let memory = ScopedFileMemory::new(Some(project), Some(global), Some("my-project".into()));
 ```
 
-If you also want automatic fact and entity extraction from episodes, pass an `Extractor` (such as `LlmExtractor`) via `.extractor(...)`. Without an extractor, episodes are stored and embedded for vector and lexical recall without creating `:Fact` nodes.
+`FileNoteStore::new` does not create the directory. The first write does.
 
-## Recording episodes
+## Writing and reading notes
 
-Use `record` with an `EpisodeInput`. Each episode belongs to a space (such as `GLOBAL_SPACE` or `project_space("my-project")`).
+`LongTermMemory` takes a `MemoryScope` (`Project` or `Global`) for each call:
 
 ```rust
-use bricks_memory::structured::{EpisodeInput, GLOBAL_SPACE};
-use tokio_util::sync::CancellationToken;
+use bricks_memory::{LongTermMemory, MemoryScope};
+
+let id = memory
+    .write_note(MemoryScope::Project, None, "Auth uses RS256 JWTs stored in HttpOnly cookies.")
+    .await?;
 
 memory
-    .record(EpisodeInput {
-        space: GLOBAL_SPACE.into(),
-        project_id: Some("my-project".into()),
-        session_id: Some("session-1".into()),
-        role: "user".into(),
-        author: None,
-        content: "Authentication uses JWT with RS256 stored in HttpOnly cookies.".into(),
-        occurred_at: None,
-        source_ref: None,
-    })
+    .update_note(MemoryScope::Project, &id, "Auth uses RS256 JWTs in HttpOnly cookies, rotated daily.")
     .await?;
 
-// Run extraction (if configured) and compute pending embeddings
-let report = memory.process(&CancellationToken::new()).await?;
-println!("embedded: {}, facts created: {}", report.embedded, report.facts_created);
-```
-
-## Recalling memories
-
-`recall` runs three-way Reciprocal Rank Fusion (RRF) across vector similarity, lexical BM25, and graph expansion over entities, filtered by space and temporal validity.
-
-```rust
-use bricks_memory::structured::RecallQuery;
-
-let result = memory
-    .recall(&RecallQuery::new("How does authentication work?"))
-    .await?;
-
-for item in result.items {
-    if let Some(fact) = item.fact {
-        println!("[fact {:.3}] {}", item.score, fact.statement);
-    } else if let Some(ep) = item.episode {
-        println!("[episode {:.3}] {}", item.score, ep.content);
-    }
+let page = memory.list_notes(MemoryScope::Project, Some("jwt"), 0, 20).await?;
+for note in page.notes {
+    println!("[{}] {}", note.id, note.text);
 }
+
+memory.delete_note(MemoryScope::Project, &id).await?;
 ```
 
-## Retracting and forgetting
+A note holds at most 280 characters. Writing the same text twice returns the existing note.
 
-You can retract a single fact or forget all episodes from a session:
+## Giving the notes to an agent
+
+Attach the memory to the agent. Each run then adds the index of both scopes to the system prompt, within the token budget:
 
 ```rust
-memory.retract(&fact_id).await?;
-memory.forget_session("session-1").await?;
+use std::sync::Arc;
+use bricks::Agent;
+
+let agent = Agent::builder()
+    .provider(provider)
+    .tools(bricks::tools::coding())
+    .long_term_memory(Arc::new(memory))
+    .memory_recall_tokens(1200)
+    .build()?;
 ```
 
-## Using it with an agent
+The agent then has `memory_list`, `memory_search`, `memory_write`, `memory_update` and `memory_delete`. Each takes a `scope` argument, `project` by default.
 
-`bricks` attaches structured memory to an agent through `Agent::builder().long_term_memory(...)` using `ScopedMemory::for_run(...)`, which scopes writes to the project space and recalls from both the project and global spaces.
+## Limits on the index
 
-For full details on spaces, extraction, and desktop/CLI configuration (`[memory]` in `bricks.toml`), see [Memory API](/docs/api-memory).
+The index lists the notes that fit in `with_index_limits(max_notes, max_tokens)`, which defaults to 200 notes and 1500 estimated tokens. The notes that do not fit stay on disk. The agent finds them with `memory_search`.
+
+```rust
+let memory = ScopedFileMemory::new(Some(project), Some(global), Some("my-project".into()))
+    .with_index_limits(100, 800);
+```
+
+For the `bricks` command and the desktop app, see the [Memory](/docs/api-memory) reference and the `[memory]` section of `bricks.toml`.

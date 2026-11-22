@@ -117,43 +117,29 @@ let agent = Agent::builder()
 // Run it as usual; a later process that uses the same session_id resumes the history.
 ```
 
-## With structured memory
+## With file-based memory
 
-`StructuredMemory` keeps project facts and episodes in Grafeo and `usearch`, so the agent can recall them in later sessions. Its store is behind the `structured` feature of `bricks-memory`, which the `bricks` facade does not turn on. Enable it in your own `Cargo.toml`:
-
-```toml
-bricks-memory = { version = "1.0.0-alpha.1", features = ["structured"] }
-bricks-embeddings = "1.0.0-alpha.1"
-```
+`ScopedFileMemory` keeps notes as Markdown files: one `<id>.md` file per note, and a `MEMORY.md` index that is rebuilt on every change. There are two scopes, a project folder and a global folder. The index is part of the agent's prompt, and `memory_search` finds notes in later sessions. No database is needed. Each note is capped at 280 characters.
 
 ```rust
-use bricks_embeddings::HashingEmbeddings;
-use bricks_memory::structured::{EpisodeInput, RecallQuery, StructuredMemory, GLOBAL_SPACE};
+use bricks::memory::{FileNoteStore, LongTermMemory, MemoryScope, ScopedFileMemory};
 use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
 
-let memory = StructuredMemory::builder(Arc::new(HashingEmbeddings::new(384)))
-    .path("./agent.db")
-    .open()?;
+let memory = ScopedFileMemory::new(
+    Some(Arc::new(FileNoteStore::new("./.bricks/memory"))),   // project notes
+    Some(Arc::new(FileNoteStore::new("./global-memory"))),    // notes shared by every project
+    Some("my-project".into()),
+);
 
 memory
-    .record(EpisodeInput {
-        space: GLOBAL_SPACE.into(),
-        project_id: Some("my-project".into()),
-        session_id: Some("session-1".into()),
-        role: "user".into(),
-        author: None,
-        content: "User prefers functional patterns.".into(),
-        occurred_at: None,
-        source_ref: None,
-    })
+    .write_note(MemoryScope::Global, Some("session-1"), "User prefers functional patterns.")
     .await?;
-memory.process(&CancellationToken::new()).await?;
 
-let recalled = memory.recall(&RecallQuery::new("coding style preferences")).await?;
+let agent = Agent::builder()
+    .provider(bricks::provider_from_config(None, "my-provider/my-model")?)
+    .long_term_memory(Arc::new(memory))
+    .build()?;
 ```
-
-See [Structured Graph Memory](/docs/cookbook-graph-memory) for full details.
 
 ## Background job
 

@@ -279,7 +279,7 @@ let provider = HashingEmbeddings::new(384);      // dimensions
 let vector: Vec<f32> = provider.embed_sync("some text");
 ```
 
-`Bricks` uses it as the default for long-term memory (`[memory] embeddings = "hashing"`).
+Long-term memory does not use embeddings: its notes are Markdown files searched by their text.
 
 ## `auto_from_model`
 

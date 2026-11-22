@@ -187,6 +187,7 @@ protocol = "anthropic_messages"
 auth = "api_key_header"                       # sends `x-api-key` (override with auth_header)
 api_key_env = "BRICKS_MESSAGES_EXAMPLE_KEY"
 # headers = { "anthropic-version" = "2023-06-01" }   # this required header is added for you
+# Bricks sends `User-Agent: Bricks/<version>` on every request; set one in `headers` to replace it.
 
 [[providers.models]]
 id = "thinker"

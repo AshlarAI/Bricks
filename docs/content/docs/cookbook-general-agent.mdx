@@ -80,7 +80,7 @@ The MCP server above is started with `npx`, and the package names are examples. 
 
 ## Memory
 
-For long-term cross-session memory, enable the `structured` feature of `bricks-memory` and attach a `ScopedMemory` via `.long_term_memory(...)` (see [Structured Graph Memory](/docs/cookbook-graph-memory)).
+For long-term cross-session memory, keep notes with a `ScopedFileMemory` (Markdown files, see [With file-based memory](/docs/cookbook-agent-deployment#with-file-based-memory)) and attach it with `.long_term_memory(...)`.
 
 For a conversation that survives restarts, give the agent a conversation memory such as `JsonlMemory` and the same `session_id` on each start:
 

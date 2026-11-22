@@ -1,20 +1,19 @@
 ---
 title: Memory (bricks-memory)
-description: Session transcript persistence and structured long-term memory across sessions.
+description: Session transcript persistence and file-based long-term note memory across sessions.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
-import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 # bricks-memory
 
 `bricks-memory` provides two kinds of storage:
 
 1. **Session storage** (`Memory` trait): saves and loads conversation transcripts (`JsonlMemory` for disk files, `InMemory` for tests).
-2. **Long-term memory** (`LongTermMemory` trait, `structured` feature): stores notes, exchanges, and extracted facts in a Grafeo database (`StructuredMemory` and `ScopedMemory`), and recalls relevant context across sessions.
+2. **Long-term memory** (`LongTermMemory` trait): short notes kept as Markdown files, indexed in a generated `MEMORY.md`, with a `project` and a `global` scope (`FileNoteStore` and `ScopedFileMemory`).
 
 <Callout type="info">
-Long-term structured memory is behind the `structured` feature flag (`default = []`). Enable it on `bricks-memory` directly (`bricks-memory = { features = ["structured"] }`), as the `bricks` facade does not turn it on by default.
+Long-term memory has no feature flag and no database. The Grafeo graph store and the `structured` feature were removed. See `docs/memory.md` in the repository for the file layout.
 </Callout>
 
 ---
@@ -23,7 +22,10 @@ Long-term structured memory is behind the `structured` feature flag (`default = 
 
 ```rust
 use bricks_types::{MemoryEntry, SessionInfo};
-use bricks_memory::{MaintenanceReport, MemoryScope, MemoryTurn, RecalledContext};
+use bricks_memory::{
+    LongTermMemory, MaintenanceReport, MemoryNote, MemoryNotePage, MemoryScope, MemoryTurn,
+    RecalledContext,
+};
 use tokio_util::sync::CancellationToken;
 
 #[async_trait]
@@ -34,21 +36,35 @@ pub trait Memory: Send + Sync {
     async fn sessions(&self) -> Result<Vec<SessionInfo>>;
     async fn delete(&self, session_id: &str) -> Result<()>;
     fn session_files_dir(&self, session_id: &str) -> Option<PathBuf> { None }
+    // Active and raw histories saved as one unit. Defaults to two writes.
+    async fn store_histories(&self, session_id: &str, histories: SessionHistories, revision: SaveRevision) -> Result<HistoriesSaved>;
+    async fn load_histories(&self, session_id: &str) -> Result<SessionHistories>;
 }
 
 #[async_trait]
 pub trait LongTermMemory: Send + Sync {
+    /// Index of the notes for the prompt, within `max_tokens`. `None` when there are none.
     async fn recall_context(&self, query: &str, max_tokens: usize) -> Result<Option<RecalledContext>>;
-    async fn record_turns(&self, session_id: Option<&str>, turns: &[MemoryTurn]) -> Result<()>;
+    /// Keyword search in one scope, as a context block. Its default refuses.
     async fn search(&self, scope: MemoryScope, query: &str, limit: usize) -> Result<Option<RecalledContext>>;
+    /// Notes of one scope, newest first, optionally filtered by a substring.
+    async fn list_notes(&self, scope: MemoryScope, query: Option<&str>, offset: usize, limit: usize) -> Result<MemoryNotePage>;
+    /// Saves a note and returns its id.
     async fn write_note(&self, scope: MemoryScope, session_id: Option<&str>, text: &str) -> Result<String>;
+    /// Replaces the text of a note, keeping its id. `false` when the note does not exist.
+    async fn update_note(&self, scope: MemoryScope, id: &str, text: &str) -> Result<bool>;
+    /// Removes a note. `false` when the note does not exist.
+    async fn delete_note(&self, scope: MemoryScope, id: &str) -> Result<bool>;
+    /// Deferred work. A no-op for the note store.
     async fn maintain(&self, cancel: &CancellationToken) -> Result<MaintenanceReport>;
+    /// Records the turns of a session. A no-op for the note store.
+    async fn record_turns(&self, session_id: Option<&str>, turns: &[MemoryTurn]) -> Result<()>;
 }
 ```
 
-- `JsonlMemory::new(dir)` persists each session as JSONL files on disk (with atomic checkpoints for active and raw histories).
+- `JsonlMemory::new(dir)` persists each session as JSONL files on disk. Each save of the active and raw histories is one checkpoint file, so a load returns a complete pair.
 - `InMemory::new()` keeps sessions in memory for tests.
-- `LongTermMemory` powers cross-session recall: `record_turns` stores an exchange quickly, and `maintain` runs model extraction and embeddings later so interrupted work can resume.
+- Every `LongTermMemory` method has a default that refuses or does nothing, so a backend implements only what it supports.
 
 ---
 
@@ -70,45 +86,85 @@ Each file part is at most 50 MB, and a session's parts total at most 200 MB. Mal
 
 ---
 
-## Structured Long-Term Memory (`feature = "structured"`)
+## Long-Term Note Memory
 
-`StructuredMemory` stores sourced, immutable **episodes**, **entities**, and temporal **facts** (each with evidence and a status) in a Grafeo store, paired with a vector index for hybrid recall.
+Long-term memory is a set of short notes. Each note is a Markdown file. A generated index lists the notes so that the prompt and the person can read them.
 
-Recall combines three signals (vector search, lexical search, and bounded graph expansion) using weighted reciprocal rank fusion, and formats the results to fit inside a token budget.
+### Layout
 
-Ingestion is resumable:
-1. An episode is saved first.
-2. An `Extractor` (such as `LlmExtractor`) extracts entities and facts and caches the result.
-3. Embeddings are computed and the graph is updated. If a step is cancelled or fails, the episode stays pending for the next `maintain` call.
+Each scope is one directory:
+
+```text
+<scope dir>/
+  note_3f9c1a2b4d5e.md   one note: YAML frontmatter, then the text
+  MEMORY.md              index, regenerated on every write, update and delete
+```
+
+A note file holds `id`, `created_at`, `updated_at` (milliseconds since the Unix epoch) and, when known, `project_id` and `session_id`. Ids are `note_` followed by 12 hexadecimal characters. Writes go to a temporary file that is then renamed over the target, so a reader sees the old file or the new one. Reading never creates a directory.
+
+Limits: a note holds at most `NOTE_MAX_CHARS` (280) characters and must not be empty. Writing text that already exists in the same scope returns the existing note. `PAGE_MAX` (200) notes are read per page. The prompt index holds at most `DEFAULT_MAX_INDEX_NOTES` (200) notes and `DEFAULT_MAX_INDEX_TOKENS` (1500) estimated tokens, unless `with_index_limits` changes them.
+
+### FileNoteStore
+
+One store per scope directory:
+
+```rust
+use bricks_memory::FileNoteStore;
+
+let store = FileNoteStore::new("./.bricks/memory");   // created on the first write
+let note = store.write(Some("my-project"), None, "The API uses RS256 JWTs in HttpOnly cookies.")?;
+let page = store.list(None, 0, 20)?;                   // MemoryNotePage { notes, total }
+let hits = store.search("jwt cookie", 5)?;             // Vec<MemoryNote>
+store.update(&note.id, "The API uses RS256 JWTs in HttpOnly cookies, rotated daily.")?;
+store.delete(&note.id)?;
+```
+
+A search returns the notes that contain any word of the query, as substrings, ignoring case and accents. Notes that match more words come first, then notes with the whole phrase, then the most recent.
+
+### ScopedFileMemory
+
+`ScopedFileMemory` puts a project store and a global store behind `LongTermMemory`:
+
+- **Prompt index** (`recall_context`): lists the notes of both scopes, project first, within the index limits. The text it returns is appended to the system prompt of each run.
+- **Tools**: `LongTermMemory::search`, `list_notes`, `write_note`, `update_note` and `delete_note` take a `MemoryScope` (`Project` or `Global`). A scope that is not configured is refused with an explicit error.
+- **No automatic capture**: `record_turns` does nothing. A note is written by the agent (the `memory_write` tool) or by an application.
 
 ```rust
 use std::sync::Arc;
-use bricks_memory::structured::{MemoryConfig, StructuredMemory};
+use bricks_memory::{FileNoteStore, MemoryScope, ScopedFileMemory};
 
-let memory = StructuredMemory::builder(embedder)   // Arc<dyn EmbeddingProvider>
-    .path("./memory.grafeo")
-    .config(config)                                 // e.g. MemoryConfig::from_bricks_toml(text)?
-    .extractor(extractor)                           // Arc<dyn Extractor>
-    .open()?;
+let project = Arc::new(FileNoteStore::new(workdir.join(".bricks/memory")));
+let global = Arc::new(FileNoteStore::new(home.join(".bricks/memory/global")));
+let memory = ScopedFileMemory::new(Some(project), Some(global), Some("my-project".into()))
+    .with_index_limits(200, 1500);
 
 let agent = Agent::builder()
     .provider(provider)
-    .long_term_memory(Arc::new(memory))             // recall is added to the run's system prompt
-    .memory_recall_tokens(1200)                     // default token budget for recalled context
+    .long_term_memory(Arc::new(memory))   // the prompt index is added to each run
+    .memory_recall_tokens(1200)           // budget of the index per run
     .build()?;
 ```
 
-`MemoryConfig::enabled` defaults to `false`: nothing is recorded until enabled. In `bricks.toml`, these settings live under `[memory]`.
+### Agent tools
 
-### ScopedMemory
+When a run has a long-term memory, the agent has five tools. Each one takes an optional `scope` (`project`, the default, or `global`):
 
-`ScopedMemory` wraps a project store and a global store behind a single `LongTermMemory` implementation:
+| Tool | Permission | What it does |
+|------|-----------|--------------|
+| `memory_list` | ReadOnly | Lists notes, newest first, with an optional substring `query`, `offset` and `limit` (50 at most). |
+| `memory_search` | ReadOnly | Keyword search, up to 20 results. |
+| `memory_write` | Write | Saves a note and returns its id. |
+| `memory_update` | Write | Replaces the text of a note by id. The id stays the same. |
+| `memory_delete` | Write | Deletes a note by id. |
 
-- **Capture** (`record_turns`) writes only to the project store when the run has a project.
-- **Recall** (`recall_context`) queries both scopes, merges results by rank, and returns at most `RECALL_MAX` (`5`) entries within the token budget. Ties favor the project scope.
-- **Tools**: `memory_search` and `memory_write` read and write a chosen `MemoryScope` (`Project` or `Global`).
+The tools are in `bricks_tools::memory_tools`. A run without a memory refuses them with `memory_disabled`.
 
-### Notes and Entry Deletion
+### Sub-agents
 
-- Explicit notes are kept short and atomic: `NOTE_MAX_CHARS` is `280` characters. Longer notes are rejected with `NoteError::Invalid`.
-- Individual entries can be removed with `delete_entry(kind, id)`, where `kind` is `EntryKind::Note`, `EntryKind::Exchange`, or `EntryKind::Fact`. Deleting a note or exchange also marks any facts that no longer have supporting evidence as unsupported.
+A sub-agent gets the memory of its parent, with the access its profile sets: `memory: off`, `read_only` or `read_write`. Without a profile setting, it gets read-only access unless `[agents] subagent_memory_write` is `true`.
+
+---
+
+## Structured Long-Term Memory (removed)
+
+The earlier graph-backed memory (`StructuredMemory`, `ScopedMemory`, `EntryKind`, `delete_entry`, the `structured` feature and `MemoryConfig` in `bricks_memory::structured`) was removed. Notes are not migrated: the old `memory.grafeo` database is not read. Export what you need with `memory_list`, then save it again with `memory_write`. See [Migration](/docs/migration).

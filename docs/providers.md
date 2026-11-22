@@ -43,15 +43,34 @@ let agent = Agent::builder()
 
 ### Editing from the desktop app
 
-The Models page of the desktop settings (« Modèles » in French) edits this file in place. The
-file must already exist: the app does not create `providers.toml`.
+The Models page of the desktop settings (« Modèles » in French) edits this file in place.
+The providers are listed on the left, with a green dot when a provider has a key and at
+least one model, and an orange dot otherwise. The selected provider is shown on the right.
+The app creates `providers.toml` when the first provider is saved, if it does not exist yet.
 
-* **Adding.** "Add a provider" writes a `[[providers]]` table; the "+"
+* **Adding.** "Add a provider" opens a picker: the OpenCode templates below, or "Create a
+  custom provider", which opens the form. The form writes a `[[providers]]` table; the "+"
   of a provider writes a `[[providers.models]]` table with its `[limits]`. Identifiers
   use letters, digits, `.`, `_` and `-`, start with a letter or a digit, and are
   unique (in the file for a provider, in the provider for a model). A new provider
   takes its key from `api_key_env`. A new model needs `name`, `api_model`, both token
   limits and the three prices of §9.
+* **OpenCode templates.** Two gateways, OpenCode Go and OpenCode Zen, each through Chat
+  Completions, Responses or Anthropic Messages. The base URLs are:
+
+  | Gateway | Chat Completions and Responses | Anthropic Messages |
+  |---|---|---|
+  | OpenCode Go | `https://opencode.ai/inference/go/openai/v1` | `https://opencode.ai/inference/go/anthropic/v1` |
+  | OpenCode Zen | `https://opencode.ai/inference/openai/v1` | `https://opencode.ai/inference/anthropic/v1` |
+
+  You paste a key (the page links to https://opencode.ai/auth to create one). Bricks
+  writes the provider with its current models, read from models.dev: names, limits,
+  accepted inputs, prices per million tokens and reasoning levels. Only the models the
+  gateway lists at that moment are kept, each under the protocol it natively speaks,
+  streamed. Deprecated models are left out. A second add of the same template gets the
+  id `<template>-2`. The OpenCode logos are the official squares from
+  https://opencode.ai/brand, unchanged, in `apps/bricks-desktop/src/assets/provider-icons`,
+  with their sources in `sources.json`.
 * **Editing.** Only the tables concerned change; comments, order and the other tables
   stay byte for byte. The whole file is validated before anything is written, and a
   refused change writes nothing. A provider or model written as an inline table
@@ -71,7 +90,7 @@ file must already exist: the app does not create `providers.toml`.
 | `auth_header` | no | Header carrying the key with `api_key_header` (default `x-api-key`). |
 | `api_key_env` / `api_key` | one of | Name of the environment variable holding the key (recommended), **or** an inline key. Mutually exclusive; neither is allowed with `auth = "none"`. |
 | `path` | no | Replaces the protocol's relative path, for models using the provider's default protocol. |
-| `headers` | no | Extra static request headers. Values are treated as secrets (never printed). |
+| `headers` | no | Extra static request headers. Values are treated as secrets (never printed). A `User-Agent` here replaces the one Bricks sends (§4). |
 | `compat` | no | Protocol quirks, see below. |
 | `models` | no | The provider's models. |
 
@@ -101,7 +120,7 @@ error body that echoes the key back).
 | `input_modalities`, `output_modalities` | no | Subsets of `text`, `image`, `audio`, `video`, `document`. Default `["text"]`. |
 | `document_mime_types` | with `document` | Accepted MIME types (`type/subtype`, `text/*`, `*/*`). |
 | `streaming` | no | **Default `false`**: `streaming = false` sends a blocking request. |
-| `limits` | yes | `max_input_tokens` (the input budget usable with the maximum output reserved) and `max_output_tokens`. |
+| `limits` | yes | `max_input_tokens` (the input budget usable with the maximum output reserved; models imported from models.dev differ, see below) and `max_output_tokens`. |
 | `pricing` | no | USD per million tokens, see §9. |
 | `reasoning` | no | Profiles, see §6. |
 | `parameters` | no | Request parameters sent with every request (JSON-compatible, nesting allowed). |
@@ -118,6 +137,12 @@ max_output_tokens)`; editing the model in the app removes it. Token counts
 computed locally are **estimates** (a character-class heuristic calibrated on
 the model's reported usage); only the usage a server reports, or a configured
 counting endpoint, measures tokens. See `docs/context.md`.
+
+**Limits from models.dev.** A model imported from the models.dev catalogue (the OpenCode
+templates of §1) takes `max_input_tokens` from the input limit the catalogue declares, or
+else from the whole context window. The output limit is not deducted from it. An output
+limit as large as the window, or larger, is replaced by a quarter of the window. The values
+are written as they are read, and they can be edited afterwards.
 
 ## 4. Protocols, endpoints, authentication
 
@@ -142,6 +167,13 @@ path, its authentication style (unless the model states `auth`; `none` stays
 `none`) and its required headers. Explicit `headers` (provider, then model)
 override the protocol's by name.
 
+**Headers Bricks sends itself.** Every model request carries `User-Agent: Bricks/<version>`.
+An explicit `User-Agent` in `headers` still wins. A request to `opencode.ai`, or to any
+of its subdomains, also carries `x-opencode-session: <conversation id>`. The id is the same
+for the whole conversation, including its sub-agents, its compaction summary and its title.
+OpenCode Go requires this header; Zen uses it for routing and prompt caching. A library user
+passes the id with the request option `SESSION_ID_OPTION` (`"session_id"`).
+
 ## 5. Request pipeline
 
 Every request, whatever the protocol:
@@ -153,7 +185,8 @@ Every request, whatever the protocol:
 5. Send. A non-2xx status is returned as a typed error **from `complete()`**
    (429 → `RateLimit` with `Retry-After`, 5xx/529 retryable, 401/403/404 fatal) so
    the runner's retry loop sees it. Transport errors drop the URL.
-6. Decode the response (streamed or not) into events; attach a cost estimate.
+6. Decode the response (streamed or not) into events; attach a cost estimate, or the
+   gateway's billing when it reports one (§9).
 
 **Retry-After budget.** The runner retries a retryable error up to five times
 (six calls at most), waiting the local backoff (1, 2, 4, 8, 16 s, with
@@ -317,7 +350,24 @@ valid Anthropic history and is not sent.
   `cache_read_input_tokens`), `output_tokens` always **includes** reasoning
   tokens (`reasoning_tokens` is an informational subset), and Anthropic cache
   writes are kept per retention so each can be priced separately.
-* No catalogue or price list is ever downloaded.
+* **Gateway billing.** OpenCode reports what it charged with each response. When that
+  report is present, `Usage.billing` carries it: `source`, `charged_usd`, `list_usd`,
+  `allowance_usd` and `estimated`. `cost_usd` is then the amount charged, not an estimate
+  from the configured prices; on OpenCode Go within its limits it is `0`. The tariff
+  (`cost_estimate.tariff`) names the billing source: `free`, `balance`, `go`, `go-plus` or
+  `byok`. Session totals add the billings and join different sources with `+`.
+* **Usage page (desktop).** Every model response is appended to
+  `<BRICKS_HOME>/desktop/usage.jsonl`: time, conversation, provider, model, tokens, cost
+  and billing. A session's agent responses are recorded per turn; a sub-agent's usage is
+  recorded once, when it finishes. Settings › Usage reads this file. It filters by provider
+  and shows the total tokens, the busiest day, the cost, the current and longest streaks of
+  active days, a one-year activity grid (daily, weekly or cumulative), tokens per day
+  stacked by model, and a donut by model over the last 7 or 30 days (the top four models,
+  the rest as "Other models"). For OpenCode Go with a key, it shows the 5-hour, weekly and
+  monthly limits, read from `GET https://opencode.ai/inference/go/v1/usage`. OpenCode does
+  not document that endpoint, so when it fails the gauges are hidden and nothing else changes.
+* The engine never downloads a price list or a catalogue. The desktop app reads models.dev
+  once for each OpenCode provider it adds (§1).
 
 ## 10. What is verified, and what is not
 
