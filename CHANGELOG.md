@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 230 (2026/11/22)
+
+- Rewrite the README with a quick tour of light and dark screenshots, live release and download badges, platform, Rust and license badges, and up-to-date features, downloads and settings.
+
 ### Commit 229 (2026/11/22)
 
 - Replace the macOS icons (black bricks on a white tile in light mode, white bricks on a black tile in dark mode, on the 824 px grid) and redraw the Windows `icon.ico` at all 14 Windows 11 sizes as black bricks on a transparent background.
