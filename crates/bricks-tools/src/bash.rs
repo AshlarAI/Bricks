@@ -805,10 +805,7 @@ mod tests {
         );
         for legacy in ["yield_time_ms", "ready_timeout"] {
             let r = bash
-                .execute(
-                    serde_json::json!({ "command": "true", legacy: 100 }),
-                    &c,
-                )
+                .execute(serde_json::json!({ "command": "true", legacy: 100 }), &c)
                 .await;
             assert!(r.is_error, "{legacy}: {}", r.content);
             assert!(r.content.contains(legacy), "{legacy}: {}", r.content);

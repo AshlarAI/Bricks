@@ -27,15 +27,30 @@ static TIME_ZONE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new
 /// A directory of `PATH` and when its entries last changed (`None`: unreadable).
 type SearchedDir = (PathBuf, Option<SystemTime>);
 
-/// An agent's git state, read again when the workspace may have changed.
-#[derive(Default)]
+/// An agent's session environment and git state (git is read again when the
+/// workspace may have changed; `started_at` is fixed once per instance so the
+/// dynamic `<environment>` block never invalidates the message-history KV cache
+/// as wall-clock time advances).
 pub(crate) struct RequestEnv {
+    started_at: chrono::DateTime<chrono::FixedOffset>,
     git: parking_lot::Mutex<Option<GitSnapshot>>,
     /// The git state must be read again before the next request.
     git_stale: AtomicBool,
     git_read: AtomicBool,
     /// The programs found, and the directories they were looked up in.
     executables: parking_lot::Mutex<Option<(Vec<SearchedDir>, Vec<String>)>>,
+}
+
+impl Default for RequestEnv {
+    fn default() -> Self {
+        Self {
+            started_at: chrono::Local::now().fixed_offset(),
+            git: parking_lot::Mutex::new(None),
+            git_stale: AtomicBool::new(false),
+            git_read: AtomicBool::new(false),
+            executables: parking_lot::Mutex::new(None),
+        }
+    }
 }
 
 impl RequestEnv {
@@ -106,7 +121,7 @@ pub(crate) fn context(
     plan: Option<bricks_tools::todo_write::PlanState>,
 ) -> RequestContext {
     RequestContext {
-        now: Some(chrono::Local::now().fixed_offset()),
+        now: Some(env.started_at),
         time_zone: env.time_zone(),
         os: Some(format!(
             "{} {}",
@@ -470,5 +485,33 @@ mod tests {
         let again = env.git(dir.path()).await.unwrap();
         assert_eq!(again.status_lines, vec!["?? new.txt".to_string()]);
         assert!(again.taken_at.is_some());
+    }
+
+    #[test]
+    fn request_context_timestamp_stays_fixed_within_an_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = RequestEnv::default();
+        let first = context(
+            &env,
+            dir.path(),
+            None,
+            None,
+            None,
+            dir.path(),
+            ModelIdentity::default(),
+            None,
+        );
+        std::thread::sleep(Duration::from_millis(10));
+        let second = context(
+            &env,
+            dir.path(),
+            None,
+            None,
+            None,
+            dir.path(),
+            ModelIdentity::default(),
+            None,
+        );
+        assert_eq!(first.now, second.now);
     }
 }

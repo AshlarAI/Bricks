@@ -5,9 +5,7 @@ import {
   AppWindowIcon,
   BinocularsIcon,
   BookOpenCheckIcon,
-  BotIcon,
   BracesIcon,
-  BrainIcon,
   CameraIcon,
   ChartLineIcon,
   CodeIcon,
@@ -35,6 +33,7 @@ import {
   WrenchIcon,
   ZapIcon,
 } from 'lucide-react'
+import { BotIcon, BrainIcon } from '$lib/components/icons'
 import type { IconComponent } from '$lib/layout/types'
 
 const COMPUTER_USE_PREFIX = 'mcp__computer-use__'

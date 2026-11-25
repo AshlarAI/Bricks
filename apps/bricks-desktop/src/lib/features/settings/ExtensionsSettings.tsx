@@ -7,8 +7,8 @@ import {
   CircleXIcon,
   ExternalLinkIcon,
   MousePointerClickIcon,
-  RefreshCwIcon,
 } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Badge } from '$lib/components/ui/badge'
 import { Button } from '$lib/components/ui/button'
 import { Switch } from '$lib/components/ui/switch'
@@ -51,6 +51,7 @@ export function ExtensionsSettings() {
   /** Accessibility and Screen Recording are macOS grants. */
   const hasPermissions = platform === 'macos'
   const enabled = status?.enabled ?? computerUsePref
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
 
   const refresh = useCallback((): Promise<void> => {
     if (inFlightRef.current) return inFlightRef.current
@@ -182,9 +183,15 @@ export function ExtensionsSettings() {
               disabled={checking}
               aria-label={t('settings.checkAgain')}
               title={t('settings.checkAgain')}
+              onMouseEnter={refreshHover.onMouseEnter}
+              onMouseLeave={refreshHover.onMouseLeave}
               onClick={() => void refresh()}
             >
-              <RefreshCwIcon className={cn('size-3.5', checking && 'animate-spin')} aria-hidden="true" />
+              <RefreshCWIcon
+                ref={refreshHover.ref}
+                className={cn('size-3.5', checking && 'animate-spin')}
+                aria-hidden="true"
+              />
             </Button>
           }
         >

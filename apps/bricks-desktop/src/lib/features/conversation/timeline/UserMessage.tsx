@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { CheckIcon, CopyIcon, PencilIcon } from 'lucide-react'
+import { CheckIcon, PencilIcon } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import FileIcon from '$lib/features/file-icons/FileIcon'
 import { Button } from '$lib/components/ui/button'
@@ -48,6 +49,7 @@ export function UserMessage({ item, conversation = null }: UserMessageProps) {
 
   // Previews of the images, read from the conversation's copies.
   const [previews, setPreviews] = useState<Record<string, string>>({})
+  const copyHover = useIconHover<CopyIconHandle>()
   const requestedRef = useRef(new Set<string>())
   const sessionId = conversation?.sessionId
 
@@ -241,8 +243,17 @@ export function UserMessage({ item, conversation = null }: UserMessageProps) {
                       <PencilIcon aria-hidden="true" />
                     </MessageAction>
                   )}
-                  <MessageAction label={t('conversation.copyTheMessage')} onclick={() => void copy()}>
-                    {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+                  <MessageAction
+                    label={t('conversation.copyTheMessage')}
+                    onclick={() => void copy()}
+                    onMouseEnter={copyHover.onMouseEnter}
+                    onMouseLeave={copyHover.onMouseLeave}
+                  >
+                    {copied ? (
+                      <CheckIcon aria-hidden="true" />
+                    ) : (
+                      <CopyIcon ref={copyHover.ref} aria-hidden="true" />
+                    )}
                   </MessageAction>
                 </Message.Footer>
               </TooltipProvider>

@@ -29,6 +29,20 @@ pub fn run() {
             app.manage(services::updater::UpdaterService::new());
             services::updater::start(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
+                // Match the native NSWindow / WKWebView background to the user's
+                // theme before the window is revealed so macOS never flashes
+                // its default gray windowBackgroundColor.
+                let dark = match app.state::<engine::AppState>().prefs.get().theme {
+                    contract::Theme::Dark => true,
+                    contract::Theme::Light => false,
+                    contract::Theme::System => matches!(window.theme(), Ok(tauri::Theme::Dark)),
+                };
+                let bg = if dark {
+                    tauri::window::Color(7, 7, 8, 255)
+                } else {
+                    tauri::window::Color(255, 255, 255, 255)
+                };
+                let _ = window.set_background_color(Some(bg));
                 webview_menu::install(&window);
             }
             Ok(())

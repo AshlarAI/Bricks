@@ -149,8 +149,7 @@ async fn the_later_removed_tools_are_unknown_with_the_standard_error() {
     let total = bricks_tools::all().len();
     let expected_total = if cfg!(unix) { 13 } else { 12 };
     assert_eq!(
-        total,
-        expected_total,
+        total, expected_total,
         "the standard set exposes only the platform-native shell"
     );
     for (id, name) in ["w1", "w2", "w3", "w4"].iter().zip(removed) {

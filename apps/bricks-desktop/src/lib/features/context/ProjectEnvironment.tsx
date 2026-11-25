@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CheckIcon, CopyIcon, FolderIcon, FolderKanbanIcon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
+import { CheckIcon, FolderIcon, FolderKanbanIcon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { useApp } from '$lib/state/app'
 import { errorMessage, gitStatus, type GitStatus, type Project } from '$lib/ipc/client'
@@ -54,6 +55,7 @@ export function ProjectEnvironment({ project }: ProjectEnvironmentProps) {
   const gitView = git && git.projectId === projectId ? git.result : null
 
   const [copied, setCopied] = useState(false)
+  const copyHover = useIconHover<CopyIconHandle>()
 
   const requestSeqRef = useRef(0)
   const inFlightProjectIdRef = useRef<string | null>(null)
@@ -180,9 +182,11 @@ export function ProjectEnvironment({ project }: ProjectEnvironmentProps) {
             variant="ghost"
             size="icon-xs"
             aria-label={t('context.copyTheFolderPath')}
+            onMouseEnter={copyHover.onMouseEnter}
+            onMouseLeave={copyHover.onMouseLeave}
             onClick={() => void copyPath()}
           >
-            {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+            {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon ref={copyHover.ref} aria-hidden="true" />}
           </Button>
         </dd>
 

@@ -255,16 +255,7 @@ mod prompt_tests {
     fn without_ask(prompt: &str) -> String {
         prompt
             .lines()
-            .filter(|l| !l.starts_with("- Utilise Ask "))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    fn without(line_start: &str) -> String {
-        REFERENCE
-            .trim_end_matches('\n')
-            .lines()
-            .filter(|l| !l.starts_with(line_start))
+            .filter(|l| !l.starts_with("- Use Ask "))
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -279,14 +270,15 @@ mod prompt_tests {
             let s = without_ask(&s);
             assert!(tools.iter().any(|t| t == "Agent") && tools.iter().any(|t| t == "CodeScout"));
             assert!(s.starts_with(REFERENCE.trim_end_matches('\n')), "{s}");
-            assert_eq!(s.matches("Tu es Bricks").count(), 1);
+            assert_eq!(s.matches("You are Bricks").count(), 1);
             assert!(!s.contains("Cersei SDK"));
             assert!(s.contains("<working_directory>"));
 
             let (s, tools) = sent(interactive, "[agents]\nenabled = false\n").await;
             let s = without_ask(&s);
             assert!(!tools.iter().any(|t| t == "Agent" || t == "Messagent"));
-            assert!(s.starts_with(&without("- Délègue aux sous-agents")), "{s}");
+            assert!(s.starts_with(REFERENCE.trim_end_matches('\n')), "{s}");
+            assert!(!s.contains("## Delegation"), "{s}");
         }
     }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { t, useLanguage } from '$lib/i18n/i18n'
-import { RefreshCwIcon, SearchIcon } from 'lucide-react'
+import { SearchIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Badge } from '$lib/components/ui/badge'
 import { Button } from '$lib/components/ui/button'
 import { Input } from '$lib/components/ui/input'
@@ -20,6 +21,7 @@ export function SkillsView({ args: _args }: { args: InspectorState['args'] }) {
 
   const request = useEngineRequest()
   const trust = useEngineRequest()
+  const reloadHover = useIconHover<RefreshCWIconHandle>()
 
   /** Text of the search box, and the query of the last search sent. */
   const [draft, setDraft] = useState('')
@@ -142,9 +144,11 @@ export function SkillsView({ args: _args }: { args: InspectorState['args'] }) {
               variant="outline"
               size="sm"
               disabled={request.pending}
+              onMouseEnter={reloadHover.onMouseEnter}
+              onMouseLeave={reloadHover.onMouseLeave}
               onClick={reload}
             >
-              <RefreshCwIcon aria-hidden="true" />
+              <RefreshCWIcon ref={reloadHover.ref} aria-hidden="true" />
               {t('common.reload')}
             </Button>
           </form>

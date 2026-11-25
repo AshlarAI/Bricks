@@ -4,9 +4,16 @@
 // there are details, « Copier » (summary and details), « Réessayer » when the caller can run
 // the message again, and the close button.
 import { useState } from 'react'
-import { AnchorIcon, CopyIcon, InfoIcon, SettingsIcon, XIcon } from 'lucide-react'
+import { AnchorIcon, InfoIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { t, useLanguage } from '$lib/i18n/i18n'
+import {
+  CogIcon,
+  CopyIcon,
+  useIconHover,
+  type CogIconHandle,
+  type CopyIconHandle,
+} from '$lib/components/icons'
 import { Button } from '$lib/components/ui/button'
 import {
   Dialog,
@@ -42,6 +49,8 @@ export function ChatErrorBanner({
 }: ChatErrorBannerProps) {
   useLanguage()
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const settingsHover = useIconHover<CogIconHandle>()
+  const copyHover = useIconHover<CopyIconHandle>()
 
   async function copy() {
     if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
@@ -81,9 +90,11 @@ export function ChatErrorBanner({
             size="sm"
             className={cn(ACTION, 'gap-1.5')}
             aria-label={t('chat.error.setModels')}
+            onMouseEnter={settingsHover.onMouseEnter}
+            onMouseLeave={settingsHover.onMouseLeave}
             onClick={onOpenModelSettings}
           >
-            <SettingsIcon className="size-3.5" aria-hidden="true" />
+            <CogIcon ref={settingsHover.ref} className="size-3.5" aria-hidden="true" />
             {t('chat.error.setModels')}
           </Button>
         )}
@@ -125,9 +136,11 @@ export function ChatErrorBanner({
             size="sm"
             className={cn(ACTION, 'gap-1.5')}
             aria-label={t('chat.error.copy')}
+            onMouseEnter={copyHover.onMouseEnter}
+            onMouseLeave={copyHover.onMouseLeave}
             onClick={() => void copy()}
           >
-            <CopyIcon className="size-3.5" aria-hidden="true" />
+            <CopyIcon ref={copyHover.ref} className="size-3.5" aria-hidden="true" />
             {t('chat.error.copy')}
           </Button>
         )}

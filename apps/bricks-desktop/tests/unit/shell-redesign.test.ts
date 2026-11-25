@@ -117,7 +117,7 @@ describe('navigation and title markup', () => {
 		const nav = source('lib/features/navigation/NavigationPanel.tsx');
 		expect(nav).toContain("aria-label={t('navigation.newProject')}");
 		expect(nav).not.toMatch(/>\s*\{t\('navigation\.newProject'\)\}/);
-		expect(nav.indexOf("t('navigation.projects')")).toBeLessThan(nav.indexOf('<FolderPlus'));
+		expect(nav.indexOf("t('navigation.projects')")).toBeLessThan(nav.lastIndexOf('<PlusIcon'));
 	});
 
 	it('the pinned section comes before the projects', () => {

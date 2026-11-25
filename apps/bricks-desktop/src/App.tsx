@@ -110,9 +110,27 @@ export function App() {
   }, [])
 
   // Startup lifecycle.
+  const revealedRef = useRef(false)
+  const revealWindow = useCallback(() => {
+    if (revealedRef.current) return
+    revealedRef.current = true
+    // Wait two animation frames after the splash logo is decoded so WebKit
+    // commits the painted frame before AppKit orders the window front.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          void getCurrentWindow().show().catch(() => {})
+        } catch {
+          // No-op outside Tauri.
+        }
+      })
+    })
+  }, [])
+
   useEffect(() => {
     const disposeTheme = initTheme(theme.mode)
     const unlistenResize = watchFullscreen(setFullscreen)
+    const fallbackTimer = window.setTimeout(revealWindow, 500)
     void app.init().then(() => {
       const p = app.prefs
       setTheme(p.theme)
@@ -125,11 +143,16 @@ export function App() {
       setLegacyTerminalHeight(p.terminal_height)
     })
     return () => {
+      window.clearTimeout(fallbackTimer)
       disposeTheme()
       void unlistenResize.then((unlisten) => unlisten())
       void app.dispose()
     }
-  }, [])
+  }, [revealWindow])
+
+  useEffect(() => {
+    if (ready) revealWindow()
+  }, [ready, revealWindow])
 
   // Every conversation shown is a stop of the history (« Précédent » / « Suivant »).
   useEffect(() => {
@@ -235,7 +258,7 @@ export function App() {
   return (
     <TooltipProvider>
       {!ready ? (
-        <StartSplash />
+        <StartSplash onReady={revealWindow} />
       ) : startError ? (
         <div className="grid h-screen place-items-center p-6">
           <EmptyState title={t('app.bricksCouldNotStart')} description={startError} />

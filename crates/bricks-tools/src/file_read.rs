@@ -13,7 +13,10 @@ impl Tool for FileReadTool {
     }
     fn description(&self) -> &str {
         "Read a file from the filesystem: text, or an image (PNG, JPEG, GIF or WebP, up to \
-         3.75 MB) that you see itself. Use offset/limit to read a slice of a large text file."
+         3.75 MB) that you see itself. When the relevant region of a file is already known \
+         (for example after Grep), pass offset and limit to read only that slice. Do not \
+         re-read a file right after modifying it with Edit or Write just to verify the write; \
+         those tools already return an error if the modification fails."
     }
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::ReadOnly
@@ -525,5 +528,22 @@ mod tests {
             .execute(serde_json::json!({ "file_path": "rel.txt" }), &ctx)
             .await;
         assert_eq!(r.content, "1 | x");
+    }
+
+    #[test]
+    fn read_contract_keeps_single_file_schema_and_targeted_guidance() {
+        let desc = FileReadTool.description();
+        assert!(desc.contains("offset") && desc.contains("limit"), "{desc}");
+        assert!(desc.contains("Grep"), "{desc}");
+        assert!(desc.contains("Edit") && desc.contains("Write"), "{desc}");
+        assert!(!desc.contains("CodeScout"), "{desc}");
+
+        let schema = FileReadTool.input_schema();
+        assert_eq!(schema["required"], serde_json::json!(["file_path"]));
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 3);
+        assert!(props.contains_key("file_path"));
+        assert!(props.contains_key("offset"));
+        assert!(props.contains_key("limit"));
     }
 }

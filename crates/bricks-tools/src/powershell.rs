@@ -274,11 +274,8 @@ mod tests {
             vec!["1 cmdlet error(s) in addition to the native program"]
         );
 
-        let r_timeout = report_from_outcome(
-            outcome(PwshStatus::TimedOut),
-            Duration::from_secs(5),
-            None,
-        );
+        let r_timeout =
+            report_from_outcome(outcome(PwshStatus::TimedOut), Duration::from_secs(5), None);
         assert_eq!(r_timeout.status, ToolStatus::TimedOut);
         assert_eq!(
             r_timeout.termination.as_deref(),

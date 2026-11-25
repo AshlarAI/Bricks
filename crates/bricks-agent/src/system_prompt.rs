@@ -333,23 +333,25 @@ pub fn build_system_prompt(opts: &SystemPromptOptions) -> String {
 // ─── The Bricks foundation ──────────────────────────────────────────────────
 
 /// The first paragraph of the foundation: Bricks' identity.
-pub const BRICKS_INTRODUCTION: &str = "Tu es Bricks, un agent de développement autonome.";
+pub const BRICKS_INTRODUCTION: &str = "You are Bricks, an autonomous software engineering agent.";
 
 /// The foundation's bullet kept only when `CodeScout` is announced.
-const CODE_SCOUT_BULLET: &str = "- Utilise CodeScout lorsque les symboles, références ou diagnostics apportent une précision nécessaire.";
+const CODE_SCOUT_BULLET: &str =
+    "- Use CodeScout when symbols, references, or diagnostics provide needed precision.";
 
 /// The foundation's bullet kept only when `CodeStats` is announced.
-const CODE_STATS_BULLET: &str = "- Utilise CodeStats pour compter le code, les commentaires et les lignes vides d'un fichier ou projet. `top_n` limite l'affichage, pas l'analyse ; vérifie `partial` avant de présenter les totaux comme complets.";
+const CODE_STATS_BULLET: &str = "- Use CodeStats to count code, comments, and blank lines in a file or project. `top_n` limits display, not analysis; check `partial` before reporting totals as complete.";
 
 /// The foundation's bullet kept only when `Bash` is announced; it names Job
 /// only when Job is announced too. How each works is in its description.
 const BASH_BULLET: &str =
-    "- Utilise Bash pour les commandes, scripts et opérations mal couverts par les outils dédiés.";
-const BASH_JOB_BULLET: &str = "- Utilise Bash pour les commandes, scripts et opérations mal couverts par les outils dédiés, et Job pour suivre celles qui continuent en arrière-plan.";
+    "- Use Bash for commands, scripts, and operations not well covered by dedicated tools.";
+const BASH_JOB_BULLET: &str = "- Use Bash for commands, scripts, and operations not well covered by dedicated tools, and Job to track commands running in the background.";
 
 /// The foundation's bullet kept only when `Ask` is announced; the timer adds
 /// its rule ([`ask_bullet`]).
-const ASK_BULLET: &str = "- Utilise Ask seulement pour une décision qui revient à l'utilisateur et que le contexte ne permet pas de trancher.";
+const ASK_BULLET: &str =
+    "- Use Ask only for decisions that belong to the user and cannot be resolved from context.";
 
 /// The `Ask` bullet for the active timer.
 fn ask_bullet(timer: crate::control::AskTimer) -> String {
@@ -357,23 +359,23 @@ fn ask_bullet(timer: crate::control::AskTimer) -> String {
     match timer {
         AskTimer::Off => ASK_BULLET.to_string(),
         AskTimer::Smart => format!(
-            "{ASK_BULLET} Choisis `timeout_seconds` selon l'enjeu ; sans réponse à temps, la question est passée."
+            "{ASK_BULLET} Choose `timeout_seconds` based on the stakes; without a timely answer, the question is skipped."
         ),
         AskTimer::Custom { seconds } => format!(
-            "{ASK_BULLET} Le délai de {seconds} s est imposé ; sans réponse à temps, la question est passée."
+            "{ASK_BULLET} A {seconds}s timeout is enforced; without a timely answer, the question is skipped."
         ),
     }
 }
 
 /// The foundation's bullet kept only when `Read` is announced.
 const READ_IMAGE_BULLET: &str =
-    "- Read ouvre aussi les images du disque (PNG, JPEG, GIF, WebP) et te les montre.";
+    "- Read also opens images from disk (PNG, JPEG, GIF, WebP) and shows them to you.";
 const MEMORY_SEARCH_BULLET: &str =
     "- Use memory_search before asking the user to repeat relevant context.";
 const MEMORY_WRITE_BULLET: &str = "- Use memory_write for very brief, single-line durable notes (max 280 chars; one atomic fact per note), memory_update to fix an existing note in place, and memory_delete to remove obsolete notes. Do not save facts already in the codebase, git history, or only relevant to the current turn. Write to global memory only for lasting cross-project preferences.";
 
 /// The foundation's bullet kept only when a web tool is announced.
-const WEB_BULLET: &str = "- Pour une information incertaine ou susceptible d'avoir changé (API, version, comportement d'une bibliothèque), cherche d'abord dans le code puis, si nécessaire, sur le web en privilégiant les sources officielles.";
+const WEB_BULLET: &str = "- For uncertain or potentially outdated facts (APIs, versions, library behaviour), check the codebase first and then the web if needed, preferring official sources.";
 
 /// The web tools ([`WEB_BULLET`]).
 const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
@@ -382,21 +384,22 @@ const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
 /// not delegating.
 pub const SPAWNING_TOOLS: &[&str] = &["Agent"];
 
-const FOUNDATION_HEAD: &str = "Tu es Bricks, un agent de développement autonome.
+const FOUNDATION_HEAD: &str = "You are Bricks, an autonomous software engineering agent.
 
-- Suis les demandes de l'utilisateur et avance seul, dans le périmètre autorisé, jusqu'à un résultat complet.
-- Sois clair sur ce que tu as fait, vérifié ou seulement supposé.
-- Demande l'accord de l'utilisateur quand une action l'exige : destructive, irréversible, commit ou push.
-- Adapte-toi à son contexte, réponds dans sa langue et reste concis.";
+- Follow the user's requests and work independently within the authorised scope until the task is complete.
+- Be clear about what you actually did, verified, or only assumed.
+- Ask for the user's approval before any destructive, irreversible, commit, or push action.
+- Adapt to the user's context, reply in their language, and stay concise.";
 
-const FOUNDATION_TAIL: &str = "- Termine par un bilan court, avec les fichiers référencés sous la forme [fichier.rs](file:///chemin/absolu/fichier.rs#L42).";
+const FOUNDATION_TAIL: &str = "- Finish with a brief summary, linking referenced files as [file.rs](file:///absolute/path/file.rs#L42).";
 
-/// `a, b et c`.
-fn french_list(items: &[&str], last: &str) -> String {
+/// `a, b, and c`.
+fn english_list(items: &[&str]) -> String {
     match items {
         [] => String::new(),
         [one] => one.to_string(),
-        [rest @ .., end] => format!("{} {last} {end}", rest.join(", ")),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., end] => format!("{}, and {end}", rest.join(", ")),
     }
 }
 
@@ -404,20 +407,21 @@ fn french_list(items: &[&str], last: &str) -> String {
 /// Grep and Read.
 fn explore_bullet(has: &dyn Fn(&str) -> bool) -> String {
     let parts: Vec<&str> = [
-        ("Glob", "Glob pour trouver les fichiers"),
-        ("Grep", "Grep pour chercher dans leur contenu"),
-        ("Read", "Read pour les lire"),
+        ("Glob", "Glob to find files"),
+        ("Grep", "Grep to search file contents"),
+        ("Read", "Read to read files"),
     ]
     .iter()
     .filter(|(t, _)| has(t))
     .map(|(_, p)| *p)
     .collect();
     if parts.is_empty() {
-        "- Pour explorer le dépôt, effectue des recherches ciblées.".to_string()
+        "- To explore the repository, run targeted searches and batch independent calls in the same turn."
+            .to_string()
     } else {
         format!(
-            "- Pour explorer le dépôt, privilégie {}. Effectue des recherches ciblées.",
-            french_list(&parts, "et")
+            "- To explore the repository, prefer {}. Run targeted searches and batch independent calls in the same turn.",
+            english_list(&parts)
         )
     }
 }
@@ -425,16 +429,16 @@ fn explore_bullet(has: &dyn Fn(&str) -> bool) -> String {
 /// The editing bullet, naming only the announced tools among Edit and
 /// Write (none: no bullet).
 fn edit_bullet(has: &dyn Fn(&str) -> bool) -> Option<String> {
-    let modify = has("Edit").then_some("Edit pour modifier un fichier existant");
-    let write = has("Write").then_some("Write pour créer ou remplacer un fichier");
+    let modify = has("Edit").then_some("Edit to modify an existing file");
+    let write = has("Write").then_some("Write to create or replace a file");
     let what = match (modify, write) {
-        (Some(m), Some(w)) => format!("{m} et {w}"),
+        (Some(m), Some(w)) => format!("{m} and {w}"),
         (Some(m), None) => m.to_string(),
         (None, Some(w)) => w.to_string(),
         (None, None) => return None,
     };
     Some(format!(
-        "- Utilise {what}. Lis le contenu concerné avant de modifier."
+        "- Use {what}. Read the relevant content before editing."
     ))
 }
 
@@ -505,10 +509,10 @@ undone. Stop as soon as the task is done; do not widen it.";
 const FIGURES_SECTION: &str = r##"
 ## Figures
 
-Quand une figure aide, choisis le bloc adapté ; sinon, du texte.
-- `mermaid` pour un schéma : flux, séquence, architecture, états.
-- `vega-lite` pour un graphique de données : spécification JSON complète, données intégrées dans `values` (aucune URL).
-- `svg` pour un dessin simple qui n'est ni l'un ni l'autre : un seul élément `<svg>` avec `viewBox`, sans script ni ressource externe.
+Use these blocks only when the user asks for a visual or when a diagram clearly clarifies a complex explanation; otherwise use plain text, and avoid unsolicited diagrams on simple code questions.
+- `mermaid` for a diagram: flow, sequence, architecture, or state.
+- `vega-lite` for a data chart: complete JSON specification with data inline in `values` (no URLs).
+- `svg` for a simple drawing that fits neither: a single `<svg>` element with `viewBox`, without scripts or external resources.
 
 ```vega-lite
 {"data": {"values": [{"x": 1, "y": 2}, {"x": 2, "y": 5}, {"x": 3, "y": 4}]}, "mark": "line", "encoding": {"x": {"field": "x", "type": "quantitative"}, "y": {"field": "y", "type": "quantitative"}}}
@@ -522,20 +526,20 @@ Quand une figure aide, choisis le bloc adapté ; sinon, du texte.
 const TASK_MANAGEMENT: &str = "
 ## Plan (TodoWrite)
 
-- Pour un travail complexe à plusieurs étapes significatives ou dépendances, crée un plan court avec TodoWrite ; une tâche simple n'en nécessite pas.
-- Actualise-le après une étape significative et ne déclare achevé que ce qui l'est. Explique les changements importants dans `explanation`.
-- Une étape bloquée reste inachevée ; une étape abandonnée est retirée avec une explication.
-- Avant de conclure, réconcilie le plan avec le travail effectué, sans terminer artificiellement des étapes. Le plan accompagne l'exécution : l'avoir rédigé ne justifie pas de s'arrêter.
-- Après une reprise ou une compaction, fie-toi à l'état du plan fourni par Bricks dans ce prompt, pas à une supposition de réussite.";
+- For complex work with several meaningful steps or dependencies, create a short plan with TodoWrite; simple tasks do not need one.
+- Update it after each meaningful step and mark completed only what is truly done. Explain notable changes in `explanation`.
+- Leave blocked steps unfinished; remove dropped steps with an explanation.
+- Before concluding, reconcile the plan with the work actually done without artificially completing steps. Writing a plan supports execution; it is not a reason to stop.
+- After a resume or compaction, rely on the plan state Bricks provides in this prompt rather than assuming prior success.";
 
 /// When a tool that starts a sub-agent is announced ([`SPAWNING_TOOLS`]).
 const DELEGATION_SECTION: &str = "
-## Délégation
+## Delegation
 
-- Délègue lorsque cela améliore le travail ; garde les petites tâches simples. `Agent` lance une mission, ou plusieurs avec `missions`, en arrière-plan et rend aussitôt leurs identifiants (`sub_0000`…).
-- Un sous-agent part d'un contexte neuf : donne-lui l'objectif, le contexte, les fichiers, les contraintes, le résultat et les vérifications attendus.
-- Les rapports t'arrivent entre deux tours ; quand tu n'as plus rien d'utile à faire, `Managent wait` attend (mode `any` ou `all`) au lieu d'interroger. Messagent écrit à un ou plusieurs agents, ou à l'équipe.
-- Avant de répondre, relis les rapports et les preuves. Un ChangeSet ne s'applique jamais seul : examine son diff (`inspect_changes`), vérifie-le (`check_changes`), rebase-le si besoin (`rebase_changes`), applique-le (`apply_changes`) puis lance les vérifications adaptées.";
+- Delegate when it improves the work; keep small tasks direct. `Agent` starts a mission, or several with `missions`, in the background and immediately returns their IDs (`sub_0000`…).
+- A sub-agent starts from a fresh context: give it the goal, context, files, constraints, expected output, and checks to run.
+- Reports arrive between turns; when you have nothing useful left to do in the meantime, `Managent wait` waits (`any` or `all` mode) instead of polling. Messagent writes to one or more agents, or to the whole team.
+- Before replying, review the reports and their evidence. A ChangeSet is never applied automatically: inspect its diff (`inspect_changes`), check it (`check_changes`), rebase it if needed (`rebase_changes`), apply it (`apply_changes`), and run the appropriate checks.";
 
 const COORDINATOR_SECTION: &str = r#"
 ## Coordinator Mode
@@ -646,44 +650,41 @@ fn render_request_context(ctx: &RequestContext) -> Vec<String> {
     if let Some(now) = &ctx.now {
         let zone = match &ctx.time_zone {
             Some(z) => format!("UTC{}, {}", now.format("%:z"), escape_data(z)),
-            None => format!("UTC{}, nom du fuseau inconnu", now.format("%:z")),
+            None => format!("UTC{}, unknown time zone", now.format("%:z")),
         };
         env.push(format!(
-            "Date et heure locales : {} ({zone})",
-            now.format("%Y-%m-%d %H:%M (%A)")
+            "Local date: {} ({zone})",
+            now.format("%Y-%m-%d (%A)")
         ));
     }
     if let Some(os) = &ctx.os {
-        env.push(format!("Système : {}", escape_data(os)));
+        env.push(format!("System: {}", escape_data(os)));
     }
     if let Some(dir) = &ctx.tools_directory {
         env.push(format!(
-            "Répertoire des outils fichiers (chemins relatifs) : {}",
+            "File tools directory (relative paths): {}",
             escape_data(dir)
         ));
     }
     match (&ctx.shell, ctx.shell_persistent) {
         (Some(sh), Some(true)) => env.push(format!(
-            "Shell de Bash : {} ; le répertoire, les variables exportées, les fonctions et les \
-             alias d'une commande terminée normalement sont conservés, pas les variables non \
-             exportées ni les options",
+            "Bash shell: {}; the working directory, exported variables, functions, and aliases \
+             from a command that exits normally persist across calls, but unexported variables \
+             and shell options do not",
             escape_data(sh)
         )),
-        (_, Some(false)) => env.push(
-            "Bash s'exécute dans un bac à sable : chaque commande part d'un état neuf".into(),
-        ),
-        (None, Some(true)) => env.push("Shell de Bash : introuvable sur ce système".into()),
+        (_, Some(false)) => {
+            env.push("Bash runs in a sandbox: each command starts from a fresh state".into())
+        }
+        (None, Some(true)) => env.push("Bash shell: not found on this system".into()),
         _ => {}
     }
     if let Some(dir) = &ctx.shell_directory {
-        env.push(format!(
-            "Répertoire courant du shell : {}",
-            escape_data(dir)
-        ));
+        env.push(format!("Current shell directory: {}", escape_data(dir)));
     }
     if !ctx.executables.is_empty() {
         env.push(format!(
-            "Exécutables détectés (hors outils Bricks) : {}",
+            "Detected executables (excluding Bricks tools): {}",
             ctx.executables
                 .iter()
                 .map(|e| escape_data(e))
@@ -700,13 +701,13 @@ fn render_request_context(ctx: &RequestContext) -> Vec<String> {
     if let Some(m) = &ctx.model {
         let mut lines = Vec::new();
         if let Some(s) = &m.selection {
-            lines.push(format!("Sélection Bricks : {}", escape_data(s)));
+            lines.push(format!("Bricks selection: {}", escape_data(s)));
         }
         if let Some(a) = &m.api_model {
-            lines.push(format!("Nom envoyé à l'API : {}", escape_data(a)));
+            lines.push(format!("API model name: {}", escape_data(a)));
         }
         if let Some(r) = &m.reasoning {
-            lines.push(format!("Profil de raisonnement : {}", escape_data(r)));
+            lines.push(format!("Reasoning profile: {}", escape_data(r)));
         }
         if !lines.is_empty() {
             parts.push(format!("\n<model>\n{}\n</model>", lines.join("\n")));
@@ -722,7 +723,7 @@ fn render_request_context(ctx: &RequestContext) -> Vec<String> {
 pub fn render_plan_block(plan: &bricks_tools::todo_write::PlanState) -> String {
     if plan.todos.is_empty() {
         return format!(
-            "\n<plan revision=\"{}\">\n(plan vide)\n</plan>",
+            "\n<plan revision=\"{}\">\n(empty plan)\n</plan>",
             plan.revision
         );
     }
@@ -753,10 +754,10 @@ mod tests {
         REFERENCE
             .trim_end_matches('\n')
             .lines()
-            .filter(|l| bash || !l.starts_with("- Utilise Bash pour"))
-            .filter(|l| code_scout || !l.starts_with("- Utilise CodeScout lorsque"))
-            .filter(|l| code_stats || !l.starts_with("- Utilise CodeStats pour"))
-            .filter(|l| web || !l.starts_with("- Pour une information incertaine"))
+            .filter(|l| bash || !l.starts_with("- Use Bash for"))
+            .filter(|l| code_scout || !l.starts_with("- Use CodeScout when"))
+            .filter(|l| code_stats || !l.starts_with("- Use CodeStats to"))
+            .filter(|l| web || !l.starts_with("- For uncertain or potentially outdated"))
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -848,7 +849,9 @@ mod tests {
     #[test]
     fn a_bullet_names_only_the_announced_tools() {
         let f = bricks_foundation(&tools(&["Read"]));
-        assert!(f.contains("- Pour explorer le dépôt, privilégie Read pour les lire."));
+        assert!(f.contains(
+            "- To explore the repository, prefer Read to read files. Run targeted searches and batch independent calls in the same turn."
+        ));
         assert!(f.contains(READ_IMAGE_BULLET), "Read names its images");
         for absent in [
             "Glob",
@@ -861,21 +864,23 @@ mod tests {
             "ViewImage",
             "CodeScout",
             "CodeStats",
-            "sur le web",
+            "then the web",
         ] {
             assert!(!f.contains(absent), "{absent}");
         }
         assert!(!f.contains("\n\n\n"), "no hole left");
         let f = bricks_foundation(&tools(&["Grep", "Edit"]));
-        assert!(f.contains("privilégie Grep pour chercher dans leur contenu. Effectue"));
-        assert!(
-            f.contains("- Utilise Edit pour modifier un fichier existant. Lis le contenu concerné")
-        );
+        assert!(f.contains("prefer Grep to search file contents. Run"));
+        assert!(f.contains("- Use Edit to modify an existing file. Read the relevant content"));
         let f = bricks_foundation(&tools(&["Write"]));
-        assert!(f.contains("- Utilise Write pour créer ou remplacer un fichier. Lis le contenu concerné avant de modifier."));
+        assert!(f.contains(
+            "- Use Write to create or replace a file. Read the relevant content before editing."
+        ));
         let none = bricks_foundation(&[]);
-        assert!(none.contains("- Pour explorer le dépôt, effectue des recherches ciblées."));
-        assert!(!none.contains("Utilise Edit") && !none.contains("Utilise Write"));
+        assert!(none.contains(
+            "- To explore the repository, run targeted searches and batch independent calls in the same turn."
+        ));
+        assert!(!none.contains("Use Edit") && !none.contains("Use Write"));
     }
 
     #[test]
@@ -889,15 +894,15 @@ mod tests {
                 tools_available: tools(&names),
                 ..default_opts()
             });
-            assert!(!p.contains("## Délégation"), "{names:?}");
+            assert!(!p.contains("## Delegation"), "{names:?}");
         }
         let p = build_system_prompt(&SystemPromptOptions {
             tools_available: tools(&["Agent"]),
             ..default_opts()
         });
-        assert_eq!(p.matches("## Délégation").count(), 1);
-        assert!(stable(&p).contains("`Agent` lance une mission, ou plusieurs avec `missions`"));
-        assert!(stable(&p).contains("Messagent écrit à un ou plusieurs agents"));
+        assert_eq!(p.matches("## Delegation").count(), 1);
+        assert!(stable(&p).contains("`Agent` starts a mission, or several with `missions`"));
+        assert!(stable(&p).contains("Messagent writes to one or more agents"));
     }
 
     #[test]
@@ -978,11 +983,12 @@ mod tests {
             "Spawn parallel",
             "Create a task per distinct step",
             "MUST",
+            "parallel",
         ] {
             assert!(!prompt.contains(gone), "{gone:?} survived");
         }
         assert_eq!(prompt.matches(BRICKS_INTRODUCTION).count(), 1);
-        assert_eq!(prompt.matches("## Délégation").count(), 1);
+        assert_eq!(prompt.matches("## Delegation").count(), 1);
         assert_eq!(prompt.matches(CODE_SCOUT_BULLET).count(), 1);
     }
 
@@ -1008,7 +1014,7 @@ mod tests {
             );
             let role = prompt.find("## Your role").unwrap();
             assert!(role < prompt.find(SYSTEM_PROMPT_DYNAMIC_BOUNDARY).unwrap());
-            assert_eq!(prompt.contains("## Délégation"), delegates);
+            assert_eq!(prompt.contains("## Delegation"), delegates);
         }
         // The main modes have no child role.
         assert!(!build_system_prompt(&default_opts()).contains("## Your role"));
@@ -1109,7 +1115,7 @@ mod tests {
             "Context management",
             "Coordinator Mode",
             "## Plan (TodoWrite)",
-            "## Délégation",
+            "## Delegation",
             "<environment>",
             "<plan",
             "Task tracking",
@@ -1131,6 +1137,8 @@ mod tests {
     fn figures_guidance_is_for_a_person_reading_never_for_headless_runs_or_sub_agents() {
         let prompt = build_system_prompt(&default_opts());
         assert!(prompt.contains("## Figures"));
+        assert!(prompt.contains("only when the user asks for a visual"));
+        assert!(prompt.contains("avoid unsolicited diagrams on simple code questions"));
         assert!(
             prompt.contains("```vega-lite")
                 && prompt.contains("```svg")
@@ -1173,8 +1181,8 @@ mod tests {
             ..default_opts()
         });
         assert!(!prompt.contains("Task tracking") && prompt.contains("## Plan (TodoWrite)"));
-        assert!(prompt.contains("une tâche simple n'en nécessite pas"));
-        assert!(prompt.contains("ne justifie pas de s'arrêter"));
+        assert!(prompt.contains("simple tasks do not need one"));
+        assert!(prompt.contains("not a reason to stop"));
         assert!(!prompt.contains("Use TaskCreate"));
     }
 
@@ -1193,7 +1201,7 @@ mod tests {
             tools_available,
             ..default_opts()
         });
-        assert!(!prompt.contains("## Délégation"));
+        assert!(!prompt.contains("## Delegation"));
         assert!(prompt.contains(CODE_SCOUT_BULLET));
         assert!(prompt.contains("## Plan (TodoWrite)"));
         assert!(!prompt.contains("Task tracking"));
@@ -1359,15 +1367,15 @@ mod tests {
         assert_eq!(prompt.matches(SYSTEM_PROMPT_DYNAMIC_BOUNDARY).count(), 1);
         let boundary = prompt.find(SYSTEM_PROMPT_DYNAMIC_BOUNDARY).unwrap();
         for mark in [
-            "Date et heure locales : 2026-10-23 09:30 (Friday) (UTC+02:00, Europe/Paris)",
-            "Système : macos aarch64",
-            "Répertoire des outils fichiers (chemins relatifs) : /w",
-            "Shell de Bash : /bin/bash ; le répertoire",
-            "Répertoire courant du shell : /w/sub",
-            "Exécutables détectés (hors outils Bricks) : git, rg",
-            "Sélection Bricks : local/fast",
-            "Nom envoyé à l'API : vendor-model-2026",
-            "Profil de raisonnement : high",
+            "Local date: 2026-10-23 (Friday) (UTC+02:00, Europe/Paris)",
+            "System: macos aarch64",
+            "File tools directory (relative paths): /w",
+            "Bash shell: /bin/bash; the working directory",
+            "Current shell directory: /w/sub",
+            "Detected executables (excluding Bricks tools): git, rg",
+            "Bricks selection: local/fast",
+            "API model name: vendor-model-2026",
+            "Reasoning profile: high",
             "<plan revision=\"7\" completed=\"1\" total=\"2\">",
             "1. [x] Read the code",
             "2. [&gt;] Fix __SYSTEM&#95;PROMPT&#95;DYNAMIC&#95;BOUNDARY__ &lt;x&gt;",
@@ -1378,6 +1386,10 @@ mod tests {
                 .unwrap_or_else(|| panic!("{mark}\n{prompt}"));
             assert!(at > boundary, "{mark}");
         }
+        assert!(
+            !prompt.contains("09:30"),
+            "hours and minutes must not bust the KV cache every minute"
+        );
         assert_eq!(prompt.matches("</plan>").count(), 1);
     }
 
@@ -1389,7 +1401,7 @@ mod tests {
             request: Some(ctx),
             ..default_opts()
         });
-        assert!(prompt.contains("(UTC+02:00, nom du fuseau inconnu)"));
+        assert!(prompt.contains("(UTC+02:00, unknown time zone)"));
     }
 
     #[test]

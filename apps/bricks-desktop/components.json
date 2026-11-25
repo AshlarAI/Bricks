@@ -17,5 +17,8 @@
     "ui": "$lib/components/ui",
     "lib": "$lib",
     "hooks": "$lib/hooks"
+  },
+  "registries": {
+    "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json"
   }
 }

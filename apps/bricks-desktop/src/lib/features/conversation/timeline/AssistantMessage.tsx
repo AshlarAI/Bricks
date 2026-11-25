@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { t, useLanguage } from '$lib/i18n/i18n'
+import { BrainIcon } from '$lib/components/icons'
 import * as Trace from '$lib/components/ui/trace'
 import { formatWorked } from '../runend'
 import { useConversation, type AssistantItem, type Conversation } from '$lib/state/conversation'
@@ -109,6 +110,9 @@ export function AssistantMessage({ item, conversation, part = 'all' }: Assistant
           <Trace.Collapsible open={reasoningOpen ?? thinkingNow} onOpenChange={setReasoningOpen}>
             <Trace.CollapsibleTrigger>
               <Trace.Line status={thinkingNow ? 'running' : undefined}>
+                <Trace.Icon>
+                  <BrainIcon animating={thinkingNow} />
+                </Trace.Icon>
                 <Trace.Title>{thinkingLabel}</Trace.Title>
               </Trace.Line>
             </Trace.CollapsibleTrigger>

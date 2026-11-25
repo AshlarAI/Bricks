@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   CodeIcon,
-  CopyIcon,
   DownloadIcon,
   FileImageIcon,
   ImageDownIcon,
@@ -10,6 +9,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog'
 import { Button } from '$lib/components/ui/button'
@@ -55,6 +55,7 @@ export function SvgViewer({
 
   const title = titleProp ?? t('conversation.diagram')
   const fileName = fileNameProp ?? t('conversation.diagramSvg')
+  const copyHover = useIconHover<CopyIconHandle>()
   const variant: SvgViewerVariant = variantProp ?? (source !== undefined ? 'mermaid' : 'file')
 
   const settings = useMemo(() => diagramSettings(diagramsPref), [diagramsPref])
@@ -325,9 +326,11 @@ export function SvgViewer({
               size="icon-sm"
               title={t('conversation.copyTheSource')}
               aria-label={t('conversation.copyTheSource')}
+              onMouseEnter={copyHover.onMouseEnter}
+              onMouseLeave={copyHover.onMouseLeave}
               onClick={() => void copy()}
             >
-              <CopyIcon aria-hidden="true" />
+              <CopyIcon ref={copyHover.ref} aria-hidden="true" />
             </Button>
             {canCopyImage && (
               <Button

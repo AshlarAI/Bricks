@@ -1,5 +1,6 @@
 import * as React from "react"
-import { CheckIcon, CopyIcon } from "lucide-react"
+import { CheckIcon } from "lucide-react"
+import { CopyIcon, useIconHover, type CopyIconHandle } from "$lib/components/icons"
 import { Button } from "$lib/components/ui/button"
 import { t, useLanguage } from "$lib/i18n/i18n"
 import { cn } from "$lib/utils"
@@ -10,6 +11,8 @@ function CodeBlockCopyButton({
   variant = "ghost",
   size = "icon-xs",
   onClick,
+  onMouseEnter,
+  onMouseLeave,
   ...props
 }: Omit<React.ComponentProps<typeof Button>, "value"> & {
   value: string
@@ -17,6 +20,7 @@ function CodeBlockCopyButton({
   useLanguage()
 
   const [copied, setCopied] = React.useState(false)
+  const copyHover = useIconHover<CopyIconHandle>()
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   )
@@ -55,12 +59,20 @@ function CodeBlockCopyButton({
         aria-label={copied ? t("common.copied") : t("common.copy")}
         className={cn(className)}
         {...props}
+        onMouseEnter={(e) => {
+          onMouseEnter?.(e)
+          copyHover.onMouseEnter()
+        }}
+        onMouseLeave={(e) => {
+          onMouseLeave?.(e)
+          copyHover.onMouseLeave()
+        }}
         onClick={(e) => {
           onClick?.(e)
           copy()
         }}
       >
-        {copied ? <CheckIcon /> : <CopyIcon />}
+        {copied ? <CheckIcon /> : <CopyIcon ref={copyHover.ref} />}
       </Button>
       <span aria-live="polite" className="sr-only">
         {copied ? t("common.copied") : ""}

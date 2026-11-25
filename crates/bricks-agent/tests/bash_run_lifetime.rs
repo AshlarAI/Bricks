@@ -17,7 +17,11 @@ use serde_json::json;
 use std::path::Path;
 use std::time::Duration;
 
-async fn open(dir: &Path, replies: Vec<Reply>, extra_path: Vec<String>) -> (Controller, EventStream) {
+async fn open(
+    dir: &Path,
+    replies: Vec<Reply>,
+    extra_path: Vec<String>,
+) -> (Controller, EventStream) {
     let catalog = ScriptedCatalog::new(&["a"], Script::new(replies));
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
@@ -152,10 +156,7 @@ async fn the_project_extra_path_reaches_the_bash_tool() {
         unreachable!()
     };
     assert!(!is_error, "{output}");
-    assert!(
-        output.contains(&bin_dir.display().to_string()),
-        "{output}"
-    );
+    assert!(output.contains(&bin_dir.display().to_string()), "{output}");
     until(&mut events, |e| matches!(e, Event::RunFinished { .. })).await;
     ctl.close().await;
 }

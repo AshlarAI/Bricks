@@ -420,28 +420,22 @@ fn a_prompt_carries_its_timer_when_it_has_one() {
 fn the_ask_bullet_follows_the_timer_and_only_comes_with_the_tool() {
     let ask = ["Ask".to_string()];
     let off = bricks_foundation_with(&ask, AskTimer::Off);
-    assert!(
-        off.contains("- Utilise Ask seulement pour une décision"),
-        "{off}"
-    );
+    assert!(off.contains("- Use Ask only for decisions"), "{off}");
     assert!(!off.contains("timeout_seconds"));
 
     let smart = bricks_foundation_with(&ask, AskTimer::Smart);
     assert!(
-        smart.contains("Choisis `timeout_seconds` selon l'enjeu"),
+        smart.contains("Choose `timeout_seconds` based on the stakes"),
         "{smart}"
     );
-    assert!(!smart.contains("Le délai de"));
+    assert!(!smart.contains("timeout is enforced"));
 
     let custom = bricks_foundation_with(&ask, AskTimer::Custom { seconds: 45 });
-    assert!(custom.contains("Le délai de 45 s est imposé"), "{custom}");
-    assert!(!custom.contains("Choisis `timeout_seconds`"));
+    assert!(custom.contains("A 45s timeout is enforced"), "{custom}");
+    assert!(!custom.contains("Choose `timeout_seconds`"));
 
     let without = bricks_foundation_with(&["Read".to_string()], AskTimer::Smart);
-    assert!(
-        !without.contains("Utilise Ask"),
-        "no Ask tool, no Ask bullet"
-    );
+    assert!(!without.contains("Use Ask"), "no Ask tool, no Ask bullet");
 
     assert_eq!(
         bricks_foundation(&ask),
@@ -902,7 +896,7 @@ async fn a_custom_timer_sets_every_question_and_the_model_cannot_change_it() {
             .system
             .as_deref()
             .unwrap_or_default()
-            .contains("Le délai de 45 s est imposé"),
+            .contains("A 45s timeout is enforced"),
         "the system prompt says the duration is imposed"
     );
 

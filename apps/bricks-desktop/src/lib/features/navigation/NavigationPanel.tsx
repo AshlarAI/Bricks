@@ -1,7 +1,15 @@
 // Left panel: projects with their conversations, the conversations without a project, and search.
 // Entry point mounted by App.tsx with no props. All state lives in `app`.
 import { useState } from 'react'
-import { ArrowDownToLineIcon, FolderPlusIcon, SettingsIcon } from 'lucide-react'
+import {
+  CogIcon,
+  DownloadIcon,
+  PlusIcon,
+  useIconHover,
+  type CogIconHandle,
+  type DownloadIconHandle,
+  type PlusIconHandle,
+} from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { Button } from '$lib/components/ui/button'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
@@ -26,6 +34,9 @@ export function NavigationPanel() {
   })
 
   const [adding, setAdding] = useState(false)
+  const newProjectHover = useIconHover<PlusIconHandle>()
+  const settingsHover = useIconHover<CogIconHandle>()
+  const updateHover = useIconHover<DownloadIconHandle>()
 
   const showUpdateButton = hasActionableUpdate(updateStatus)
   const updateTooltip = updateTooltipLabel(updateStatus)
@@ -73,10 +84,12 @@ export function NavigationPanel() {
                 className="text-muted-foreground hover:text-foreground"
                 aria-label={t('navigation.newProject')}
                 title={t('navigation.newProject')}
+                onMouseEnter={newProjectHover.onMouseEnter}
+                onMouseLeave={newProjectHover.onMouseLeave}
                 onClick={() => void addProject()}
                 disabled={adding}
               >
-                <FolderPlusIcon aria-hidden="true" />
+                <PlusIcon ref={newProjectHover.ref} aria-hidden="true" />
               </Button>
             </div>
             {folders.length > 0 && <ProjectList />}
@@ -98,25 +111,29 @@ export function NavigationPanel() {
           variant="ghost"
           className="min-w-0 flex-1 justify-start text-ui"
           aria-label={t('common.bricksSettings')}
+          onMouseEnter={settingsHover.onMouseEnter}
+          onMouseLeave={settingsHover.onMouseLeave}
           onClick={() => ui.setSettingsOpen(true)}
         >
-          <SettingsIcon aria-hidden="true" data-icon="inline-start" />
+          <CogIcon ref={settingsHover.ref} aria-hidden="true" data-icon="inline-start" />
           {t('navigation.settings')}
         </Button>
         {showUpdateButton && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                variant="default"
+                variant="ghost"
                 size="icon-xs"
-                className="mr-1 shrink-0 rounded-full bg-emerald-600 text-white hover:bg-emerald-600/90 dark:bg-emerald-600 dark:hover:bg-emerald-500 [&_svg]:size-3"
+                className="mr-1 shrink-0 text-emerald-600 hover:text-emerald-700 dark:text-emerald-500 dark:hover:text-emerald-400 [&_svg]:size-3.5"
                 aria-label={updateTooltip}
+                onMouseEnter={updateHover.onMouseEnter}
+                onMouseLeave={updateHover.onMouseLeave}
                 onClick={() => ui.setUpdateDialogOpen(true)}
               >
                 {updateStatus.phase === 'downloading' ? (
                   <Spinner aria-hidden="true" />
                 ) : (
-                  <ArrowDownToLineIcon aria-hidden="true" />
+                  <DownloadIcon ref={updateHover.ref} aria-hidden="true" />
                 )}
               </Button>
             </TooltipTrigger>

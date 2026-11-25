@@ -2,7 +2,8 @@
 // then the selected provider or « Ajouter un fournisseur »). Reads and writes the file through
 // the IPC; every write carries the revision last read.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { PlusIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react'
+import { PlusIcon, TriangleAlertIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Button } from '$lib/components/ui/button'
 import { t, useLanguage } from '$lib/i18n/i18n'
@@ -73,6 +74,9 @@ export function ModelSettings() {
   const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [filling, setFilling] = useState(false)
   const [fillError, setFillError] = useState<string | null>(null)
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
+  const retryHover = useIconHover<RefreshCWIconHandle>()
+  const retryInvalidHover = useIconHover<RefreshCWIconHandle>()
 
   /** The writes run one after the other, each with the revision its predecessor left. */
   const writesRef = useRef<Promise<unknown>>(Promise.resolve())
@@ -291,10 +295,12 @@ export function ModelSettings() {
                 variant="outline"
                 size="icon-sm"
                 aria-label={t('common.refresh')}
+                onMouseEnter={refreshHover.onMouseEnter}
+                onMouseLeave={refreshHover.onMouseLeave}
                 onClick={() => void load()}
                 disabled={loading}
               >
-                <RefreshCwIcon className={cn(loading && 'animate-spin')} />
+                <RefreshCWIcon ref={refreshHover.ref} className={cn(loading && 'animate-spin')} />
               </Button>
               <Button
                 size="sm"
@@ -325,10 +331,12 @@ export function ModelSettings() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onMouseEnter={retryHover.onMouseEnter}
+                  onMouseLeave={retryHover.onMouseLeave}
                   onClick={() => void load()}
                   disabled={loading}
                 >
-                  <RefreshCwIcon aria-hidden="true" />
+                  <RefreshCWIcon ref={retryHover.ref} aria-hidden="true" />
                   {t('common.retry')}
                 </Button>
               </AlertDescription>
@@ -354,10 +362,12 @@ export function ModelSettings() {
                   <Button
                     variant="outline"
                     size="sm"
+                    onMouseEnter={retryInvalidHover.onMouseEnter}
+                    onMouseLeave={retryInvalidHover.onMouseLeave}
                     onClick={() => void load()}
                     disabled={loading}
                   >
-                    <RefreshCwIcon aria-hidden="true" />
+                    <RefreshCWIcon ref={retryInvalidHover.ref} aria-hidden="true" />
                     {t('common.retry')}
                   </Button>
                 </AlertDescription>

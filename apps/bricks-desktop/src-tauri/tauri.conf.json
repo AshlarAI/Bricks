@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "title": "Bricks", "width": 1440, "height": 900, "minWidth": 800, "minHeight": 560 }
+      { "title": "Bricks", "width": 1440, "height": 900, "minWidth": 800, "minHeight": 560, "visible": false }
     ],
     "security": { "csp": null }
   },

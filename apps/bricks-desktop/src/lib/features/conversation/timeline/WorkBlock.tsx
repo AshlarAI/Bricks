@@ -7,6 +7,7 @@ import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
+import { BrainIcon } from '$lib/components/icons'
 import { Separator } from '$lib/components/ui/separator'
 import { cn } from '$lib/utils'
 import {
@@ -18,6 +19,7 @@ import {
 import type { RunOutcome } from '$lib/ipc/engine'
 import { OUTCOME_LABEL, formatElapsed } from '../format'
 import { currentStep, needsAttention } from '../runBlocks'
+import { THINKING_ICON } from './toolIcons'
 import AssistantMessage from './AssistantMessage'
 import TimelineEntry from './TimelineEntry'
 
@@ -92,13 +94,13 @@ function WorkBlockComponent({
         : t('conversation.endedAfter', { outcome: OUTCOME_LABEL[ended], duration: formatElapsed(workedMs) })
 
   const bar = running ? (
-    <span className="shimmer tabular-nums motion-reduce:shimmer-none">
+    <span className="shimmer motion-reduce:shimmer-none">
       {t('conversation.workingFor', {
         duration: formatElapsed(startedAt === null ? 0 : now - startedAt),
       })}
     </span>
   ) : (
-    <span className={cn('tabular-nums', outcome && TONE[outcome])}>{endLabel}</span>
+    <span className={cn(outcome && TONE[outcome])}>{endLabel}</span>
   )
 
   const StepIcon = step?.icon
@@ -109,7 +111,7 @@ function WorkBlockComponent({
       onOpenChange={(next) => setOverride({ forRunning: running, open: next })}
       className="flex flex-col gap-2"
     >
-      <div className="flex min-w-0 items-center gap-3 text-ui text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
         {hasSteps ? (
           <CollapsibleTrigger className="group inline-flex shrink-0 items-center gap-1.5 rounded-md hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
             {bar}
@@ -119,11 +121,15 @@ function WorkBlockComponent({
             />
           </CollapsibleTrigger>
         ) : (
-          <p className="inline-flex shrink-0 items-center gap-1.5">{bar}</p>
+          <div className="inline-flex shrink-0 items-center gap-1.5">{bar}</div>
         )}
         {step && !open && StepIcon && (
           <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
-            <StepIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            {StepIcon === THINKING_ICON ? (
+              <BrainIcon animating className="size-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <StepIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            )}
             <span className="min-w-0 truncate shimmer motion-reduce:shimmer-none">{step.label}</span>
           </span>
         )}

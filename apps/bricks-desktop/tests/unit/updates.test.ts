@@ -75,13 +75,14 @@ describe('updates helpers', () => {
 })
 
 describe('updater UI placement', () => {
-  it('places green ArrowDownToLine button next to Settings in NavigationPanel without border-t', () => {
+  it('places ghost green Download icon button next to Settings in NavigationPanel without border-t or green fill', () => {
     const nav = readFileSync(
       resolve(import.meta.dirname, '../../src/lib/features/navigation/NavigationPanel.tsx'),
       'utf8',
     )
-    expect(nav).toMatch(/import\s*\{[^}]*\bArrowDownToLineIcon\b[^}]*\}\s*from 'lucide-react'/)
-    expect(nav).toContain('bg-emerald-600 text-white')
+    expect(nav).toMatch(/import\s*\{[^}]*\bDownloadIcon\b[^}]*\}\s*from '\$lib\/components\/icons'/)
+    expect(nav).toContain('text-emerald-600')
+    expect(nav).not.toContain('bg-emerald-600')
     expect(nav).toContain('flex-1 justify-start text-ui')
     const footerStart = nav.indexOf('flex items-center gap-1.5')
     expect(footerStart).toBeGreaterThan(-1)

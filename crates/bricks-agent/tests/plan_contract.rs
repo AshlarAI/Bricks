@@ -396,7 +396,7 @@ async fn a_new_message_resets_the_plan_and_a_refused_update_keeps_it_empty() {
     for (i, (_, req)) in reqs.iter().enumerate().skip(2) {
         let s = system(req);
         assert!(
-            s.contains("<plan revision=\"2\">\n(plan vide)"),
+            s.contains("<plan revision=\"2\">\n(empty plan)"),
             "request {i} carries the cleared plan: {s}"
         );
         assert!(

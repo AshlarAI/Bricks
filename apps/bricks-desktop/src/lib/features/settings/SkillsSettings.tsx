@@ -9,10 +9,10 @@ import {
   ChevronRightIcon,
   FolderInputIcon,
   PlusIcon,
-  RefreshCwIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Badge } from '$lib/components/ui/badge'
 import { Button } from '$lib/components/ui/button'
@@ -80,6 +80,8 @@ export function SkillsSettings() {
   const [formError, setFormError] = useState<{ field: string; message: string } | null>(null)
 
   const [confirming, setConfirming] = useState<string | null>(null)
+  const reloadHover = useIconHover<RefreshCWIconHandle>()
+  const retryHover = useIconHover<RefreshCWIconHandle>()
 
   const fetchCatalog = useCallback(
     async (request: { query: string; page: number }, reloadFlag: boolean) => {
@@ -260,8 +262,16 @@ export function SkillsSettings() {
               <FolderInputIcon aria-hidden="true" data-icon="inline-start" />
               {t('settings.import')}
             </Button>
-            <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
-              <RefreshCwIcon
+            <Button
+              variant="outline"
+              size="sm"
+              onMouseEnter={reloadHover.onMouseEnter}
+              onMouseLeave={reloadHover.onMouseLeave}
+              onClick={reload}
+              disabled={loading}
+            >
+              <RefreshCWIcon
+                ref={reloadHover.ref}
                 className={loading ? 'animate-spin' : undefined}
                 data-icon="inline-start"
                 aria-hidden="true"
@@ -358,8 +368,15 @@ export function SkillsSettings() {
           <TriangleAlertIcon aria-hidden="true" />
           <AlertDescription className="flex flex-col items-start gap-3">
             <p>{t('settings.couldNotReadTheSkills', { error })}</p>
-            <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
-              <RefreshCwIcon aria-hidden="true" />
+            <Button
+              variant="outline"
+              size="sm"
+              onMouseEnter={retryHover.onMouseEnter}
+              onMouseLeave={retryHover.onMouseLeave}
+              onClick={reload}
+              disabled={loading}
+            >
+              <RefreshCWIcon ref={retryHover.ref} aria-hidden="true" />
               {t('common.retry')}
             </Button>
           </AlertDescription>

@@ -5,8 +5,6 @@ import {
 	AppWindowIcon,
 	BinocularsIcon,
 	BookOpenCheckIcon,
-	BotIcon,
-	BrainIcon,
 	CameraIcon,
 	ChartLineIcon,
 	CodeIcon,
@@ -26,6 +24,7 @@ import {
 	TerminalIcon,
 	WrenchIcon,
 } from 'lucide-react';
+import { BotIcon, BrainIcon } from '../../src/lib/components/icons';
 import {
 	MESSAGE_ICON,
 	THINKING_ICON,

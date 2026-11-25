@@ -50,27 +50,26 @@ fn rand_jitter() -> u64 {
 
 // ─── Retry delay and notice ──────────────────────────────────────────────────
 
-/// The local backoff of retry `retry` (1-based): 1000 × 2^(retry−1) ms,
-/// capped at 30000 ms, plus `jitter % max(base / 4, 1)` ms.
+/// The local backoff of retry `retry` (1-based): 250 × 2^(retry−1) ms,
+/// capped at 4000 ms, plus `jitter % max(base / 4, 1)` ms.
 fn local_backoff(retry: u32, jitter: u64) -> std::time::Duration {
     let factor = 1u64
         .checked_shl(retry.saturating_sub(1))
         .unwrap_or(u64::MAX);
-    let base = 1000u64.saturating_mul(factor).min(30_000);
+    let base = 250u64.saturating_mul(factor).min(4_000);
     std::time::Duration::from_millis(base + jitter % (base / 4).max(1))
 }
 
-/// The delay before retry `retry`: the local backoff, or the server's
-/// `Retry-After` when that is longer (never shorter: a zero or past value
-/// keeps the backoff; a long one is not capped). Computed once per retry;
-/// the wait, the notice and the log all use it.
+/// The delay before retry `retry`: the server's `Retry-After` when present
+/// (matching the server whether shorter or longer than local backoff), or the
+/// aggressive local backoff otherwise. Computed once per retry; the wait, the
+/// notice and the log all use it.
 pub(crate) fn retry_delay(
     retry: u32,
     jitter: u64,
     server: Option<std::time::Duration>,
 ) -> std::time::Duration {
-    let local = local_backoff(retry, jitter);
-    server.map_or(local, |s| s.max(local))
+    server.unwrap_or_else(|| local_backoff(retry, jitter))
 }
 
 /// What kind of transient failure this is, for people: "Rate limited" only
@@ -952,7 +951,7 @@ async fn run_loop(
 
         // Send to provider with automatic retry on transient errors
         let mut retry_count = 0u32;
-        const MAX_RETRIES: u32 = 5;
+        const MAX_RETRIES: u32 = 3;
 
         let (mut rx, mut accumulator) = loop {
             let req_clone = request.clone();
@@ -1009,9 +1008,9 @@ async fn run_loop(
                     continue;
                 }
                 Err(e) if e.is_retryable() && retry_count < MAX_RETRIES => {
-                    // MAX_RETRIES retries after the first call: six calls at
-                    // most. The delay is chosen once (local backoff 1, 2, 4,
-                    // 8, 16 s + jitter, or the server's longer Retry-After).
+                    // MAX_RETRIES retries after the first call: four calls at
+                    // most. The delay follows the server's Retry-After when
+                    // provided, or local backoff (250, 500, 1000 ms + jitter).
                     retry_count += 1;
                     let server = e.retry_after();
                     // A server's Retry-After beyond the budget is not waited
@@ -1036,8 +1035,8 @@ async fn run_loop(
                     agent.emit(AgentEvent::Status(notice));
                     // Same reasoning as the `complete()` await above, and newly
                     // load-bearing: until F-02 this sleep was unreachable, so
-                    // its uncancellability never showed. Five local retries
-                    // are up to ~39 s of it; a server's Retry-After may be more.
+                    // its uncancellability never showed. Three local retries
+                    // are up to ~2.2 s of it; a server's Retry-After may be more.
                     tokio::select! {
                         _ = tokio::time::sleep(delay) => {}
                         _ = cancel.cancelled() => return Err(BricksError::Cancelled),
@@ -2112,39 +2111,40 @@ mod retry_delay_tests {
     use std::time::Duration;
 
     #[test]
-    fn the_local_backoff_is_unchanged() {
-        // Without jitter: 1, 2, 4, 8, 16 s, then capped at 30 s.
+    fn the_local_backoff_is_aggressive() {
+        // Without jitter: 250, 500, 1000, 2000 ms, then capped at 4000 ms.
         let nominal: Vec<u128> = (1..=7).map(|n| local_backoff(n, 0).as_millis()).collect();
-        assert_eq!(nominal, vec![1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+        assert_eq!(nominal, vec![250, 500, 1000, 2000, 4000, 4000, 4000]);
         // Jitter below a quarter of the base.
-        assert_eq!(local_backoff(1, 249).as_millis(), 1249);
-        assert_eq!(local_backoff(1, 250).as_millis(), 1000);
-        assert_eq!(local_backoff(3, 1999).as_millis(), 4999);
+        assert_eq!(local_backoff(1, 61).as_millis(), 311);
+        assert_eq!(local_backoff(1, 62).as_millis(), 250);
+        assert_eq!(local_backoff(3, 249).as_millis(), 1249);
         // Never overflows.
         let far = local_backoff(200, u64::MAX).as_millis();
-        assert!((30_000..37_500).contains(&far), "{far}");
+        assert!((4_000..5_000).contains(&far), "{far}");
     }
 
     #[test]
-    fn the_longer_of_local_and_server_delays_wins() {
-        assert_eq!(retry_delay(1, 100, None), Duration::from_millis(1100));
+    fn the_servers_delay_is_followed_when_present() {
+        assert_eq!(retry_delay(1, 50, None), Duration::from_millis(300));
         assert_eq!(
-            retry_delay(1, 100, Some(Duration::from_secs(12))),
+            retry_delay(1, 50, Some(Duration::from_secs(12))),
             Duration::from_secs(12),
             "server longer"
         );
         assert_eq!(
-            retry_delay(3, 100, Some(Duration::from_secs(1))),
-            Duration::from_millis(4100),
-            "server shorter: local kept"
+            retry_delay(3, 100, Some(Duration::from_millis(200))),
+            Duration::from_millis(200),
+            "server shorter: server followed"
         );
         assert_eq!(
             retry_delay(2, 0, Some(Duration::ZERO)),
-            Duration::from_secs(2)
+            Duration::ZERO,
+            "server zero: immediate"
         );
         // A long server delay is not capped at the backoff's ceiling.
         assert_eq!(
-            retry_delay(5, 0, Some(Duration::from_secs(120))),
+            retry_delay(3, 0, Some(Duration::from_secs(120))),
             Duration::from_secs(120)
         );
     }

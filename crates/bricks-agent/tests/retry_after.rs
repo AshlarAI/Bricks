@@ -1,7 +1,7 @@
 //! Retries with the real runner, a spy provider and Tokio's virtual clock:
-//! the server's `Retry-After` governs the wait when it is longer than the
-//! local backoff, the notice says the same duration, five retries at most,
-//! cancellation during a wait, definitive errors, and the stream boundary.
+//! the server's `Retry-After` governs the wait when present, local backoff
+//! fills in when absent, the notice says the same duration, three retries at
+//! most, cancellation during a wait, definitive errors, and the stream boundary.
 
 use bricks_agent::Agent;
 use bricks_agent::events::AgentEvent;
@@ -182,7 +182,7 @@ async fn a_503_waits_for_the_servers_delay_then_succeeds() {
         vec![12000],
         "the server's delay, not the backoff"
     );
-    let expected = "Service unavailable (HTTP 503). Retrying in 12000 ms... (retry 1/5)";
+    let expected = "Service unavailable (HTTP 503). Retrying in 12000 ms... (retry 1/3)";
     assert_eq!(
         *r.stream_notices.lock().unwrap(),
         vec![expected.to_string()]
@@ -195,7 +195,7 @@ async fn a_503_waits_for_the_servers_delay_then_succeeds() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_shorter_or_absent_server_delay_keeps_the_backoff() {
+async fn server_delay_is_followed_even_when_shorter_and_absent_uses_backoff() {
     let r = run_with(vec![
         Step::Fail(status(429, Some(0))),
         Step::Fail(status(502, None)),
@@ -203,39 +203,36 @@ async fn a_shorter_or_absent_server_delay_keeps_the_backoff() {
     ]);
     finish(&r).await.unwrap();
     let g = gaps(&r.calls.lock().unwrap());
-    assert!((1000..1250).contains(&g[0]), "{g:?}");
-    assert!((2000..2500).contains(&g[1]), "{g:?}");
+    assert_eq!(g[0], 0, "{g:?}");
+    assert!((500..625).contains(&g[1]), "{g:?}");
     // What was waited is what was said.
     let notices = r.stream_notices.lock().unwrap().clone();
     assert_eq!(
         notices[0],
-        format!(
-            "Rate limited (HTTP 429). Retrying in {} ms... (retry 1/5)",
-            g[0]
-        )
+        "Rate limited (HTTP 429). Retrying in 0 ms... (retry 1/3)"
     );
     assert_eq!(
         notices[1],
         format!(
-            "Temporary provider error (HTTP 502). Retrying in {} ms... (retry 2/5)",
+            "Temporary provider error (HTTP 502). Retrying in {} ms... (retry 2/3)",
             g[1]
         )
     );
 }
 
 #[tokio::test(start_paused = true)]
-async fn five_retries_then_the_error() {
+async fn three_retries_then_the_error() {
     let steps = (0..10).map(|_| Step::Fail(status(503, None))).collect();
     let r = run_with(steps);
     assert!(finish(&r).await.is_err());
     assert_eq!(
         r.calls.lock().unwrap().len(),
-        6,
-        "the first call and five retries"
+        4,
+        "the first call and three retries"
     );
     let n = r.stream_notices.lock().unwrap().clone();
-    assert_eq!(n.len(), 5);
-    assert!(n[4].ends_with("(retry 5/5)"), "{n:?}");
+    assert_eq!(n.len(), 3);
+    assert!(n[2].ends_with("(retry 3/3)"), "{n:?}");
 }
 
 #[tokio::test(start_paused = true)]
@@ -320,7 +317,8 @@ async fn an_extreme_server_delay_is_refused_without_overflow() {
 
 #[tokio::test(start_paused = true)]
 async fn a_zero_budget_never_waits_for_the_server_but_keeps_the_backoff() {
-    // A server-asked wait is refused; an absent or zero one keeps the backoff.
+    // A positive server-asked wait is refused; a zero one retries at once and
+    // an absent one uses the local backoff.
     let refused = run_with_budget(
         vec![Step::Fail(status(429, Some(1))), Step::Text("never")],
         Some(0),
@@ -337,10 +335,7 @@ async fn a_zero_budget_never_waits_for_the_server_but_keeps_the_backoff() {
     );
     assert!(finish(&backoff).await.unwrap().contains("pong"));
     let g = gaps(&backoff.calls.lock().unwrap());
-    assert!(
-        (1000..1250).contains(&g[0]) && (2000..2500).contains(&g[1]),
-        "{g:?}"
-    );
+    assert!(g[0] == 0 && (500..625).contains(&g[1]), "{g:?}");
 }
 
 #[tokio::test(start_paused = true)]
@@ -409,7 +404,7 @@ max_output_tokens = 1000
     cancel.cancel();
     assert!(
         notice.starts_with("Temporary connection error. Retrying in ")
-            && notice.ends_with(" ms... (retry 1/5)"),
+            && notice.ends_with(" ms... (retry 1/3)"),
         "{notice}"
     );
     assert!(

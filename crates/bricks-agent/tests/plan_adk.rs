@@ -130,6 +130,6 @@ async fn a_provider_without_a_request_identity_still_runs_and_names_no_api_model
     let reqs = script.requests();
     let s = system(&reqs[0].1);
     assert!(s.contains("<model>"), "{s}");
-    assert!(s.contains("Sélection Bricks : test/a"), "{s}");
-    assert!(!s.contains("Nom envoyé à l'API"), "{s}");
+    assert!(s.contains("Bricks selection: test/a"), "{s}");
+    assert!(!s.contains("API model name"), "{s}");
 }

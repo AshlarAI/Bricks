@@ -2,7 +2,8 @@
 // app or Tauri), with its console, or its source. While the fence streams, the source shows;
 // once it closes, the page does. The page can be reloaded, opened larger, copied and saved.
 import { useEffect, useRef, useState } from 'react'
-import { CodeIcon, DownloadIcon, EyeIcon, Maximize2Icon, RefreshCcwIcon } from 'lucide-react'
+import { CodeIcon, DownloadIcon, EyeIcon, Maximize2Icon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { toast } from 'sonner'
 import {
   Artifact,
@@ -80,6 +81,7 @@ export function WebPageBlock({ source, complete }: WebPageBlockProps) {
   const [showSource, setShowSource] = useState(false)
   const [reloads, setReloads] = useState(0)
   const [large, setLarge] = useState(false)
+  const reloadHover = useIconHover<RefreshCWIconHandle>()
   const preview = complete && !showSource
   const lines = useHighlightedCode(source, preview ? '' : 'html')
   const srcDoc = useRef({ source: '', html: '' })
@@ -113,11 +115,14 @@ export function WebPageBlock({ source, complete }: WebPageBlockProps) {
             disabled={!complete}
           />
           <ArtifactAction
-            icon={RefreshCcwIcon}
             tooltip={t('common.reload')}
+            onMouseEnter={reloadHover.onMouseEnter}
+            onMouseLeave={reloadHover.onMouseLeave}
             onClick={() => setReloads((n) => n + 1)}
             disabled={!preview}
-          />
+          >
+            <RefreshCWIcon ref={reloadHover.ref} aria-hidden="true" />
+          </ArtifactAction>
           <ArtifactAction
             icon={Maximize2Icon}
             tooltip={t('webPreview.maximize')}

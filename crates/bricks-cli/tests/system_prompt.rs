@@ -9,12 +9,11 @@ use common::*;
 
 const REFERENCE: &str = include_str!("../../bricks-agent/tests/fixtures/bricks_foundation.txt");
 
-fn reference(code_scout: bool, delegation: bool) -> String {
+fn reference(code_scout: bool) -> String {
     REFERENCE
         .trim_end_matches('\n')
         .lines()
-        .filter(|l| code_scout || !l.starts_with("- Utilise CodeScout lorsque"))
-        .filter(|l| delegation || !l.starts_with("- Délègue aux sous-agents"))
+        .filter(|l| code_scout || !l.starts_with("- Use CodeScout when"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -47,14 +46,14 @@ fn first_request(extra: &str) -> (String, Vec<String>) {
 fn headless_sends_the_foundation_with_the_bullets_its_tools_decide() {
     let (s, tools) = first_request("[semantic.lsp]\nenabled = false\n");
     assert!(tools.iter().any(|t| t == "Agent") && tools.iter().any(|t| t == "CodeScout"));
-    assert!(s.starts_with(&reference(true, true)), "{s}");
-    assert_eq!(s.matches("Tu es Bricks").count(), 1);
+    assert!(s.starts_with(&reference(true)), "{s}");
+    assert_eq!(s.matches("You are Bricks").count(), 1);
     assert!(!s.contains("Cersei SDK"));
     assert!(!s.contains("## Your role"));
 
     let (s, tools) =
         first_request("[semantic.lsp]\nenabled = false\n\n[agents]\nenabled = false\n");
     assert!(!tools.iter().any(|t| t == "Agent" || t == "Messagent"));
-    assert!(s.starts_with(&reference(true, false)), "{s}");
-    assert!(!s.contains("Délègue"));
+    assert!(s.starts_with(&reference(true)), "{s}");
+    assert!(!s.contains("## Delegation"));
 }

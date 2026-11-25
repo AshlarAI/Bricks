@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { toast } from 'sonner'
 import {
-  ArrowDownToLineIcon,
   CheckCircle2Icon,
   RotateCcwIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
+import { DownloadIcon, useIconHover, type DownloadIconHandle } from '$lib/components/icons'
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Button } from '$lib/components/ui/button'
 import {
@@ -36,6 +36,7 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
   const infoVersion = useApp((s) => s.info?.version ?? '')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const downloadHover = useIconHover<DownloadIconHandle>()
 
   const meta = metadataOf(status)
   const pubDate = formatPubDate(meta?.pub_date)
@@ -230,11 +231,16 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
                 <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
                   {t('updates.later')}
                 </Button>
-                <Button disabled={busy} onClick={() => void handleDownload()}>
+                <Button
+                  disabled={busy}
+                  onMouseEnter={downloadHover.onMouseEnter}
+                  onMouseLeave={downloadHover.onMouseLeave}
+                  onClick={() => void handleDownload()}
+                >
                   {busy ? (
                     <Spinner data-icon="inline-start" />
                   ) : (
-                    <ArrowDownToLineIcon aria-hidden="true" data-icon="inline-start" />
+                    <DownloadIcon ref={downloadHover.ref} aria-hidden="true" data-icon="inline-start" />
                   )}
                   {status.phase === 'error' ? t('updates.retry') : t('updates.download')}
                 </Button>

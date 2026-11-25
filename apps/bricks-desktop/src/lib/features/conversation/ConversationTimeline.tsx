@@ -380,6 +380,11 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
 
           {blocks.map((block, index) => {
             const isUser = block.kind === 'item' && block.item.kind === 'user'
+            const followsWork =
+              index > 0 &&
+              blocks[index - 1]?.kind === 'work' &&
+              block.kind === 'item' &&
+              (block.answer || block.item.kind === 'run_end')
             const isRunningBlock =
               conversation.runningRunId !== null &&
               (block.kind === 'work'
@@ -393,6 +398,7 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
                 data-turn={isUser ? block.key : undefined}
                 className={cn(
                   'flex flex-col gap-6 empty:hidden',
+                  followsWork && '-mt-4',
                   isUser && 'scroll-mt-8',
                   deferred && 'timeline-block-deferred',
                 )}

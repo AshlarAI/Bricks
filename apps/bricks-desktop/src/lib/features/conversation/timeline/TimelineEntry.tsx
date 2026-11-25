@@ -57,6 +57,21 @@ function TimelineEntryComponent({ item, conversation, answer = false }: Timeline
           )
       : false
 
+  const subscribedHideAgentTool = useConversation(liveConversation, (c) =>
+    item.kind === 'tool' && item.name === 'Agent' && !c.ownAgentId
+      ? c.items.some((entry) => entry.kind === 'agent' && entry.toolCallId === item.toolCallId)
+      : false,
+  )
+  const hideAgentTool =
+    item.kind === 'tool' && item.name === 'Agent'
+      ? liveConversation
+        ? (subscribedHideAgentTool ?? false)
+        : !conversation.ownAgentId &&
+          conversation.items.some(
+            (entry) => entry.kind === 'agent' && entry.toolCallId === item.toolCallId,
+          )
+      : false
+
   return (
     <>
       {item.kind === 'user' ? (
@@ -64,7 +79,7 @@ function TimelineEntryComponent({ item, conversation, answer = false }: Timeline
       ) : item.kind === 'assistant' ? (
         <AssistantMessage item={item} conversation={conversation} part={answer ? 'answer' : 'all'} />
       ) : item.kind === 'tool' ? (
-        <ToolRow item={item} conversation={conversation} />
+        hideAgentTool ? null : <ToolRow item={item} conversation={conversation} />
       ) : item.kind === 'question' ? (
         !item.outcome ? <QuestionCard question={item.question} conversation={conversation} /> : null
       ) : item.kind === 'approval' ? (

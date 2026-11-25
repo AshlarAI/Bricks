@@ -386,7 +386,12 @@ async fn finished_background_job_delivers_push_notification_between_turns() {
 
     {
         let reqs = seen_requests.lock().unwrap();
-        assert_eq!(reqs.len(), 3, "expected 3 model requests, got {}", reqs.len());
+        assert_eq!(
+            reqs.len(),
+            3,
+            "expected 3 model requests, got {}",
+            reqs.len()
+        );
         let bg_id = job_ids_in(&reqs[1])
             .into_iter()
             .next()
@@ -450,7 +455,12 @@ async fn waited_background_job_does_not_emit_duplicate_push_notification() {
     assert_eq!(out.text(), "done");
 
     let reqs = seen_requests.lock().unwrap();
-    assert_eq!(reqs.len(), 3, "expected 3 model requests, got {}", reqs.len());
+    assert_eq!(
+        reqs.len(),
+        3,
+        "expected 3 model requests, got {}",
+        reqs.len()
+    );
     assert!(
         !reqs[2].contains("[system] Background job(s) finished:"),
         "wait already observed completion, no duplicate push notification expected: {}",

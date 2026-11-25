@@ -839,7 +839,11 @@ async fn jobs_report_the_directory_they_started_in() {
         .unwrap_or_else(|| panic!("{}", background.content));
     let cwd = data["cwd"].as_str().unwrap();
     assert!(cwd.ends_with("/subdir"), "{cwd}: {}", background.content);
-    assert!(background.content.contains("/subdir"), "{}", background.content);
+    assert!(
+        background.content.contains("/subdir"),
+        "{}",
+        background.content
+    );
     let id = data["job_id"].as_str().unwrap().to_string();
     let list = JobTool::new(Arc::clone(&reg))
         .execute(json!({ "action": "list" }), &ctx)

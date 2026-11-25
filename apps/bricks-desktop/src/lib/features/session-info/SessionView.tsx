@@ -2,7 +2,8 @@
 // (requested and applied), activity, memory space, approvals.
 import { useEffect, useRef, useState } from 'react'
 import { t, useLanguage } from '$lib/i18n/i18n'
-import { CheckIcon, CopyIcon } from 'lucide-react'
+import { CheckIcon } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { Button } from '$lib/components/ui/button'
 import { errorMessage, sessionSnapshot } from '$lib/ipc/client'
 import type { Snapshot } from '$lib/ipc/engine'
@@ -27,6 +28,7 @@ export function SessionView({ args: _args }: { args: InspectorState['args'] }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
+  const copyHover = useIconHover<CopyIconHandle>()
 
   /** Only the newest read may write the view (a slower earlier one is dropped). */
   const loadTokenRef = useRef(0)
@@ -88,10 +90,12 @@ export function SessionView({ args: _args }: { args: InspectorState['args'] }) {
           <Button
             variant="ghost"
             size="icon-sm"
+            onMouseEnter={copyHover.onMouseEnter}
+            onMouseLeave={copyHover.onMouseLeave}
             onClick={() => void copyId()}
             aria-label={copied ? t('sessionInfo.identifierCopied') : t('sessionInfo.copyTheIdentifier')}
           >
-            {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+            {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon ref={copyHover.ref} aria-hidden="true" />}
           </Button>
         </dd>
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { t, useLanguage } from '$lib/i18n/i18n'
-import { RefreshCwIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Badge } from '$lib/components/ui/badge'
 import { Button } from '$lib/components/ui/button'
 import EmptyState from '$lib/layout/EmptyState'
@@ -42,6 +42,7 @@ export function GitChanges() {
   const projectId = useApp((s) => s.currentProjectId)
   const conversations = useApp((s) => s.conversations)
   const git = useGitState(projectId)
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [details, setDetails] = useState<Record<string, CommitDetail>>({})
@@ -176,9 +177,15 @@ export function GitChanges() {
           aria-label={t('common.refresh')}
           title={t('common.refresh')}
           disabled={git?.statusLoading}
+          onMouseEnter={refreshHover.onMouseEnter}
+          onMouseLeave={refreshHover.onMouseLeave}
           onClick={() => void git?.refresh()}
         >
-          <RefreshCwIcon className={git?.statusLoading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
+          <RefreshCWIcon
+            ref={refreshHover.ref}
+            className={git?.statusLoading ? 'size-4 animate-spin' : 'size-4'}
+            aria-hidden="true"
+          />
         </Button>
       </header>
 

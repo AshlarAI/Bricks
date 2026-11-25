@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-const LISTED: &str = "Exécutables détectés (hors outils Bricks) : ";
+const LISTED: &str = "Detected executables (excluding Bricks tools): ";
 
 /// The scripted models; each waits for the sub-agents it was given.
 struct Follow(

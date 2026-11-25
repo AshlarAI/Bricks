@@ -3,7 +3,8 @@
 // the answer. Items without a run keep their place. Built with the reducer, from the envelopes
 // the engine sends, so the items have the shape the view really gets.
 import { describe, expect, it } from 'vitest';
-import { BotIcon, TerminalIcon } from 'lucide-react';
+import { TerminalIcon } from 'lucide-react';
+import { BotIcon } from '../../src/lib/components/icons';
 import {
 	Conversation,
 	type ApprovalItem,

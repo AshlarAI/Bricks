@@ -48,17 +48,16 @@ impl ModelCatalog for Follow {
 
 const REFERENCE: &str = include_str!("fixtures/bricks_foundation.txt");
 
-fn reference(code_scout: bool, delegation: bool) -> String {
+fn reference(code_scout: bool) -> String {
     REFERENCE
         .trim_end_matches('\n')
         .lines()
-        .filter(|l| code_scout || !l.starts_with("- Utilise CodeScout lorsque"))
-        .filter(|l| delegation || !l.starts_with("- Délègue aux sous-agents"))
+        .filter(|l| code_scout || !l.starts_with("- Use CodeScout when"))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-const INTRO: &str = "Tu es Bricks, un agent de développement autonome.";
+const INTRO: &str = "You are Bricks, an autonomous software engineering agent.";
 
 /// Recalls a fixed marker.
 struct Recall;
@@ -232,12 +231,12 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
 
     // The session agent: the foundation first, whole, once.
     let p = system(parent);
-    assert!(p.starts_with(&reference(true, true)), "{p}");
+    assert!(p.starts_with(&reference(true)), "{p}");
     // CodeStats is announced once, and so is its line; NotebookEdit is gone.
     let announced: Vec<&str> = parent.tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(announced.iter().filter(|n| **n == "CodeStats").count(), 1);
     assert!(!announced.contains(&"NotebookEdit"));
-    assert_eq!(p.matches("- Utilise CodeStats pour").count(), 1);
+    assert_eq!(p.matches("- Use CodeStats to").count(), 1);
     assert!(!p.contains("NotebookEdit"));
     assert_eq!(p.matches(INTRO).count(), 1);
     assert_eq!(p.matches(SYSTEM_PROMPT_DYNAMIC_BOUNDARY).count(), 1);
@@ -284,7 +283,7 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
             "",
             1,
         )
-        .starts_with(&reference(true, true)),
+        .starts_with(&reference(true)),
         "{c}"
     );
     assert_eq!(c.matches(INTRO).count(), 1);
@@ -303,8 +302,8 @@ async fn without_delegation_tools_the_bullet_is_absent_from_the_request() {
     let r = &reqs[0];
     assert!(!r.tools.iter().any(|t| t.name == "Agent"));
     let s = system(r);
-    assert!(s.starts_with(&reference(true, false)), "{s}");
-    assert!(!s.contains("Délègue"));
+    assert!(s.starts_with(&reference(true)), "{s}");
+    assert!(!s.contains("## Delegation"));
     assert_eq!(s.matches("MARK-RECALL").count(), 1);
 }
 
@@ -326,7 +325,7 @@ fn a_child_prompt_without_delegation_tools_has_no_delegation_bullet() {
             "Read", "Bash"
         ])))
     );
-    assert!(!without.contains("## Délégation"));
+    assert!(!without.contains("## Delegation"));
     assert_eq!(without.matches("## Your role").count(), 1);
     assert_eq!(without.matches(general.instructions.trim()).count(), 1);
     let with = bricks_agent::agents::spawn::child_system_prompt(
@@ -339,6 +338,6 @@ fn a_child_prompt_without_delegation_tools_has_no_delegation_bullet() {
             "Read", "Agent"
         ])))
     );
-    assert_eq!(with.matches("## Délégation").count(), 1);
+    assert_eq!(with.matches("## Delegation").count(), 1);
     assert_eq!(with.matches("## Your role").count(), 1);
 }

@@ -45,12 +45,12 @@ describe('the sub-agent line in the thread', () => {
 		}
 	});
 
-	it('is a trace task: state icon, profile and description, its steps folded under it, no time', () => {
-		expect(line).toContain('<Trace.Collapsible');
+	it('is a single-line trace button: bot icon, Agent, profile, description and chevron, with no inline steps or time', () => {
+		expect(line).toContain('<BotIcon');
 		expect(line).toContain('{agent.spawn.profile}');
 		expect(line).toContain('<Trace.Title>{description}</Trace.Title>');
-		expect(line).toContain('{shown.map((step) => (');
-		expect(line).toContain('key={step.id}');
+		expect(line).toContain('<ChevronRightIcon />');
+		expect(line).not.toContain('<Trace.Collapsible');
 		expect(line).not.toMatch(/formatDuration|agentDurationMs|setInterval/);
 	});
 

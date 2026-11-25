@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { t, useLanguage } from '$lib/i18n/i18n'
-import { ChevronRightIcon, RefreshCwIcon, SquareIcon } from 'lucide-react'
+import { ChevronRightIcon, SquareIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -85,6 +86,8 @@ export function JobsView({ args: _args }: { args: InspectorState['args'] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
+
   return (
     <>
       <div className="flex flex-col gap-3 text-ui">
@@ -114,9 +117,15 @@ export function JobsView({ args: _args }: { args: InspectorState['args'] }) {
                     aria-label={t('common.refresh')}
                     title={t('common.refresh')}
                     disabled={refresh.pending}
+                    onMouseEnter={refreshHover.onMouseEnter}
+                    onMouseLeave={refreshHover.onMouseLeave}
                     onClick={refreshJobs}
                   >
-                    <RefreshCwIcon className={refresh.pending ? 'animate-spin' : undefined} aria-hidden="true" />
+                    <RefreshCWIcon
+                      ref={refreshHover.ref}
+                      className={refresh.pending ? 'animate-spin' : undefined}
+                      aria-hidden="true"
+                    />
                   </Button>
                 </div>
                 <CollapsibleContent>

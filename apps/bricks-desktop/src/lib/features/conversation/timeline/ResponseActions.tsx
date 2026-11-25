@@ -2,7 +2,8 @@
 // réponse », one at a time) and copy its Markdown (all its assistant segments,
 // no reasoning, tools, notices or summary).
 import { useEffect, useRef, useState } from 'react'
-import { CheckIcon, CopyIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react'
+import { CheckIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { MessageFooter } from '$lib/components/ui/message'
 import { Toggle } from '$lib/components/ui/toggle'
@@ -38,6 +39,7 @@ export function ResponseActions({ text, sessionId }: ResponseActionsProps) {
 
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
+  const copyHover = useIconHover<CopyIconHandle>()
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
@@ -73,8 +75,13 @@ export function ResponseActions({ text, sessionId }: ResponseActionsProps) {
             <TooltipContent>{label}</TooltipContent>
           </Tooltip>
         ))}
-        <MessageAction label={t('common.copy')} onclick={() => void copy()}>
-          {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+        <MessageAction
+          label={t('common.copy')}
+          onclick={() => void copy()}
+          onMouseEnter={copyHover.onMouseEnter}
+          onMouseLeave={copyHover.onMouseLeave}
+        >
+          {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon ref={copyHover.ref} aria-hidden="true" />}
         </MessageAction>
         {copyError && (
           <p className="ml-2 font-normal text-destructive" role="alert">

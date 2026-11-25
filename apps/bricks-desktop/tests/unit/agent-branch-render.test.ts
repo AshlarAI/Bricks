@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushReact, mountReact, type MountedComponent } from './react-test-utils';
 import AgentBranch from '../../src/lib/features/agents/AgentBranch';
 import AgentLine from '../../src/lib/features/conversation/timeline/AgentLine';
+import TimelineEntry from '../../src/lib/features/conversation/timeline/TimelineEntry';
 import UserMessage from '../../src/lib/features/conversation/timeline/UserMessage';
+import { ui } from '../../src/lib/state/ui';
 import { Conversation, type AgentItem, type UserItem } from '../../src/lib/state/conversation';
 import { EnvelopeFeed, PROJECT_ID, T0, agentResult, openedSession, spawnInfo } from './fixtures';
 
@@ -131,8 +133,8 @@ describe('AgentBranch: a running sub-agent', () => {
 	});
 });
 
-describe('AgentLine: displays profile, description, and live Managent action', () => {
-	it('displays spawn.profile and spawn.description when provided, falling back to task otherwise', () => {
+describe('AgentLine: displays Agent, profile and description on one line and opens the branch on click', () => {
+	it('displays Agent, spawn.profile and spawn.description without inline steps, and opens the sub-agent tab', () => {
 		const conv = new Conversation(openedSession(), PROJECT_ID);
 		const feed = new EnvelopeFeed({ runId: RUN });
 		conv.apply(feed.next({ type: 'run_started', prompt: 'Cherche', attachments: [], model: 'm' }, { at: T0 }));
@@ -158,9 +160,24 @@ describe('AgentLine: displays profile, description, and live Managent action', (
 		app = mountReact(AgentLine, { target, props: { item, conversation: conv } }) as MountedComponent<object>;
 
 		const shown = text();
+		expect(shown).toContain('Agent');
 		expect(shown).toContain('general');
 		expect(shown).toContain('Lire le code');
-		expect(shown).toContain('Managent');
+		expect(shown).not.toContain('Managent');
+
+		const button = target.querySelector('button');
+		expect(button).not.toBeNull();
+		const openSpy = vi.spyOn(ui, 'openAgent');
+		button!.click();
+		expect(openSpy).toHaveBeenCalledWith(AGENT);
+		openSpy.mockRestore();
+	});
+
+	it('TimelineEntry hides the Agent tool call once the sub-agent item exists so no sub-agent output leaks', () => {
+		const { conv } = finishedParent();
+		const agentTool = conv.items.find((i) => i.kind === 'tool' && i.name === 'Agent')!;
+		app = mountReact(TimelineEntry, { target, props: { item: agentTool, conversation: conv } }) as MountedComponent<object>;
+		expect(target.innerHTML).toBe('');
 	});
 });
 

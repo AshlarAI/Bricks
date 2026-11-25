@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CheckIcon, CopyIcon } from 'lucide-react'
+import { CheckIcon } from 'lucide-react'
+import { CopyIcon, useIconHover, type CopyIconHandle } from '$lib/components/icons'
 import { Button } from '$lib/components/ui/button'
 import { t, useLanguage } from '$lib/i18n/i18n'
 
@@ -13,6 +14,7 @@ export interface CopyValueProps {
 export function CopyValue({ label, value }: CopyValueProps) {
   useLanguage()
   const [copied, setCopied] = useState(false)
+  const copyHover = useIconHover<CopyIconHandle>()
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -44,13 +46,15 @@ export function CopyValue({ label, value }: CopyValueProps) {
       <Button
         variant="outline"
         size="sm"
+        onMouseEnter={copyHover.onMouseEnter}
+        onMouseLeave={copyHover.onMouseLeave}
         onClick={() => void copy()}
         aria-label={t('settings.copy', { label })}
       >
         {copied ? (
           <CheckIcon aria-hidden="true" data-icon="inline-start" />
         ) : (
-          <CopyIcon aria-hidden="true" data-icon="inline-start" />
+          <CopyIcon ref={copyHover.ref} aria-hidden="true" data-icon="inline-start" />
         )}
         {copied ? t('common.copied') : t('common.copy')}
       </Button>

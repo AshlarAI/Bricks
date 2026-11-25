@@ -3,6 +3,7 @@
 // The files it changed stay shown under the line.
 import { useState } from 'react'
 import * as CodeBlock from '$lib/components/ui/code-block'
+import { Dotm3x3_20 } from '$lib/components/ui/dotm-3x3-20'
 import * as Trace from '$lib/components/ui/trace'
 import { useLanguage } from '$lib/i18n/i18n'
 import {
@@ -131,7 +132,7 @@ export function ToolRow({ item, conversation }: ToolRowProps) {
     : ''
   const rawOutput = (currentItem.output ?? '').replace(/\n+$/, '')
   const output = (() => {
-    if (!rawOutput.trim() || showsImage) return ''
+    if (currentItem.name === 'Agent' || !rawOutput.trim() || showsImage) return ''
     const lines = rawOutput.split('\n')
     return lines.length > MAX_LINES ? `${lines.slice(0, MAX_LINES).join('\n')}\n…` : rawOutput
   })()
@@ -147,6 +148,9 @@ export function ToolRow({ item, conversation }: ToolRowProps) {
         {title}
       </Trace.Title>
       {computerUseHint && <span className="min-w-0 truncate">{computerUseHint}</span>}
+      {lineState === 'running' && (
+        <Dotm3x3_20 dotSize={2.5} cellPadding={1} ariaLabel="" className="shrink-0 text-info" />
+      )}
       {closed && (
         <Trace.Description>
           {answered}/{questions.length}

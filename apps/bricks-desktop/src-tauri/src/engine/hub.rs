@@ -217,7 +217,10 @@ fn try_coalesce(pending: &mut DesktopEvent, next: &DesktopEvent) -> bool {
         return false;
     }
     let (Some(p_text), Some(n_text)) = (
-        p_env.get("text").and_then(|v| v.as_str()).map(str::to_owned),
+        p_env
+            .get("text")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
         n_env.get("text").and_then(|v| v.as_str()),
     ) else {
         return false;

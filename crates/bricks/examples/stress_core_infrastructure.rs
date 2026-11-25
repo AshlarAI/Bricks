@@ -55,8 +55,8 @@ fn main() {
         );
         check!("No former attribution", !prompt.contains("Cersei SDK"));
         check!(
-            "Delegation bullet only with a delegation tool",
-            !prompt.contains("Délègue aux sous-agents")
+            "Delegation section only with a delegation tool",
+            !prompt.contains("## Delegation")
         );
 
         // Verify caching boundary splits correctly

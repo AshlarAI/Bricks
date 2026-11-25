@@ -7,7 +7,7 @@ import { t, useLanguage } from '$lib/i18n/i18n'
 import type { ProjectFileEntry } from '$lib/ipc/bindings/ProjectFileEntry'
 import { Kbd } from '$lib/components/ui/kbd'
 import FileIcon from '$lib/features/file-icons/FileIcon'
-import { RefreshCwIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { cn } from '$lib/utils'
 import type { MentionStatus } from './mention-files'
 
@@ -36,6 +36,7 @@ export function MentionPalette({
   onRefresh,
 }: MentionPaletteProps) {
   useLanguage()
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
 
   // Keeps the highlighted entry visible while the arrow keys move it.
   useEffect(() => {
@@ -97,10 +98,12 @@ export function MentionPalette({
           className="inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 hover:bg-element-hover hover:text-foreground"
           aria-keyshortcuts="Control+R"
           title={t('composer.refreshTheFileListCtrlR')}
+          onMouseEnter={refreshHover.onMouseEnter}
+          onMouseLeave={refreshHover.onMouseLeave}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onRefresh}
         >
-          <RefreshCwIcon className="size-3.5" aria-hidden="true" />
+          <RefreshCWIcon ref={refreshHover.ref} className="size-3.5" aria-hidden="true" />
           {t('common.refresh')}
           <Kbd>Ctrl R</Kbd>
         </button>

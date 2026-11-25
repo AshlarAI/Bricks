@@ -2,7 +2,8 @@
 // provider or one. Figures, a year of activity, tokens per day and per model over 7 or 30
 // days, and for OpenCode Go the share of its limits the key has used.
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react'
+import { TriangleAlertIcon } from 'lucide-react'
+import { RefreshCWIcon, useIconHover, type RefreshCWIconHandle } from '$lib/components/icons'
 import { Bar, BarChart, CartesianGrid, Label, Pie, PieChart, XAxis } from 'recharts'
 import { Alert, AlertDescription } from '$lib/components/ui/alert'
 import { Button } from '$lib/components/ui/button'
@@ -84,6 +85,7 @@ export function UsageSettings() {
   const [mode, setMode] = useState<GridMode>('daily')
   const [range, setRange] = useState('7')
   const [quota, setQuota] = useState<GoQuota | null>(null)
+  const refreshHover = useIconHover<RefreshCWIconHandle>()
 
   const providerRef = useRef(provider)
   providerRef.current = provider
@@ -255,10 +257,12 @@ export function UsageSettings() {
             variant="outline"
             size="icon-sm"
             aria-label={t('common.refresh')}
+            onMouseEnter={refreshHover.onMouseEnter}
+            onMouseLeave={refreshHover.onMouseLeave}
             onClick={() => void load()}
             disabled={loading}
           >
-            <RefreshCwIcon className={cn(loading && 'animate-spin')} />
+            <RefreshCWIcon ref={refreshHover.ref} className={cn(loading && 'animate-spin')} />
           </Button>
         </div>
       </div>

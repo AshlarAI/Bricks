@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 233 (2026/11/25)
+
+- Switch the Bricks system prompt to 100% English, add independent tool-call batching and restrained `Figures` guidance, freeze the session date without hours and minutes in `<environment>` to preserve message-history KV cache hits, tighten `Read` guidance on targeted `offset`/`limit` slices and post-edit re-reads, and speed up provider retries (3 retries at 250 ms base backoff, honoring server `Retry-After` directly).
+- Add `@dotmatrix` loaders to `Spinner` and running `StatusDot`, add `motion`-animated icons across the desktop UI, collapse sub-agent timeline entries to a single clickable row, and eliminate the startup window flash by setting the native theme background and revealing the main window once the splash logo decodes.
+
 ### Commit 232 (2026/11/22)
 
 - Simplify `Bash` to 5 parameters by removing automatic foreground handover (`yield_time_ms`) and `ready_timeout`, expose only the platform-native shell by default, translate `PowerShell` errors to English, and push finished background job notifications into the agent turn loop.

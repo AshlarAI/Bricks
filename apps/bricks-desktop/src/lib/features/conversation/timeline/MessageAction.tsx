@@ -9,6 +9,8 @@ export interface MessageActionProps {
   onclick: () => void
   disabled?: boolean
   ref?: React.Ref<HTMLButtonElement>
+  onMouseEnter?: React.MouseEventHandler<HTMLButtonElement>
+  onMouseLeave?: React.MouseEventHandler<HTMLButtonElement>
   children?: React.ReactNode
 }
 
@@ -17,6 +19,8 @@ export function MessageAction({
   onclick,
   disabled = false,
   ref,
+  onMouseEnter,
+  onMouseLeave,
   children,
 }: MessageActionProps) {
   return (
@@ -29,6 +33,8 @@ export function MessageAction({
           aria-label={label}
           disabled={disabled}
           onClick={onclick}
+          onMouseEnter={onMouseEnter}
+          onMouseLeave={onMouseLeave}
         >
           {children}
         </Button>

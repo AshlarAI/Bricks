@@ -5,9 +5,9 @@ import {
   FolderOpenIcon,
   FolderXIcon,
   PencilIcon,
-  PlusIcon,
   TrashIcon,
 } from 'lucide-react'
+import { PlusIcon, useIconHover, type PlusIconHandle } from '$lib/components/icons'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import type { Project } from '$lib/ipc/client'
 import { app, useApp } from '$lib/state/app'
@@ -37,6 +37,29 @@ import ConversationList from './ConversationList'
 
 /** Conversations listed under a project before « Afficher plus ». */
 const SHOWN_PER_PROJECT = 3
+
+function ProjectNewConversationButton({
+  ariaLabel,
+  onClick,
+}: {
+  ariaLabel: string
+  onClick: () => void
+}) {
+  const plusHover = useIconHover<PlusIconHandle>()
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+      aria-label={ariaLabel}
+      onMouseEnter={plusHover.onMouseEnter}
+      onMouseLeave={plusHover.onMouseLeave}
+      onClick={onClick}
+    >
+      <PlusIcon ref={plusHover.ref} aria-hidden="true" />
+    </Button>
+  )
+}
 
 export function ProjectList() {
   useLanguage()
@@ -157,15 +180,10 @@ export function ProjectList() {
                   </span>
                 )}
 
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                  aria-label={t('navigation.newConversationIn', { name: project.name })}
+                <ProjectNewConversationButton
+                  ariaLabel={t('navigation.newConversationIn', { name: project.name })}
                   onClick={() => startConversation(project)}
-                >
-                  <PlusIcon aria-hidden="true" />
-                </Button>
+                />
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react'
 import { t, useLanguage } from '$lib/i18n/i18n'
+import { Dotm3x3_20 } from '$lib/components/ui/dotm-3x3-20'
 import { cn } from '$lib/utils'
 import type { StatusState } from './types'
 
@@ -50,15 +51,17 @@ export function StatusDot({ status, label, showLabel = false, className, ...rest
 
   return (
     <span className={cn('inline-flex items-center gap-1.5 text-xs text-muted-foreground', className)} {...restProps}>
-      <span
-        aria-hidden="true"
-        data-status={status}
-        className={cn(
-          'inline-block size-2 shrink-0 rounded-full',
-          DOT[status],
-          status === 'running' && 'animate-pulse',
-        )}
-      />
+      {status === 'running' ? (
+        <span aria-hidden="true" data-status={status} className="inline-flex shrink-0 items-center justify-center text-info">
+          <Dotm3x3_20 dotSize={2.5} cellPadding={1} ariaLabel="" />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          data-status={status}
+          className={cn('inline-block size-2 shrink-0 rounded-full', DOT[status])}
+        />
+      )}
       {showLabel ? <span>{text}</span> : <span className="sr-only">{text}</span>}
     </span>
   )
