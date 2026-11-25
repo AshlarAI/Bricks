@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 234 (2026/11/25)
+
+- Untrack and ignore `bench/general-agents/uv.lock` and `bench/term-bench/uv.lock`, remove the unused `vercel` dependency from `docs/package.json`, upgrade `next` and `fumadocs-*` packages with `npm audit fix` down to zero vulnerabilities, and quote colons in MDX frontmatter descriptions so `docs` builds cleanly.
+
 ### Commit 233 (2026/11/25)
 
 - Switch the Bricks system prompt to 100% English, add independent tool-call batching and restrained `Figures` guidance, freeze the session date without hours and minutes in `<environment>` to preserve message-history KV cache hits, tighten `Read` guidance on targeted `offset`/`limit` slices and post-edit re-reads, and speed up provider retries (3 retries at 250 ms base backoff, honoring server `Retry-After` directly).

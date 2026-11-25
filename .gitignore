@@ -48,11 +48,13 @@ bench/**/runner-*.bash
 credentials.json
 credentials.*.json
 
-# Python venvs created by bench harnesses.
+# Python venvs and uv lockfiles created by bench harnesses.
 bench/**/.venv/
 bench/**/__pycache__/
 **/__pycache__/
 *.pyc
+bench/general-agents/uv.lock
+bench/term-bench/uv.lock
 
 # Linux bench binaries are build outputs; see bench/term-bench/BINARIES.md.
 bench/term-bench/abstract-linux-*
