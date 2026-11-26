@@ -1,7 +1,11 @@
-import { ScrollArea } from '$lib/components/ui/scroll-area'
+import { useCallback, useMemo, useState } from 'react'
 import { t, useLanguage } from '$lib/i18n/i18n'
+import { longestLineOf, useVirtualLines } from '$lib/hooks/use-virtual-lines'
 import { cn } from '$lib/utils'
 import { parsePatch, type PatchLineKind } from './patch'
+
+const DIFF_LINE_HEIGHT = 20
+const DIFF_VIRTUALIZE_THRESHOLD = 200
 
 export interface DiffViewProps {
   /** Unified diff text, as produced by Rust. */
@@ -27,7 +31,30 @@ const ROW: Record<PatchLineKind, string> = {
 
 export function DiffView({ patch, truncated = false, binary = false, loose = false, className }: DiffViewProps) {
   useLanguage()
-  const shown = parsePatch(patch, { loose })
+  const shown = useMemo(() => parsePatch(patch, { loose }), [patch, loose])
+  const virtualize = shown.length > DIFF_VIRTUALIZE_THRESHOLD
+
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
+  const attachScroller = useCallback((el: HTMLDivElement | null) => {
+    setScrollEl(el)
+  }, [])
+
+  const window = useVirtualLines({
+    totalLines: shown.length,
+    lineHeight: DIFF_LINE_HEIGHT,
+    enabled: virtualize,
+    scrollElement: scrollEl,
+  })
+
+  const widestLine = useMemo(() => {
+    if (!virtualize) return ''
+    return longestLineOf(shown.map((line) => line.text))
+  }, [virtualize, shown])
+
+  const visibleLines = useMemo(() => {
+    if (!virtualize) return shown
+    return shown.slice(window.startIndex, window.endIndex)
+  }, [virtualize, shown, window.startIndex, window.endIndex])
 
   return (
     <div
@@ -49,28 +76,49 @@ export function DiffView({ patch, truncated = false, binary = false, loose = fal
       ) : (
         /* A named, focusable scroll container: keyboard users must be able to scroll
            it (WCAG 2.1.1). */
-        <ScrollArea
-          className="rounded-sm"
-          viewportClass="max-h-96 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          orientation="both"
-          viewportProps={{ role: 'region', 'aria-label': t('common.diff'), tabIndex: 0 }}
+        <div
+          ref={attachScroller}
+          onScroll={window.onScroll}
+          role="region"
+          aria-label={t('common.diff')}
+          tabIndex={0}
+          className="max-h-96 overflow-auto rounded-sm scrollbar-thin outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <div className="font-mono leading-5">
             <div className="min-w-max py-1">
-              {shown.map((line, i) => (
-                <div key={i} className={cn('grid grid-cols-[3rem_3rem_minmax(0,1fr)] border-l-[3px]', ROW[line.kind])}>
-                  <span className="px-1 text-right text-muted-foreground tabular-nums select-none">
-                    {line.oldNo ?? ''}
-                  </span>
-                  <span className="px-1 text-right text-muted-foreground tabular-nums select-none">
-                    {line.newNo ?? ''}
-                  </span>
-                  <span className="px-2 whitespace-pre">{line.text}</span>
+              {virtualize && widestLine ? (
+                <div
+                  aria-hidden="true"
+                  className="invisible h-0 overflow-hidden grid grid-cols-[3rem_3rem_minmax(0,1fr)] border-l-[3px] border-l-transparent select-none"
+                >
+                  <span className="px-1">{shown.length}</span>
+                  <span className="px-1">{shown.length}</span>
+                  <span className="px-2 whitespace-pre">{widestLine}</span>
                 </div>
-              ))}
+              ) : null}
+              {virtualize && window.topPadPx > 0 ? (
+                <div aria-hidden="true" style={{ height: window.topPadPx }} />
+              ) : null}
+              {visibleLines.map((line, i) => {
+                const lineIndex = window.startIndex + i
+                return (
+                  <div key={lineIndex} className={cn('grid grid-cols-[3rem_3rem_minmax(0,1fr)] border-l-[3px]', ROW[line.kind])}>
+                    <span className="px-1 text-right text-muted-foreground tabular-nums select-none">
+                      {line.oldNo ?? ''}
+                    </span>
+                    <span className="px-1 text-right text-muted-foreground tabular-nums select-none">
+                      {line.newNo ?? ''}
+                    </span>
+                    <span className="px-2 whitespace-pre">{line.text}</span>
+                  </div>
+                )
+              })}
+              {virtualize && window.bottomPadPx > 0 ? (
+                <div aria-hidden="true" style={{ height: window.bottomPadPx }} />
+              ) : null}
             </div>
           </div>
-        </ScrollArea>
+        </div>
       )}
     </div>
   )

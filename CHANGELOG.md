@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Commit 235 (2026/11/26)
+
+- Bundle pinned Cua Driver binaries (`0.62.1` with SHA-256 and macOS signature verification) in macOS ARM64 and Windows x64 release builds via `apps/bricks-desktop/scripts/prepare_cua_driver.py` and `.github/workflows/release.yml`, and add local `prepare:cua-driver` and `build:app` npm scripts.
+- Offload heavy Shiki syntax highlighting to a Web Worker with byte and line-length safety caps, virtualize line rendering in `ReaderPanel`, `FileView`, `DiffView`, and `CodeBlockContent`, and optimize `MarkdownView` and `MarkdownDocument` with selective `codeVersion` cache invalidation, `content-visibility: auto`, progressive block batching, and viewport-gated diagram rendering.
+
 ### Commit 234 (2026/11/25)
 
 - Untrack and ignore `bench/general-agents/uv.lock` and `bench/term-bench/uv.lock`, remove the unused `vercel` dependency from `docs/package.json`, upgrade `next` and `fumadocs-*` packages with `npm audit fix` down to zero vulnerabilities, and quote colons in MDX frontmatter descriptions so `docs` builds cleanly.

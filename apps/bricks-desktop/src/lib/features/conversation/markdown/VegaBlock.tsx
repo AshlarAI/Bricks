@@ -22,9 +22,30 @@ export function VegaBlock({ source, complete }: VegaBlockProps) {
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [width, setWidth] = useState(0)
+  const [inView, setInView] = useState(() => typeof IntersectionObserver === 'undefined')
   const hostRef = useRef<HTMLDivElement | null>(null)
   const widthRef = useRef(0)
   const instanceRef = useRef(0)
+
+  useEffect(() => {
+    if (inView) return
+    const host = hostRef.current
+    if (!host || typeof IntersectionObserver === 'undefined') {
+      setInView(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '250px' },
+    )
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [inView])
 
   // The width available, followed (after a pause) while the panel is resized.
   useEffect(() => {
@@ -57,7 +78,7 @@ export function VegaBlock({ source, complete }: VegaBlockProps) {
     const available = width
     const version = ++instanceRef.current
     // The previous chart stays shown while the next one is drawn (a resize).
-    if (!complete || available === 0) {
+    if (!complete || available === 0 || !inView) {
       if (!complete) {
         setSvg(null)
         setError(null)
@@ -94,7 +115,7 @@ export function VegaBlock({ source, complete }: VegaBlockProps) {
     return () => {
       cancelled = true
     }
-  }, [source, complete, width, resolvedTheme])
+  }, [source, complete, inView, width, resolvedTheme])
 
   return (
     <div ref={hostRef} className="w-full">

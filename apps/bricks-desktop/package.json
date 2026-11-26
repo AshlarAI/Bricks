@@ -10,6 +10,8 @@
     "tokens:check": "node scripts/generate-tokens.mjs --check",
     "preview": "vite preview",
     "check": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "prepare:cua-driver": "python3 scripts/prepare_cua_driver.py --tauri-config-out .cua-driver/tauri-cua.generated.json",
+    "build:app": "npm run prepare:cua-driver && tauri build --bundles app --config .cua-driver/tauri-cua.generated.json",
     "tauri": "tauri",
     "test:unit": "vitest run --config tests/vitest.config.ts",
     "test:styles": "node scripts/compare-css-centralization.mjs",

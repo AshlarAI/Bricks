@@ -27,6 +27,8 @@ export function MermaidBlock({ source, complete, id, cache }: MermaidBlockProps)
 
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [inView, setInView] = useState(() => typeof IntersectionObserver === 'undefined')
+  const hostRef = useRef<HTMLDivElement | null>(null)
   const instanceRef = useRef(0)
 
   const settings = diagramSettings(diagramsPref)
@@ -34,14 +36,33 @@ export function MermaidBlock({ source, complete, id, cache }: MermaidBlockProps)
   const renderLook = settings.mermaid.look
   const securityLevel = settings.mermaid.securityLevel
 
-  // Render only a closed fence, once per source and theme. A late result for
-  // an older source or theme is dropped.
+  useEffect(() => {
+    if (inView) return
+    const host = hostRef.current
+    if (!host || typeof IntersectionObserver === 'undefined') {
+      setInView(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '250px' },
+    )
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [inView])
+
+  // Render only a closed fence once near the viewport, once per source and theme.
   useEffect(() => {
     const version = ++instanceRef.current
     // A replacement/open fence must never keep the previous diagram exportable.
     setSvg(null)
     setError(null)
-    if (!complete) return
+    if (!complete || !inView) return
     let cancelled = false
     void (async () => {
       await fontsReady
@@ -70,14 +91,14 @@ export function MermaidBlock({ source, complete, id, cache }: MermaidBlockProps)
     return () => {
       cancelled = true
     }
-  }, [source, complete, id, cache, renderTheme, resolvedTheme, renderLook, securityLevel])
+  }, [source, complete, inView, id, cache, renderTheme, resolvedTheme, renderLook, securityLevel])
 
   if (svg) {
     return <SvgViewer svg={svg} source={source} title="Mermaid" />
   }
 
   return (
-    <figure className="my-2 overflow-hidden rounded-md bg-code-bg text-code-foreground" aria-busy={!error && complete}>
+    <figure ref={hostRef} className="my-2 overflow-hidden rounded-md bg-code-bg text-code-foreground" aria-busy={!error && complete}>
       {error && (
         <p className="px-2.5 pt-2 text-xs text-destructive" role="alert">
           {t('conversation.diagramNotRendered', { error })}

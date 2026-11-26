@@ -2,15 +2,15 @@
 // or result. One MarkdownDocument per instance (its caches, ids and math
 // macros are its own); `idPrefix` must be unique per text and rendering zone.
 // The caller throttles `source` while it streams.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useLanguage } from '$lib/i18n/i18n'
 import { useCodeLanguagesVersion } from '$lib/code-highlight'
 import { cn } from '$lib/utils'
 import { MarkdownDocument, markdownClicks } from '../markdown'
 import { loadKatex } from './math'
-import { createMermaidCache } from './mermaid'
+import { createMermaidCache, type MermaidCache } from './mermaid'
 import type { CitationSource } from './citations'
-import type { FileReference, MarkdownHeading, MathRenderer } from './types'
+import type { FileReference, MarkdownHeading, MathRenderer, RenderedBlock } from './types'
 import CitationCard, { type CitationCardHandle } from './CitationCard'
 import CodeFence from './CodeFence'
 import DiffBlock from './DiffBlock'
@@ -20,6 +20,13 @@ import SvgBlock from './SvgBlock'
 import VegaBlock from './VegaBlock'
 import WebPageBlock from './WebPageBlock'
 import './markdown-view.css'
+
+const DEFER_MIN_BLOCKS = 24
+const DEFER_HEAD_BLOCKS = 6
+const DEFER_TAIL_STREAMING_BLOCKS = 4
+const PROGRESSIVE_MIN_BLOCKS = 80
+const PROGRESSIVE_INITIAL_BATCH = 40
+const PROGRESSIVE_STEP = 60
 
 export interface MarkdownViewProps {
   source: string
@@ -35,6 +42,65 @@ export interface MarkdownViewProps {
   sources?: ReadonlyMap<string, CitationSource>
   className?: string
 }
+
+const MarkdownBlockView = memo(function MarkdownBlockView({
+  block,
+  deferred,
+  idPrefix,
+  mermaidCache,
+  onFile,
+  onLinkResult,
+}: {
+  block: RenderedBlock
+  deferred: boolean
+  idPrefix: string
+  mermaidCache: MermaidCache
+  onFile?: (ref: FileReference) => void
+  onLinkResult?: (error: string | null) => void
+}) {
+  if (block.kind === 'html') {
+    return (
+      <div
+        className={deferred ? 'md-html md-block-deferred' : 'md-html contents'}
+        dangerouslySetInnerHTML={{ __html: block.html }}
+      />
+    )
+  }
+
+  let content: React.ReactNode
+  if (block.kind === 'mermaid') {
+    content = (
+      <MermaidBlock
+        source={block.source}
+        complete={block.complete}
+        id={`${idPrefix}-${block.key}`}
+        cache={mermaidCache}
+      />
+    )
+  } else if (block.kind === 'svg') {
+    content = <SvgBlock source={block.source} complete={block.complete} />
+  } else if (block.kind === 'vega') {
+    content = <VegaBlock source={block.source} complete={block.complete} />
+  } else if (block.kind === 'webpage') {
+    content = <WebPageBlock source={block.source} complete={block.complete} />
+  } else if (block.kind === 'code') {
+    content = <CodeFence source={block.source} lang={block.lang} complete={block.complete} />
+  } else if (block.kind === 'markdown') {
+    content = (
+      <MarkdownBlock
+        source={block.source}
+        complete={block.complete}
+        idPrefix={`${idPrefix}-${block.key}`}
+        onFile={onFile}
+        onLinkResult={onLinkResult}
+      />
+    )
+  } else {
+    content = <DiffBlock source={block.source} complete={block.complete} onFile={onFile} />
+  }
+
+  return deferred ? <div className="md-block-deferred">{content}</div> : content
+})
 
 export function MarkdownView({
   source,
@@ -86,12 +152,52 @@ export function MarkdownView({
     }
   }, [idPrefix])
 
-  doc.setCodeVersion(codeVersion)
-  doc.setLanguage(language)
-  void mathVersion
-  void docGeneration
-  const blocks = doc.update(source, !streaming)
-  const headings = doc.headings
+  const { blocks, headings } = useMemo(() => {
+    doc.setCodeVersion(codeVersion)
+    doc.setLanguage(language)
+    void mathVersion
+    void docGeneration
+    const nextBlocks = doc.update(source, !streaming)
+    return { blocks: nextBlocks, headings: doc.headings }
+  }, [doc, source, streaming, codeVersion, language, mathVersion, docGeneration])
+
+  const progressive = !streaming && blocks.length > PROGRESSIVE_MIN_BLOCKS && typeof requestAnimationFrame !== 'undefined'
+  const [batch, setBatch] = useState<{ idPrefix: string; source: string; count: number }>({
+    idPrefix,
+    source,
+    count: PROGRESSIVE_INITIAL_BATCH,
+  })
+  const activeCount =
+    batch.idPrefix === idPrefix && batch.source === source ? batch.count : PROGRESSIVE_INITIAL_BATCH
+  const targetTotal = blocks.length
+
+  useEffect(() => {
+    if (!progressive) return
+    let count =
+      batch.idPrefix === idPrefix && batch.source === source ? batch.count : PROGRESSIVE_INITIAL_BATCH
+    if (count >= targetTotal) return
+    if (batch.idPrefix !== idPrefix || batch.source !== source) {
+      setBatch({ idPrefix, source, count })
+    }
+    let raf = 0
+    let cancelled = false
+    const pump = () => {
+      if (cancelled) return
+      count = Math.min(targetTotal, count + PROGRESSIVE_STEP)
+      setBatch({ idPrefix, source, count })
+      if (count < targetTotal) {
+        raf = requestAnimationFrame(pump)
+      }
+    }
+    raf = requestAnimationFrame(pump)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressive, idPrefix, source, targetTotal])
+
+  const visibleBlocks = progressive ? blocks.slice(0, Math.min(blocks.length, activeCount)) : blocks
 
   const prevHeadingsKeyRef = useRef<string | null>(null)
   useEffect(() => {
@@ -159,6 +265,8 @@ export function MarkdownView({
     }
   }, [])
 
+  const deferTailLimit = streaming ? blocks.length - DEFER_TAIL_STREAMING_BLOCKS : blocks.length
+
   return (
     <>
       <div
@@ -169,53 +277,17 @@ export function MarkdownView({
           className,
         )}
       >
-        {blocks.map((block) => {
-          if (block.kind === 'html') {
-            return (
-              <div
-                key={block.key}
-                className="md-html contents"
-                dangerouslySetInnerHTML={{ __html: block.html }}
-              />
-            )
-          }
-          if (block.kind === 'mermaid') {
-            return (
-              <MermaidBlock
-                key={block.key}
-                source={block.source}
-                complete={block.complete}
-                id={`${idPrefix}-${block.key}`}
-                cache={mermaidCache}
-              />
-            )
-          }
-          if (block.kind === 'svg') {
-            return <SvgBlock key={block.key} source={block.source} complete={block.complete} />
-          }
-          if (block.kind === 'vega') {
-            return <VegaBlock key={block.key} source={block.source} complete={block.complete} />
-          }
-          if (block.kind === 'webpage') {
-            return <WebPageBlock key={block.key} source={block.source} complete={block.complete} />
-          }
-          if (block.kind === 'code') {
-            return <CodeFence key={block.key} source={block.source} lang={block.lang} complete={block.complete} />
-          }
-          if (block.kind === 'markdown') {
-            return (
-              <MarkdownBlock
-                key={block.key}
-                source={block.source}
-                complete={block.complete}
-                idPrefix={`${idPrefix}-${block.key}`}
-                onFile={onFile}
-                onLinkResult={onLinkResult}
-              />
-            )
-          }
-          return <DiffBlock key={block.key} source={block.source} complete={block.complete} onFile={onFile} />
-        })}
+        {visibleBlocks.map((block, index) => (
+          <MarkdownBlockView
+            key={block.key}
+            block={block}
+            deferred={blocks.length > DEFER_MIN_BLOCKS && index >= DEFER_HEAD_BLOCKS && index < deferTailLimit}
+            idPrefix={idPrefix}
+            mermaidCache={mermaidCache}
+            onFile={onFile}
+            onLinkResult={onLinkResult}
+          />
+        ))}
       </div>
 
       <CitationCard ref={cardRef} sources={sources} streaming={streaming} onLinkResult={onLinkResult} />

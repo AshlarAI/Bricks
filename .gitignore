@@ -81,6 +81,7 @@ TOOL-CALLING-RELIABILITY.md
 # Local browser comparisons, screenshots and generated test reports.
 /output/
 /.playwright-cli/
+/apps/bricks-desktop/.cua-driver/
 
 # Private sprint notes and walkthroughs stay local.
 /docs/sprint-*.md

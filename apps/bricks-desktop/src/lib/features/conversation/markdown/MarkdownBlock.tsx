@@ -61,11 +61,7 @@ export function MarkdownBlock({
           </div>
         </ScrollArea>
       ) : (
-        <CodeBlock.Content lineNumbers className="max-h-96 pt-2.5!">
-          {lines.map((line, index) => (
-            <CodeBlock.Line key={index} code={line} />
-          ))}
-        </CodeBlock.Content>
+        <CodeBlock.Content lineNumbers lines={lines} className="max-h-96 pt-2.5!" />
       )}
     </CodeBlock.Root>
   )

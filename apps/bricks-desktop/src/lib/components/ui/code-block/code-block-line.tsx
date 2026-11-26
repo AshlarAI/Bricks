@@ -26,9 +26,13 @@ type CodeBlockLineVariant = VariantProps<typeof codeBlockLineVariants>["variant"
 type CodeBlockLineToken = HighlightedToken
 
 const newline = "\n"
+const MAX_STYLE_CACHE = 512
+const styleCache = new Map<string, React.CSSProperties>()
 
 function parseTokenStyle(style?: string): React.CSSProperties | undefined {
   if (!style) return undefined
+  const cached = styleCache.get(style)
+  if (cached) return cached
   const result: Record<string, string> = {}
   for (const declaration of style.split(";")) {
     const colon = declaration.indexOf(":")
@@ -41,12 +45,17 @@ function parseTokenStyle(style?: string): React.CSSProperties | undefined {
       : prop.replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase())
     result[key] = value
   }
-  return Object.keys(result).length > 0
-    ? (result as React.CSSProperties)
-    : undefined
+  if (Object.keys(result).length === 0) return undefined
+  const frozen = result as React.CSSProperties
+  if (styleCache.size >= MAX_STYLE_CACHE) {
+    const oldest = styleCache.keys().next()
+    if (!oldest.done) styleCache.delete(oldest.value)
+  }
+  styleCache.set(style, frozen)
+  return frozen
 }
 
-function CodeBlockLine({
+const CodeBlockLine = React.memo(function CodeBlockLine({
   className,
   variant = "default",
   code,
@@ -89,7 +98,7 @@ function CodeBlockLine({
       </span>
     </span>
   )
-}
+})
 
 export {
   CodeBlockLine,

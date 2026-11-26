@@ -4,6 +4,14 @@
 import { highlightSync, languageId, loadHighlighter, type HighlightedLine } from './highlighter'
 import { ObservableStore, useStoreSelector } from '$lib/state/observable'
 
+/** Above this byte/char budget, Shiki tokenization is skipped to keep the UI responsive. */
+export const MAX_HIGHLIGHT_CHARS = 512 * 1024
+/** A single very long line (minified JS/JSON) stalls regex tokenizers and WebKit layout. */
+export const MAX_HIGHLIGHT_LINE_CHARS = 4_000
+/** Above this size, complete files/blocks highlight off the main thread via `shiki.worker.ts`. */
+export const WORKER_HIGHLIGHT_MIN_CHARS = 16_000
+export const WORKER_HIGHLIGHT_MIN_LINES = 250
+
 class CodeLanguages extends ObservableStore {
   /** Bumped each time a language finishes loading. */
   version = 0
@@ -31,11 +39,11 @@ export function useCodeLanguagesVersion(): number {
   return useStoreSelector(codeLanguages, (s) => s.version)
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-function lineHtml(line: HighlightedLine): string {
+export function lineHtml(line: HighlightedLine): string {
   if (typeof line === 'string') return escapeHtml(line)
   return line
     .map((token) => {
@@ -44,6 +52,33 @@ function lineHtml(line: HighlightedLine): string {
       return `<span${cls}${style}>${escapeHtml(token.content)}</span>`
     })
     .join('')
+}
+
+/** True when `text` is small enough and free of giant minified lines for Shiki. */
+export function canHighlightText(text: string): boolean {
+  if (text.length > MAX_HIGHLIGHT_CHARS) return false
+  let start = 0
+  while (start < text.length) {
+    const nl = text.indexOf('\n', start)
+    const end = nl === -1 ? text.length : nl
+    if (end - start > MAX_HIGHLIGHT_LINE_CHARS) return false
+    start = end + 1
+  }
+  return true
+}
+
+/** True when `text` should be highlighted asynchronously in a Web Worker rather than blocking render. */
+export function shouldUseWorkerHighlight(text: string, lineCount?: number): boolean {
+  if (text.length >= WORKER_HIGHLIGHT_MIN_CHARS) return true
+  if (lineCount !== undefined && lineCount >= WORKER_HIGHLIGHT_MIN_LINES) return true
+  let lines = 1
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) === 10) {
+      lines += 1
+      if (lines >= WORKER_HIGHLIGHT_MIN_LINES) return true
+    }
+  }
+  return false
 }
 
 /** True when `language` is one Shiki can highlight. */
@@ -56,7 +91,7 @@ export function isHighlightable(language: string | null | undefined): boolean {
  * not loaded yet (it is requested) or not known. The text is always escaped.
  */
 export function highlightedLines(code: string, language: string | null | undefined): string[] | null {
-  if (!isHighlightable(language)) return null
+  if (!isHighlightable(language) || !canHighlightText(code)) return null
   const lines = highlightSync(code, language as string)
   if (lines === null) {
     codeLanguages.request(language as string)

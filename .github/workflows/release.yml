@@ -370,6 +370,10 @@ jobs:
           cache: npm
           cache-dependency-path: apps/bricks-desktop/package-lock.json
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: "build-${{ needs.init.outputs.release_kind }}-${{ matrix.platform }}"
@@ -394,10 +398,19 @@ jobs:
             test -n "$TAURI_SIGNING_PRIVATE_KEY"
           fi
 
+          CUA_DIR="${{ runner.temp }}/cua-driver"
+          CUA_CFG="${{ runner.temp }}/tauri-cua.json"
+          python3 scripts/prepare_cua_driver.py \
+            --platform macos-arm64 \
+            --out-dir "$CUA_DIR" \
+            --tauri-config-out "$CUA_CFG" \
+            --app-version "$CALVER" \
+            --create-updater-artifacts "$UPDATER_FLAG"
+
           npx --no-install tauri build \
             --target "${{ matrix.target }}" \
             --bundles dmg,app \
-            --config "{\"version\":\"${CALVER}\",\"bundle\":{\"createUpdaterArtifacts\":${UPDATER_FLAG}}}" \
+            --config "$CUA_CFG" \
             -- --locked
 
           OUT_DIR="${{ github.workspace }}/release-artifacts"
@@ -407,6 +420,8 @@ jobs:
           DMG_PATH="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)"
           APP_PATH="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -name '*.app' | head -n 1)"
           test -n "$DMG_PATH" && test -d "$APP_PATH"
+          test -x "$APP_PATH/Contents/Resources/CuaDriver.app/Contents/MacOS/cua-driver"
+          codesign --verify --strict "$APP_PATH/Contents/Resources/CuaDriver.app"
 
           cp "$DMG_PATH" "$OUT_DIR/Bricks_${CALVER}_macos-arm64.dmg"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT_DIR/Bricks_${CALVER}_macos-arm64.zip"
@@ -436,11 +451,15 @@ jobs:
           if ($UpdaterFlag -and [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
             throw "TAURI_SIGNING_PRIVATE_KEY secret is required for official releases"
           }
-          $CfgFile = Join-Path $env:RUNNER_TEMP "tauri-version.json"
-          @{
-            version = $CalVer
-            bundle = @{ createUpdaterArtifacts = $UpdaterFlag }
-          } | ConvertTo-Json -Compress | Set-Content -Path $CfgFile -Encoding utf8NoBOM
+          $CuaDir = Join-Path $env:RUNNER_TEMP "cua-driver"
+          $CfgFile = Join-Path $env:RUNNER_TEMP "tauri-cua.json"
+          python scripts\prepare_cua_driver.py `
+            --platform windows-x64 `
+            --out-dir $CuaDir `
+            --tauri-config-out $CfgFile `
+            --app-version $CalVer `
+            --create-updater-artifacts ($UpdaterFlag.ToString().ToLowerInvariant())
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           npx --no-install tauri build `
             --target $Target `
@@ -473,6 +492,11 @@ jobs:
           $WebViewDll = Join-Path $RelDir "WebView2Loader.dll"
           if (Test-Path $WebViewDll) {
             Copy-Item $WebViewDll (Join-Path $Stage "WebView2Loader.dll")
+          }
+          foreach ($CuaBin in @("cua-driver.exe", "cua-cursor-theme.exe", "cua-driver-uia.exe")) {
+            $CuaSrc = Join-Path $CuaDir $CuaBin
+            if (-not (Test-Path $CuaSrc)) { throw "Missing staged Cua Driver binary: $CuaSrc" }
+            Copy-Item $CuaSrc (Join-Path $Stage $CuaBin)
           }
 
           $ZipOut = Join-Path $OutDir "Bricks_${CalVer}_windows-x64.zip"

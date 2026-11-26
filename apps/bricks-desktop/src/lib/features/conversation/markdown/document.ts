@@ -13,6 +13,7 @@ import {
   highlightCount,
   lexBlocks,
   marked,
+  pendingHighlightCount,
   withScope,
   type LinkMap,
   type MathSettings,
@@ -29,6 +30,7 @@ interface CachedBlock {
   html: string
   bytes: number
   macros: MacroState | null
+  codePending: boolean
 }
 
 /** A macro mutation, replayed on a cache hit without running KaTeX again. Values are
@@ -58,6 +60,8 @@ interface Entry {
   refs: Tok[]
   fnSig: string
   mathCount: number
+  hasCode: boolean
+  codePending: boolean
   complete: boolean
   output: RenderedBlock | null
   outputSig: string
@@ -116,6 +120,8 @@ function makeEntry(start: number, raw: string, token: Token | null): Entry {
     refs: [],
     fnSig: '',
     mathCount: 0,
+    hasCode: false,
+    codePending: false,
     complete: kind === 'html' || kind === 'none' ? false : isFence(raw) ? fenceClosed(raw) : true,
     output: null,
     outputSig: '',
@@ -127,7 +133,9 @@ function makeEntry(start: number, raw: string, token: Token | null): Entry {
       if (inner.type === 'heading') entry.headingTokens.push(inner)
       else if (inner.type === 'footnoteRef') entry.refs.push(inner)
       else if (inner.type === 'inlineMath' || inner.type === 'blockMath') entry.mathCount += 1
+      else if (inner.type === 'code') entry.hasCode = true
     })
+    entry.codePending = entry.hasCode
   }
   return entry
 }
@@ -504,6 +512,8 @@ export class MarkdownDocument {
     entry.refs = fresh.refs
     entry.mathCount = fresh.mathCount
     entry.labelSig = labelSignature(entry.labels, links)
+    entry.hasCode = fresh.hasCode
+    entry.codePending = fresh.codePending
     entry.headings = []
     entry.idsSig = ''
     return hadHeadings || fresh.headingTokens.length > 0
@@ -547,17 +557,24 @@ export class MarkdownDocument {
   }
 
   private renderEntry(entry: Entry, previousByKey: Map<string, Entry>, math: MathSettings, stats: RenderStats): void {
-    const sig = [entry.labelSig, entry.idsSig, entry.fnSig, entry.mathCount > 0 ? `m${this.mathVersion}:${this.macroVersion}` : '', `c${this.codeVersion}`].join('\u0004')
-    if (entry.output !== null && entry.outputSig === sig) {
+    const old = previousByKey.get(entry.key)
+    const cached = this.cache.get(entry.key)
+    const codeKeyFor = (pending: boolean) => (!entry.hasCode ? '' : pending ? `c${this.codeVersion}` : 'c_done')
+    const sigFor = (pending: boolean) =>
+      [entry.labelSig, entry.idsSig, entry.fnSig, entry.mathCount > 0 ? `m${this.mathVersion}:${this.macroVersion}` : '', codeKeyFor(pending)].join('\u0004')
+
+    const activeSig = sigFor(entry.codePending)
+    if (entry.output !== null && entry.outputSig === activeSig) {
       this.restoreMacros(entry.macros)
       stats.reusedBlocks += 1
       return
     }
-    const old = previousByKey.get(entry.key)
     if (old && old.raw === entry.raw) {
-      if (old.output !== null && old.outputSig === sig) {
+      const oldSig = sigFor(old.codePending)
+      if (old.output !== null && old.outputSig === oldSig) {
+        entry.codePending = old.codePending
         entry.output = old.output
-        entry.outputSig = sig
+        entry.outputSig = oldSig
         entry.macros = old.macros
         this.restoreMacros(entry.macros)
         stats.reusedBlocks += 1
@@ -565,27 +582,33 @@ export class MarkdownDocument {
       }
       if (old.outputSig !== '') stats.invalidatedBlocks += 1
     }
-    const cached = this.cache.get(entry.key)
-    if (cached && cached.raw === entry.raw && cached.sig === sig) {
-      this.cache.delete(entry.key)
-      this.cache.set(entry.key, cached)
-      entry.output = { key: entry.key, kind: 'html', html: cached.html }
-      entry.outputSig = sig
-      entry.macros = cached.macros
-      this.restoreMacros(entry.macros)
-      stats.reusedBlocks += 1
-      return
+    if (cached && cached.raw === entry.raw) {
+      const cachedSig = sigFor(cached.codePending)
+      if (cached.sig === cachedSig) {
+        this.cache.delete(entry.key)
+        this.cache.set(entry.key, cached)
+        entry.codePending = cached.codePending
+        entry.output = { key: entry.key, kind: 'html', html: cached.html }
+        entry.outputSig = cachedSig
+        entry.macros = cached.macros
+        this.restoreMacros(entry.macros)
+        stats.reusedBlocks += 1
+        return
+      }
     }
+    const pendingBefore = pendingHighlightCount()
     const rendered = withScope(this.prefix, () => marked.parser([entry.token as Token]))
     const beforeMacros = entry.mathCount > 0 ? { ...this.macros } : null
     const html = finishHtml(rendered.html, rendered.maths, math)
+    entry.codePending = entry.hasCode && pendingHighlightCount() > pendingBefore
+    const sig = sigFor(entry.codePending)
     entry.macros = null
     if (beforeMacros && (Object.keys(beforeMacros).length !== Object.keys(this.macros).length ||
       Object.keys(this.macros).some((name) => beforeMacros[name] !== this.macros[name]))) {
       entry.macros = { version: ++this.macroSerial, values: { ...this.macros } }
       this.macroVersion = entry.macros.version
     }
-    this.remember(entry.key, entry.raw, sig, html, entry.macros)
+    this.remember(entry.key, entry.raw, sig, html, entry.macros, entry.codePending)
     stats.renderedBlocks += 1
     entry.output = { key: entry.key, kind: 'html', html }
     entry.outputSig = sig
@@ -604,14 +627,21 @@ export class MarkdownDocument {
     this.macroVersion = state.version
   }
 
-  private remember(key: string, raw: string, sig: string, html: string, macros: MacroState | null): void {
+  private remember(
+    key: string,
+    raw: string,
+    sig: string,
+    html: string,
+    macros: MacroState | null,
+    codePending: boolean,
+  ): void {
     const previous = this.cache.get(key)
     if (previous) {
       this.cacheBytes -= previous.bytes
       this.cache.delete(key)
     }
     const bytes = 2 * (raw.length + html.length)
-    this.cache.set(key, { raw, sig, html, bytes, macros })
+    this.cache.set(key, { raw, sig, html, bytes, macros, codePending })
     this.cacheBytes += bytes
     while (this.cache.size > this.cacheLimit || this.cacheBytes > CACHE_BYTES) {
       const oldest = this.cache.keys().next()

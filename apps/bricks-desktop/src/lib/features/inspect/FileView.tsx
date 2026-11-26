@@ -1,15 +1,25 @@
 // Read-only window of a project file opened from a file reference in a
 // message. The path is resolved and checked by Rust (`project_file_read`)
 // in the project of the conversation the message belongs to.
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ScrollArea } from '$lib/components/ui/scroll-area'
-import { highlightedLines, useCodeLanguagesVersion } from '$lib/code-highlight'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  canHighlightText,
+  highlightedLines,
+  isHighlightable,
+  shouldUseWorkerHighlight,
+  useCodeLanguagesVersion,
+} from '$lib/code-highlight'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import FileIcon from '$lib/features/file-icons/FileIcon'
 import { projectFileRead } from '$lib/ipc/client'
 import type { ProjectFileWindow } from '$lib/features/conversation/markdown/types'
+import { longestLineOf, useVirtualLines } from '$lib/hooks/use-virtual-lines'
+import { highlightHtmlLinesAsync } from '$lib/shiki-async'
 import type { InspectorState } from '$lib/state/ui'
 import { cn } from '$lib/utils'
+
+const FILE_LINE_HEIGHT = 20
+const FILE_VIRTUALIZE_THRESHOLD = 200
 
 export function FileView({ args }: { args: InspectorState['args'] }) {
   useLanguage()
@@ -23,6 +33,11 @@ export function FileView({ args }: { args: InspectorState['args'] }) {
   const [file, setFile] = useState<ProjectFileWindow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
+  const attachScroller = useCallback((el: HTMLDivElement | null) => {
+    scrollerRef.current = el
+    setScrollEl(el)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -45,16 +60,83 @@ export function FileView({ args }: { args: InspectorState['args'] }) {
   const last = endLine ?? line ?? 0
   const shownPath = file?.path ?? path
 
+  const sourceText = useMemo(() => (file && file.lines.length > 0 ? file.lines.join('\n') : ''), [file])
+  const totalLines = file?.lines.length ?? 0
+  const virtualize = totalLines > FILE_VIRTUALIZE_THRESHOLD
+  const useWorker =
+    !!file &&
+    sourceText !== '' &&
+    isHighlightable(file.language) &&
+    canHighlightText(sourceText) &&
+    shouldUseWorkerHighlight(sourceText, totalLines)
+
+  const [workerHighlight, setWorkerHighlight] = useState<{
+    source: string
+    language: string | null
+    lines: string[]
+  } | null>(null)
+
   useEffect(() => {
-    if (!file) return
-    scrollerRef.current?.querySelector<HTMLElement>('[data-first-marked]')?.scrollIntoView({ block: 'center' })
-  }, [file, first])
+    if (!useWorker || !file?.language) {
+      setWorkerHighlight(null)
+      return
+    }
+    const controller = new AbortController()
+    void highlightHtmlLinesAsync(sourceText, file.language, controller.signal).then((lines) => {
+      if (!controller.signal.aborted && lines) {
+        setWorkerHighlight({ source: sourceText, language: file.language, lines })
+      }
+    })
+    return () => controller.abort()
+  }, [useWorker, sourceText, file?.language])
 
   const highlighted = useMemo(() => {
-    if (!file || file.lines.length === 0) return null
+    if (!file || !sourceText) return null
     void codeVersion
-    return highlightedLines(file.lines.join('\n'), file.language)
-  }, [file, codeVersion])
+    if (useWorker) {
+      if (
+        workerHighlight &&
+        workerHighlight.source === sourceText &&
+        workerHighlight.language === file.language
+      ) {
+        return workerHighlight.lines
+      }
+      return null
+    }
+    return highlightedLines(sourceText, file.language)
+  }, [file, sourceText, codeVersion, useWorker, workerHighlight])
+
+  const window = useVirtualLines({
+    totalLines,
+    lineHeight: FILE_LINE_HEIGHT,
+    enabled: virtualize,
+    scrollElement: scrollEl,
+  })
+
+  const widestLine = useMemo(() => {
+    if (!virtualize || !file) return ''
+    return longestLineOf(file.lines)
+  }, [virtualize, file])
+
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!file || !el) return
+    if (virtualize && first > 0) {
+      const targetIndex = Math.max(0, first - file.start)
+      const centerOffset = Math.max(0, (el.clientHeight || 300) / 2 - FILE_LINE_HEIGHT / 2)
+      el.scrollTop = Math.max(0, targetIndex * FILE_LINE_HEIGHT - centerOffset)
+      window.onScroll()
+      return
+    }
+    el.querySelector<HTMLElement>('[data-first-marked]')?.scrollIntoView({ block: 'center' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, first, virtualize])
+
+  const visibleLines = useMemo(() => {
+    if (!file) return []
+    if (!virtualize) return file.lines
+    return file.lines.slice(window.startIndex, window.endIndex)
+  }, [file, virtualize, window.startIndex, window.endIndex])
 
   return (
     <div className="flex min-h-0 flex-col gap-2 text-ui">
@@ -82,22 +164,36 @@ export function FileView({ args }: { args: InspectorState['args'] }) {
         </p>
       ) : (
         <>
-          <ScrollArea
-            className="rounded-md bg-code-bg"
-            viewportClass="max-h-[60vh] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            orientation="both"
-            viewportRef={scrollerRef}
-            viewportProps={{ role: 'region', 'aria-label': t('common.contentOf', { path }), tabIndex: 0 }}
+          <div
+            ref={attachScroller}
+            onScroll={window.onScroll}
+            role="region"
+            aria-label={t('common.contentOf', { path })}
+            tabIndex={0}
+            className="max-h-[60vh] overflow-auto rounded-md bg-code-bg scrollbar-thin outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <div className="font-mono text-xs leading-5 text-code-foreground">
               <div className="min-w-max py-1">
-                {file.lines.map((text, i) => {
-                  const n = file.start + i
+                {virtualize && widestLine ? (
+                  <div
+                    aria-hidden="true"
+                    className="invisible h-0 overflow-hidden grid grid-cols-[3.5rem_minmax(0,1fr)] select-none"
+                  >
+                    <span className="px-2">{file.start + totalLines}</span>
+                    <span className="px-2 whitespace-pre">{widestLine}</span>
+                  </div>
+                ) : null}
+                {virtualize && window.topPadPx > 0 ? (
+                  <div aria-hidden="true" style={{ height: window.topPadPx }} />
+                ) : null}
+                {visibleLines.map((text, i) => {
+                  const lineIndex = window.startIndex + i
+                  const n = file.start + lineIndex
                   const marked = first > 0 && n >= first && n <= last
-                  const html = highlighted?.[i]
+                  const html = highlighted?.[lineIndex]
                   return (
                     <div
-                      key={i}
+                      key={lineIndex}
                       className={cn('grid grid-cols-[3.5rem_minmax(0,1fr)]', marked && 'bg-info-soft')}
                       data-first-marked={marked && n === first ? '' : undefined}
                     >
@@ -110,9 +206,12 @@ export function FileView({ args }: { args: InspectorState['args'] }) {
                     </div>
                   )
                 })}
+                {virtualize && window.bottomPadPx > 0 ? (
+                  <div aria-hidden="true" style={{ height: window.bottomPadPx }} />
+                ) : null}
               </div>
             </div>
-          </ScrollArea>
+          </div>
           {file.truncated && (
             <p className="text-xs text-muted-foreground">
               {t('inspect.linesToOf', {

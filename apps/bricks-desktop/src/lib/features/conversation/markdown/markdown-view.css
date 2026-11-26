@@ -244,3 +244,11 @@
 .md > .md-html:last-child > :last-child {
   margin-bottom: 0;
 }
+/* Defer layout and paint for off-screen blocks in large Markdown documents. */
+.md .md-block-deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 96px;
+}
+.md .md-block-deferred > :first-child {
+  margin-top: 0;
+}

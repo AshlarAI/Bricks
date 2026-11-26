@@ -2,7 +2,7 @@
 // is raw until `finishHtml`: sanitized (sanitizeMarkdown), then math placeholders replaced
 // by the math renderer (or by the source when none is installed).
 import { t } from '$lib/i18n/i18n'
-import { highlightedLines, isHighlightable } from '$lib/code-highlight'
+import { canHighlightText, highlightedLines, isHighlightable } from '$lib/code-highlight'
 import { Lexer, Marked, Renderer, type Parser, type Token, type Tokens } from 'marked'
 import { isOpenableUrl } from '../links'
 import { buttonVariants } from '$lib/components/ui/button'
@@ -51,10 +51,16 @@ interface Scope {
 /** The message being rendered (set around marked's parser, never shared between renders). */
 let scope: Scope | null = null
 let highlights = 0
+let pendingHighlights = 0
 
 /** Number of code blocks highlighted so far; callers take differences. */
 export function highlightCount(): number {
   return highlights
+}
+
+/** Number of code blocks deferred because their grammar was still loading. */
+export function pendingHighlightCount(): number {
+  return pendingHighlights
 }
 
 export function escapeHtml(text: string): string {
@@ -102,7 +108,10 @@ let nextBody = 0
 export function highlightedBody(text: string, language: string): string {
   if (language === '') return escapeHtml(text)
   const lines = highlightedLines(text, language)
-  if (lines === null) return escapeHtml(text)
+  if (lines === null) {
+    if (isHighlightable(language) && canHighlightText(text)) pendingHighlights += 1
+    return escapeHtml(text)
+  }
   highlights += 1
   const id = nextBody++
   pendingBodies.set(id, lines.join('\n'))

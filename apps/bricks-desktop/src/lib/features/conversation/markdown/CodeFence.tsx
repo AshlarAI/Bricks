@@ -100,11 +100,7 @@ export function CodeFence({ source, lang, complete }: CodeFenceProps) {
   )
 
   const body = (className: string) => (
-    <CodeBlock.Content lineNumbers wrap={wrap} className={className}>
-      {lines.map((line, index) => (
-        <CodeBlock.Line key={index} code={line} />
-      ))}
-    </CodeBlock.Content>
+    <CodeBlock.Content lineNumbers wrap={wrap} lines={lines} className={className} />
   )
 
   // A long block is an artifact: a titled frame of its own, its size in lines under the title.
