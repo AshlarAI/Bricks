@@ -147,7 +147,7 @@ async fn the_later_removed_tools_are_unknown_with_the_standard_error() {
     let results = tool_results(&agent);
     assert_eq!(results.len(), 4, "{results:?}");
     let total = bricks_tools::all().len();
-    let expected_total = if cfg!(unix) { 13 } else { 12 };
+    let expected_total = if cfg!(unix) { 12 } else { 11 };
     assert_eq!(
         total, expected_total,
         "the standard set exposes only the platform-native shell"

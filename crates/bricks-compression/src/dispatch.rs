@@ -153,6 +153,10 @@ impl Compressor {
         let tool = out.tool.to_ascii_lowercase();
         let outcome = if content.is_empty() {
             Outcome::unchanged(content, "empty")
+        } else if matches!(tool.as_str(), "read" | "readfile" | "read_file" | "view") {
+            self.read(out.input, content, level, out.is_error)
+        } else if is_protected_tool(&tool) || has_protected_marker(content, self.raw.as_ref()) {
+            Outcome::unchanged(content, "protected")
         } else {
             match tool.as_str() {
                 "bash" | "exec" | "execshell" | "shell" | "run" | "runshell" | "powershell" => {
@@ -161,15 +165,16 @@ impl Compressor {
                         .get("command")
                         .and_then(Value::as_str)
                         .unwrap_or("");
-                    self.shell(command, content, level, out.exit_code)
+                    self.shell(command, content, level, out.exit_code, out.is_error)
                 }
-                "read" | "readfile" | "read_file" | "view" => self.read(out.input, content, level),
                 // Bricks' web tools page and select their own output: a page
                 // window must stay in document order and whole, so only the
                 // hard size cap applies.
-                "webfetch" | "web_fetch" | "websearch" | "web_search" => self.web_page(content),
-                "fetch" | "http" => self.web(content, level),
-                _ => self.other(content, level),
+                "webfetch" | "web_fetch" | "websearch" | "web_search" => {
+                    self.web_page(content, out.is_error)
+                }
+                "fetch" | "http" => self.web(content, level, out.is_error),
+                _ => self.other(content, level, out.is_error),
             }
         };
         self.finish(out, content, outcome)
@@ -183,28 +188,36 @@ impl Compressor {
         content: &str,
         level: CompressionLevel,
         exit_code: Option<i32>,
+        is_error: bool,
     ) -> Outcome {
         if level.is_off() {
-            return self.cap_exact(content, "shell-off", "");
+            return self.cap_exact(content, "shell-off", "", is_error);
         }
         let analysis = command::analyze(command);
         let (rule, mut notes) = self.choose_rule(&analysis);
         let Some(rule) = rule else {
-            return self.cap_exact(content, "shell", "no rule");
+            return self.cap_exact(content, "shell", "no rule", is_error);
         };
 
-        if json_view::looks_like_json(content)
+        if !is_error
+            && json_view::looks_like_json(content)
             && content.len() >= self.json_threshold(level)
             && let Some(o) = self.json(content, None, &rule.id)
         {
             return o;
         }
         if rule.mode == RuleMode::Exact {
-            let mut o = self.cap_exact(content, "shell-exact", &rule.id);
+            let mut o = self.cap_exact(content, "shell-exact", &rule.id, is_error);
             o.notes.splice(0..0, notes);
             return o;
         }
         let report = log::compress_log_with_exit(content, Some(rule), &self.config.log, exit_code);
+        if is_error
+            && content.len() > self.config.max_output_chars
+            && log_lost_error_detail(&report, content, &self.config)
+        {
+            return self.error_head_tail(content, "shell", &rule.id, notes);
+        }
         if !report.changed {
             let mut o = Outcome::unchanged(content, "shell");
             o.detail = rule.id.clone();
@@ -285,16 +298,27 @@ impl Compressor {
 
     // ── read ──
 
-    fn read(&self, input: &Value, content: &str, level: CompressionLevel) -> Outcome {
+    fn read(&self, input: &Value, content: &str, level: CompressionLevel, is_error: bool) -> Outcome {
         let path = input
             .get("file_path")
             .or_else(|| input.get("path"))
             .and_then(Value::as_str)
             .unwrap_or("");
+        if is_error {
+            if content.len() <= self.config.max_output_chars {
+                return Outcome::unchanged(content, "read-error");
+            }
+            return self.error_head_tail(content, "read-error", path, Vec::new());
+        }
         let explicit_window = input.get("offset").is_some_and(|v| !v.is_null())
             || input.get("limit").is_some_and(|v| !v.is_null());
         let saved_original = self.raw.as_ref().is_some_and(|s| s.contains(path));
-        if level.is_off() || explicit_window || saved_original {
+        if level.is_off()
+            || explicit_window
+            || saved_original
+            || is_skill_path(path)
+            || has_protected_marker(content, self.raw.as_ref())
+        {
             return self.page_exact(content, path);
         }
 
@@ -418,6 +442,11 @@ impl Compressor {
             kept.push('\n');
             last_line = parse_line_number(line).or(last_line);
         }
+        if kept.is_empty() && !content.is_empty() {
+            let cut = floor_char_boundary(content, max);
+            kept.push_str(&content[..cut]);
+            last_line = parse_line_number(&kept);
+        }
         let next = last_line.unwrap_or(0);
         Outcome {
             headline: format!("{path}: cut to fit the output limit ({max} characters)"),
@@ -453,10 +482,13 @@ impl Compressor {
     /// Output of the web tools: unchanged, or cut once at the hard cap on a
     /// line end — never thinned out line by line, so what is shown stays a
     /// contiguous, in-order part of the page.
-    fn web_page(&self, content: &str) -> Outcome {
+    fn web_page(&self, content: &str, is_error: bool) -> Outcome {
         let cap = self.config.max_output_chars;
         if content.len() <= cap {
             return Outcome::unchanged(content, "web-page");
+        }
+        if is_error {
+            return self.error_head_tail(content, "web-page", "", Vec::new());
         }
         let mut end = cap;
         while !content.is_char_boundary(end) {
@@ -482,11 +514,12 @@ impl Compressor {
         }
     }
 
-    fn web(&self, content: &str, level: CompressionLevel) -> Outcome {
+    fn web(&self, content: &str, level: CompressionLevel, is_error: bool) -> Outcome {
         if level.is_off() {
-            return self.cap_exact(content, "web-off", "");
+            return self.cap_exact(content, "web-off", "", is_error);
         }
-        if json_view::looks_like_json(content)
+        if !is_error
+            && json_view::looks_like_json(content)
             && content.len() >= self.json_threshold(level)
             && let Some(o) = self.json(content, None, "web")
         {
@@ -494,6 +527,12 @@ impl Compressor {
         }
         let rule = self.rules.fallback();
         let report = log::compress_log(content, rule, &self.config.log);
+        if is_error
+            && content.len() > self.config.max_output_chars
+            && log_lost_error_detail(&report, content, &self.config)
+        {
+            return self.error_head_tail(content, "web", "", Vec::new());
+        }
         if !report.changed {
             return Outcome::unchanged(content, "web");
         }
@@ -514,15 +553,16 @@ impl Compressor {
         }
     }
 
-    fn other(&self, content: &str, level: CompressionLevel) -> Outcome {
-        if !level.is_off()
+    fn other(&self, content: &str, level: CompressionLevel, is_error: bool) -> Outcome {
+        if !is_error
+            && !level.is_off()
             && json_view::looks_like_json(content)
             && content.len() >= self.json_threshold(level)
             && let Some(o) = self.json(content, None, "tool")
         {
             return o;
         }
-        self.cap_exact(content, "passthrough", "")
+        self.cap_exact(content, "passthrough", "", is_error)
     }
 
     fn json(&self, content: &str, file: Option<&str>, detail: &str) -> Option<Outcome> {
@@ -550,7 +590,13 @@ impl Compressor {
     }
 
     /// Values: unchanged when they fit, else cut keeping diagnostics.
-    fn cap_exact(&self, content: &str, strategy: &'static str, detail: &str) -> Outcome {
+    fn cap_exact(
+        &self,
+        content: &str,
+        strategy: &'static str,
+        detail: &str,
+        is_error: bool,
+    ) -> Outcome {
         let limits = &self.config.log;
         let lines = content.lines().count();
         let fits = content.len() <= self.config.max_output_chars
@@ -561,6 +607,12 @@ impl Compressor {
             return o;
         }
         let report = log::compress_log(content, None, limits);
+        if is_error
+            && content.len() > self.config.max_output_chars
+            && log_lost_error_detail(&report, content, &self.config)
+        {
+            return self.error_head_tail(content, strategy, detail, Vec::new());
+        }
         Outcome {
             headline: format!(
                 "output cut to fit ({} → {} lines), diagnostics kept",
@@ -574,6 +626,32 @@ impl Compressor {
             detail: detail.to_string(),
             notes: report.notes,
             diagnostic: false,
+            original: Some(None),
+        }
+    }
+
+    fn error_head_tail(
+        &self,
+        content: &str,
+        strategy: &'static str,
+        detail: &str,
+        notes: Vec<String>,
+    ) -> Outcome {
+        let max = self.config.max_output_chars;
+        let truncated = truncate_head_tail(content, max);
+        Outcome {
+            headline: format!(
+                "error output truncated head+tail to fit ({} → {} chars)",
+                content.chars().count(),
+                truncated.chars().count()
+            ),
+            text: truncated,
+            transformed: true,
+            partial_view: false,
+            strategy,
+            detail: detail.to_string(),
+            notes,
+            diagnostic: true,
             original: Some(None),
         }
     }
@@ -635,27 +713,33 @@ impl Compressor {
             text = content.to_string();
         }
 
-        // Last resort: a hard cut at a line boundary.
+        // Last resort: a hard cut at the output limit.
         let max = self.config.max_output_chars;
-        if text.len() > max + 2000 {
-            let mut cut = 0;
-            for (i, _) in text.match_indices('\n') {
-                if i > max {
-                    break;
+        let slack = if o.transformed {
+            (max / 10).clamp(300, 2000)
+        } else {
+            0
+        };
+        if text.len() > max.saturating_add(slack) {
+            if out.is_error {
+                text = truncate_head_tail(&text, max);
+            } else {
+                let mut cut = 0;
+                for (i, _) in text.match_indices('\n') {
+                    if i > max {
+                        break;
+                    }
+                    cut = i;
                 }
-                cut = i;
+                if cut == 0 {
+                    cut = floor_char_boundary(&text, max);
+                }
+                let removed = text.len() - cut;
+                text.truncate(cut);
+                text.push_str(&format!(
+                    "\n… [{removed} more characters cut at the output limit]"
+                ));
             }
-            if cut == 0 {
-                cut = (0..=max)
-                    .rev()
-                    .find(|&i| text.is_char_boundary(i))
-                    .unwrap_or(0);
-            }
-            let removed = text.len() - cut;
-            text.truncate(cut);
-            text.push_str(&format!(
-                "\n… [{removed} more characters cut at the output limit]"
-            ));
             o.transformed = true;
         }
 
@@ -692,6 +776,109 @@ impl Compressor {
 
 fn p_is_filtered(a: &Analysis) -> bool {
     a.pipelines.iter().any(|p| p.is_filtered())
+}
+
+fn is_protected_tool(tool: &str) -> bool {
+    matches!(tool, "skill" | "loadtools" | "load_tools")
+}
+
+fn is_skill_path(path: &str) -> bool {
+    let p = path.trim();
+    p == "SKILL.md" || p.ends_with("/SKILL.md") || p.ends_with("\\SKILL.md")
+}
+
+fn has_raw_store_ref(content: &str, raw: Option<&RawStore>) -> bool {
+    if content.contains("full output: Read file_path=\"")
+        || content.contains("full text: Read file_path=\"")
+    {
+        return true;
+    }
+    let needle = "Read file_path=\"";
+    let mut rest = content;
+    while let Some(idx) = rest.find(needle) {
+        let after = &rest[idx + needle.len()..];
+        if let Some(end) = after.find('"') {
+            let path = &after[..end];
+            if path.contains("raw-outputs") || raw.is_some_and(|s| s.contains(path)) {
+                return true;
+            }
+            rest = &after[end + 1..];
+        } else {
+            break;
+        }
+    }
+    false
+}
+
+fn has_protected_marker(content: &str, raw: Option<&RawStore>) -> bool {
+    content.starts_with("[bricks: ")
+        || content.contains("[tool result removed")
+        || content.contains("<skill_activation")
+        || content.contains("<skill>")
+        || has_raw_store_ref(content, raw)
+}
+
+fn log_lost_error_detail(report: &LogReport, content: &str, config: &CompressionConfig) -> bool {
+    report.text.len() > config.max_output_chars
+        || !report.changed
+        || content
+            .lines()
+            .any(|l| l.len() > config.log.max_diagnostic_line_chars)
+}
+
+fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
+    idx = idx.min(s.len());
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+fn ceil_char_boundary(s: &str, mut idx: usize) -> usize {
+    idx = idx.min(s.len());
+    while idx < s.len() && !s.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
+}
+
+/// Truncate `text` to at most `max` bytes by keeping ~40% head and ~60% tail
+/// on valid UTF-8 char (and line, when available) boundaries.
+fn truncate_head_tail(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    if max < 80 {
+        let cut = floor_char_boundary(text, max);
+        return text[..cut].to_string();
+    }
+    let marker_reserve = 48.min(max / 3);
+    let budget = max - marker_reserve;
+    let head_budget = (budget * 2) / 5;
+    let tail_budget = budget - head_budget;
+
+    let mut head_end = floor_char_boundary(text, head_budget);
+    if let Some(nl) = text[..head_end].rfind('\n')
+        && nl >= head_budget / 2
+    {
+        head_end = nl;
+    }
+
+    let raw_tail = text.len().saturating_sub(tail_budget).max(head_end);
+    let mut tail_start = ceil_char_boundary(text, raw_tail);
+    if let Some(nl) = text[tail_start..].find('\n') {
+        let candidate = tail_start + nl + 1;
+        if text.len().saturating_sub(candidate) >= tail_budget / 2 {
+            tail_start = candidate;
+        }
+    }
+
+    let omitted = text[head_end..tail_start].chars().count();
+    format!(
+        "{}\n... [{omitted} chars truncated] ...\n{}",
+        &text[..head_end],
+        &text[tail_start..]
+    )
 }
 
 fn log_headline(report: &LogReport, rule: &str, original: &str) -> String {
@@ -1090,5 +1277,273 @@ mod tests {
             p.text.contains("\"b\": tru"),
             "the original text is still shown"
         );
+    }
+
+    #[test]
+    fn giant_multiline_error_truncates_head_and_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = CompressionConfig {
+            max_output_chars: 4_000,
+            ..Default::default()
+        };
+        let c = Compressor::new(
+            cfg,
+            Arc::new(RuleSet::builtin()),
+            Some(RawStore::new(dir.path().join("raw"))),
+        );
+
+        let mut err = String::from("error[E0001]: TOP_INITIAL_FAILURE_MARKER\n");
+        for i in 0..400 {
+            err.push_str(&format!(
+                "error: frame_{i:04} at crate::module::fn_{i} (detail padding {}) \n",
+                "x".repeat(40)
+            ));
+        }
+        err.push_str("thread 'main' panicked at FINAL_STACKTRACE_TAIL_SUMMARY\n");
+
+        let p = c.process(
+            &ToolOutput {
+                tool: "Bash",
+                input: &json!({ "command": "cargo test" }),
+                content: &err,
+                is_error: true,
+                call_id: "err_multi",
+                exit_code: Some(101),
+            },
+            CompressionLevel::Minimal,
+        );
+
+        assert!(p.transformed);
+        assert!(p.text.contains("TOP_INITIAL_FAILURE_MARKER"), "{}", p.text);
+        assert!(
+            p.text.contains("FINAL_STACKTRACE_TAIL_SUMMARY"),
+            "{}",
+            p.text
+        );
+        assert!(p.text.contains("chars truncated] ..."), "{}", p.text);
+        assert!(p.text.len() <= 4_500, "len={}", p.text.len());
+        let raw = p.raw.expect("full error saved to RawStore");
+        assert_eq!(std::fs::read_to_string(&raw.path).unwrap(), err);
+    }
+
+    #[test]
+    fn giant_single_line_utf8_error_truncates_head_and_tail_safely() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = CompressionConfig {
+            max_output_chars: 1_200,
+            ..Default::default()
+        };
+        let c = Compressor::new(
+            cfg,
+            Arc::new(RuleSet::builtin()),
+            Some(RawStore::new(dir.path().join("raw"))),
+        );
+
+        let middle = "é🚀".repeat(1_000);
+        let err = format!("HEAD_ERROR_START:{middle}:TAIL_STACKTRACE_CAUSE");
+
+        for (tool, input, level) in [
+            ("Bash", json!({ "command": "./run" }), CompressionLevel::Off),
+            ("other_tool", json!({}), CompressionLevel::Aggressive),
+        ] {
+            let p = c.process(
+                &ToolOutput {
+                    tool,
+                    input: &input,
+                    content: &err,
+                    is_error: true,
+                    call_id: "err_single",
+                    exit_code: Some(1),
+                },
+                level,
+            );
+            assert!(p.transformed, "{tool}");
+            assert!(p.text.contains("HEAD_ERROR_START:"), "{tool}: {}", p.text);
+            assert!(
+                p.text.contains(":TAIL_STACKTRACE_CAUSE"),
+                "{tool}: {}",
+                p.text
+            );
+            assert!(
+                p.text.contains("chars truncated] ..."),
+                "{tool}: {}",
+                p.text
+            );
+            assert!(p.raw.is_some());
+        }
+    }
+
+    #[test]
+    fn hard_ceiling_uses_head_tail_for_errors_and_head_for_non_errors() {
+        let long_non_error = format!("START_OK\n{}\nEND_OK\n", "ok line\n".repeat(7_000));
+        let long_error = format!(
+            "START_ERR\n{}\nEND_ERR_SUMMARY\n",
+            "err line\n".repeat(7_000)
+        );
+        // Directly validate truncate_head_tail ~40% head / ~60% tail split.
+        let cut = truncate_head_tail(&long_error, 2_000);
+        assert!(cut.starts_with("START_ERR\n"));
+        assert!(cut.ends_with("END_ERR_SUMMARY\n"));
+        assert!(cut.contains("chars truncated] ..."));
+        assert!(cut.len() <= 2_000);
+        let (head, tail) = cut.split_once("chars truncated] ...\n").unwrap();
+        assert!(tail.len() > head.len(), "tail should get ~60% vs ~40% head");
+
+        // Through finish() via shell-off (non-error vs error) on huge single-line content
+        // when max_output_chars is smaller than line length.
+        let dir = tempfile::tempdir().unwrap();
+        let c = compressor(dir.path());
+        let non_err_p = c.process(
+            &ToolOutput {
+                tool: "WebFetch",
+                input: &json!({ "url": "https://example.com" }),
+                content: &long_non_error,
+                is_error: false,
+                call_id: "ok",
+                exit_code: None,
+            },
+            CompressionLevel::Minimal,
+        );
+        assert!(non_err_p.text.contains("START_OK"));
+        assert!(!non_err_p.text.contains("END_OK"));
+
+        let err_p = c.process(
+            &ToolOutput {
+                tool: "WebFetch",
+                input: &json!({ "url": "https://example.com" }),
+                content: &long_error,
+                is_error: true,
+                call_id: "err",
+                exit_code: None,
+            },
+            CompressionLevel::Minimal,
+        );
+        assert!(err_p.text.contains("START_ERR"));
+        assert!(err_p.text.contains("END_ERR_SUMMARY"));
+    }
+
+    #[test]
+    fn structured_references_and_raw_store_readbacks_are_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = compressor(dir.path());
+        let saved = c
+            .raw_store()
+            .unwrap()
+            .put("Bash-prev", &"{\"k\":\"v\"}\n".repeat(2_000))
+            .unwrap();
+
+        // 1. Reading back a RawStore file at Aggressive level is never JSON-summarized or re-saved.
+        let readback = format!("1 | {}\n", "{\"k\":\"v\"}".repeat(2_000));
+        let p_read = c.process(
+            &ToolOutput {
+                tool: "Read",
+                input: &json!({ "file_path": saved.path.to_str().unwrap() }),
+                content: &readback,
+                is_error: false,
+                call_id: "r1",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_read.text.contains("bricks_view"));
+        assert!(p_read.raw.is_none());
+        assert_eq!(p_read.text, readback);
+
+        // 2. Output referencing RawStore / [tool result removed / [bricks: header is not re-compressed.
+        let removed_ref = format!(
+            "[tool result removed from the active context to save space (99999 chars); full output: {}]\n{}",
+            saved.hint(),
+            "noise\n".repeat(600)
+        );
+        let p_removed = c.process(
+            &ToolOutput {
+                tool: "other",
+                input: &json!({}),
+                content: &removed_ref,
+                is_error: false,
+                call_id: "r2",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_removed.transformed);
+        assert!(p_removed.raw.is_none());
+        assert_eq!(p_removed.text, removed_ref);
+
+        let already_compressed = format!(
+            "[bricks: output reduced by rule `cargo-build`; full output: {}]\n{}",
+            saved.hint(),
+            "   Compiling x v0.1.0\n".repeat(300)
+        );
+        let p_bricks = c.process(
+            &ToolOutput {
+                tool: "Bash",
+                input: &json!({ "command": "cargo build" }),
+                content: &already_compressed,
+                is_error: false,
+                call_id: "r3",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_bricks.transformed);
+        assert!(p_bricks.raw.is_none());
+        assert_eq!(p_bricks.text, already_compressed);
+
+        // 3. Active <skill_activation> / <skill> / LoadTools / SKILL.md outputs are protected.
+        let skill_xml = format!(
+            "<skill_activation id=\"sk1\" name=\"demo\">\n{}\n</skill_activation>",
+            "step\n".repeat(600)
+        );
+        let p_skill = c.process(
+            &ToolOutput {
+                tool: "Skill",
+                input: &json!({ "name": "demo" }),
+                content: &skill_xml,
+                is_error: false,
+                call_id: "s1",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_skill.transformed);
+        assert_eq!(p_skill.text, skill_xml);
+
+        let load_tools_json = format!(
+            "{{\"tools\":[{}]}}",
+            (0..500)
+                .map(|i| format!("{{\"name\":\"tool_{i}\",\"description\":\"desc\"}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let p_load = c.process(
+            &ToolOutput {
+                tool: "LoadTools",
+                input: &json!({ "query": "tool" }),
+                content: &load_tools_json,
+                is_error: false,
+                call_id: "lt1",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_load.transformed);
+        assert!(!p_load.partial_view);
+        assert_eq!(p_load.text, load_tools_json);
+
+        let skill_md = format!("1 | {{\"skill\": \"{}\"}}\n", "a".repeat(5_000));
+        let p_skill_md = c.process(
+            &ToolOutput {
+                tool: "Read",
+                input: &json!({ "file_path": "/repo/skills/demo/SKILL.md" }),
+                content: &skill_md,
+                is_error: false,
+                call_id: "sm1",
+                exit_code: None,
+            },
+            CompressionLevel::Aggressive,
+        );
+        assert!(!p_skill_md.transformed);
+        assert_eq!(p_skill_md.text, skill_md);
     }
 }

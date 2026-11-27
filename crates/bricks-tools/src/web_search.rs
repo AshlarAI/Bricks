@@ -156,7 +156,7 @@ fn render(r: &Research, web: &bricks_web::WebContext) -> String {
             let _ = writeln!(
                 out,
                 "DuckDuckGo answered with an anti-bot challenge; it is not answered automatically. \
-                 Configure a keyed provider in bricks.toml [web.search], or retry later."
+                 Configure a keyed provider in ~/.bricks/config.json (web.search), or retry later."
             );
         }
         return out;

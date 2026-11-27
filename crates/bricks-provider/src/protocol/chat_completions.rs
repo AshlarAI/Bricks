@@ -106,9 +106,7 @@ fn push_user(out: &mut Vec<Value>, msg: &Message) -> Result<()> {
             ContentBlock::Document { source, title, .. } => {
                 parts.push(file_part(source, title.as_deref())?)
             }
-            ContentBlock::Video { .. } => {
-                return Err(unsupported("chat_completions cannot carry video input"));
-            }
+            ContentBlock::Video { source } => parts.push(video_part(source)?),
             _ => {}
         }
     }
@@ -134,6 +132,24 @@ fn image_part(s: &ImageSource) -> Result<Value> {
         }
     };
     Ok(json!({ "type": "image_url", "image_url": { "url": url } }))
+}
+
+fn video_part(s: &MediaSource) -> Result<Value> {
+    let url = match (&s.data, &s.url) {
+        (Some(data), _) => {
+            let mt = s.media_type.as_deref().ok_or_else(|| {
+                unsupported("chat_completions carries inline video only with a media_type")
+            })?;
+            data_url(mt, data)
+        }
+        (None, Some(url)) => url.clone(),
+        _ => {
+            return Err(unsupported(
+                "chat_completions carries video only as data or URL",
+            ));
+        }
+    };
+    Ok(json!({ "type": "video_url", "video_url": { "url": url } }))
 }
 
 fn audio_part(s: &MediaSource) -> Result<Value> {
@@ -982,9 +998,36 @@ mod tests {
     }
 
     #[test]
+    fn video_input_serializes_data_and_url() {
+        let mut r = req();
+        r.messages.push(Message::user_blocks(vec![
+            ContentBlock::video_base64("video/mp4", "QUJD"),
+            ContentBlock::video_url("https://x/v.mp4"),
+        ]));
+        let body = build_body(&ctx(&compat(), true), &r).unwrap();
+        let parts = body["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(
+            parts[0],
+            json!({"type": "video_url", "video_url": {"url": "data:video/mp4;base64,QUJD"}})
+        );
+        assert_eq!(
+            parts[1],
+            json!({"type": "video_url", "video_url": {"url": "https://x/v.mp4"}})
+        );
+    }
+
+    #[test]
     fn unsupported_media_is_an_error_not_a_drop() {
         for block in [
-            ContentBlock::video_url("https://x/v.mp4"),
+            ContentBlock::Video {
+                source: MediaSource {
+                    source_type: "file".into(),
+                    media_type: None,
+                    data: None,
+                    url: None,
+                    file_id: Some("vid_1".into()),
+                },
+            },
             ContentBlock::audio_url("https://x/a.wav"),
             ContentBlock::audio_base64("audio/ogg", "AA=="),
             ContentBlock::image_file_id("f"),

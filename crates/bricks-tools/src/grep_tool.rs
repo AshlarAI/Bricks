@@ -47,13 +47,19 @@ impl Tool for GrepTool {
                 "pattern": { "type": "string", "description": "Regex pattern to search for (exact text when `literal` is true)" },
                 "path": { "type": "string", "description": "File or directory to search in, relative to the working directory or absolute (defaults to the working directory)" },
                 "glob": { "type": "string", "description": "Whitelist glob to filter files, e.g. *.rs" },
+                "type": { "type": "string", "description": "Filter files by language/file type (e.g. rust, py, ts, js, go, md)" },
                 "case_insensitive": { "type": "boolean", "description": "Case-insensitive matching", "default": false },
                 "hidden": { "type": "boolean", "description": "Include hidden files/directories", "default": false },
                 "literal": { "type": "boolean", "description": "Match `pattern` as exact text, without regex syntax", "default": false },
+                "multiline": { "type": "boolean", "description": "Enable multi-line matching so patterns can match across line breaks (\\n)", "default": false },
                 "no_ignore": { "type": "boolean", "description": "Also search files excluded by .gitignore/.ignore (e.g. target/, node_modules/)", "default": false },
                 "output_mode": { "type": "string", "enum": ["content", "files_with_matches", "count"], "description": "content: matching lines as file:line:text; files_with_matches: the paths of the files that match; count: file:number of matching lines", "default": "content" },
                 "context": { "type": "integer", "minimum": 0, "maximum": MAX_CONTEXT, "description": "Lines shown before and after each match (content only), as file-line-text, with -- between separate groups", "default": 0 },
-                "limit": { "type": "integer", "minimum": 0, "description": "Max matching lines (content) or files (files_with_matches, count) to return (default 100). 0 checks the pattern and path and returns nothing", "default": DEFAULT_LIMIT }
+                "before_context": { "type": "integer", "minimum": 0, "maximum": MAX_CONTEXT, "description": "Lines shown before each match (content only). Overrides `context` for leading lines" },
+                "after_context": { "type": "integer", "minimum": 0, "maximum": MAX_CONTEXT, "description": "Lines shown after each match (content only). Overrides `context` for trailing lines" },
+                "only_matching": { "type": "boolean", "description": "In `content` mode, print only the matched substring(s) instead of full lines", "default": false },
+                "limit": { "type": "integer", "minimum": 0, "description": "Max matching lines (content) or files (files_with_matches, count) to return (default 100). 0 checks the pattern and path and returns nothing", "default": DEFAULT_LIMIT },
+                "offset": { "type": "integer", "minimum": 0, "description": "Number of leading matches (content) or files (files_with_matches, count) to skip before applying `limit`", "default": 0 }
             },
             "required": ["pattern"]
         })
@@ -66,6 +72,8 @@ impl Tool for GrepTool {
             pattern: String,
             path: Option<String>,
             glob: Option<String>,
+            #[serde(rename = "type")]
+            file_type: Option<String>,
             #[serde(default)]
             case_insensitive: bool,
             #[serde(default)]
@@ -73,12 +81,20 @@ impl Tool for GrepTool {
             #[serde(default)]
             literal: bool,
             #[serde(default)]
+            multiline: bool,
+            #[serde(default)]
             no_ignore: bool,
             #[serde(default)]
             output_mode: OutputMode,
             #[serde(default)]
             context: usize,
+            before_context: Option<usize>,
+            after_context: Option<usize>,
+            #[serde(default)]
+            only_matching: bool,
             limit: Option<usize>,
+            #[serde(default)]
+            offset: usize,
         }
 
         let input: Input = match crate::tool_feedback::parse_input(self, &input) {
@@ -91,9 +107,31 @@ impl Tool for GrepTool {
                 input.context
             ));
         }
-        if input.context > 0 && input.output_mode != OutputMode::Content {
+        if let Some(before) = input.before_context
+            && before > MAX_CONTEXT
+        {
+            return ToolResult::error(format!(
+                "`before_context` is {before}; at most {MAX_CONTEXT} lines are shown before a match."
+            ));
+        }
+        if let Some(after) = input.after_context
+            && after > MAX_CONTEXT
+        {
+            return ToolResult::error(format!(
+                "`after_context` is {after}; at most {MAX_CONTEXT} lines are shown after a match."
+            ));
+        }
+        let before = input.before_context.unwrap_or(input.context);
+        let after = input.after_context.unwrap_or(input.context);
+        if (input.context > 0 || before > 0 || after > 0) && input.output_mode != OutputMode::Content
+        {
             return ToolResult::error(
-                "`context` applies to output_mode \"content\" only; drop it or use content.",
+                "`context`/`before_context`/`after_context` applies to output_mode \"content\" only; drop it or use content.",
+            );
+        }
+        if input.only_matching && input.output_mode != OutputMode::Content {
+            return ToolResult::error(
+                "`only_matching` applies to output_mode \"content\" only; drop it or use content.",
             );
         }
 
@@ -115,13 +153,19 @@ impl Tool for GrepTool {
         };
         let opts = psearch::GrepOptions {
             glob_filter: input.glob,
+            file_type: input.file_type,
             max_results: Some(limit),
+            offset: input.offset,
             case_insensitive: input.case_insensitive,
             no_ignore: input.no_ignore,
             hidden: input.hidden,
             literal: input.literal,
+            multiline: input.multiline,
             mode,
             context: input.context,
+            before_context: input.before_context,
+            after_context: input.after_context,
+            only_matching: input.only_matching,
         };
 
         match psearch::grep_search(&input.pattern, &search_path, opts).await {
@@ -130,11 +174,17 @@ impl Tool for GrepTool {
                     return ToolResult::success("Limit is 0: no match listed.");
                 }
                 if found.matches.is_empty() && found.files.is_empty() {
+                    if input.offset > 0 {
+                        return ToolResult::success(format!(
+                            "No matches found after offset {}.",
+                            input.offset
+                        ));
+                    }
                     return ToolResult::success("No matches found.");
                 }
                 let (mut output, shown, unit) = match mode {
                     psearch::GrepMode::Lines => (
-                        render_lines(&found.matches, input.context > 0),
+                        render_lines(&found.matches, before > 0 || after > 0),
                         found.matches.iter().filter(|m| !m.is_context).count(),
                         "matches",
                     ),
@@ -161,14 +211,25 @@ impl Tool for GrepTool {
                 };
                 // The total is not counted past the limit, never invented.
                 if found.more {
-                    output.push_str(&format!(
-                        "\n\n[Showing the first {shown} {}; more {unit} exist. Narrow the search with a more specific pattern, `path` or `glob`, or raise `limit`.]",
-                        match (shown, unit) {
-                            (1, "matches") => "match",
-                            (1, _) => "file",
-                            _ => unit,
-                        }
-                    ));
+                    let singular = if unit == "matches" { "match" } else { "file" };
+                    let noun = if shown == 1 { singular } else { unit };
+                    if input.offset == 0 {
+                        output.push_str(&format!(
+                            "\n\n[Showing the first {shown} {noun}; more {unit} exist. Narrow the search with a more specific pattern, `path`, `glob`, or `type`, or raise `limit`.]"
+                        ));
+                    } else {
+                        let start = input.offset + 1;
+                        let end = input.offset + shown;
+                        let range_label = if shown == 1 {
+                            format!("{singular} {start}")
+                        } else {
+                            format!("{unit} {start}-{end}")
+                        };
+                        output.push_str(&format!(
+                            "\n\n[Showing {range_label} (offset {}, limit {limit}); more {unit} exist. Narrow the search with a more specific pattern, `path`, `glob`, or `type`, or pass `offset: {end}` to continue.]",
+                            input.offset
+                        ));
+                    }
                 }
                 ToolResult::success(output)
             }
@@ -182,11 +243,11 @@ impl Tool for GrepTool {
 /// contiguous.
 fn render_lines(lines: &[psearch::SearchMatch], with_context: bool) -> String {
     let mut out = String::new();
-    let mut prev: Option<(&std::path::Path, usize)> = None;
+    let mut prev_end: Option<(&std::path::Path, usize)> = None;
     for l in lines {
         if with_context
-            && let Some((file, n)) = prev
-            && (file != l.file.as_path() || l.line_number != n + 1)
+            && let Some((file, end_line)) = prev_end
+            && (file != l.file.as_path() || l.line_number > end_line + 1)
         {
             out.push_str("--\n");
         }
@@ -197,7 +258,8 @@ fn render_lines(lines: &[psearch::SearchMatch], with_context: bool) -> String {
             l.line_number,
             l.line_content
         ));
-        prev = Some((l.file.as_path(), l.line_number));
+        let extra_lines = l.line_content.bytes().filter(|&b| b == b'\n').count();
+        prev_end = Some((l.file.as_path(), l.line_number + extra_lines));
     }
     out.pop();
     out
@@ -541,5 +603,269 @@ mod tests {
             "{}",
             r.content
         );
+    }
+
+    #[tokio::test]
+    async fn type_filter_restricts_language_and_rejects_invalid_type() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rs = tmp.path().join("main.rs");
+        let py = tmp.path().join("script.py");
+        fs::write(&rs, "NEEDLE\n").unwrap();
+        fs::write(&py, "NEEDLE\n").unwrap();
+
+        let rust_only = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "NEEDLE", "type": "rust" }),
+        )
+        .await;
+        assert!(!rust_only.is_error, "{}", rust_only.content);
+        assert!(rust_only.content.contains("main.rs"), "{}", rust_only.content);
+        assert!(!rust_only.content.contains("script.py"), "{}", rust_only.content);
+
+        // Single-file path with non-matching type yields no matches.
+        let single_mismatch = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "NEEDLE",
+                "path": py.to_str().unwrap(),
+                "type": "rust"
+            }),
+        )
+        .await;
+        assert!(!single_mismatch.is_error, "{}", single_mismatch.content);
+        assert_eq!(single_mismatch.content, "No matches found.");
+
+        let invalid = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "NEEDLE", "type": "unknown_lang_xyz" }),
+        )
+        .await;
+        assert!(invalid.is_error);
+        assert!(
+            invalid.content.contains("unknown_lang_xyz"),
+            "{}",
+            invalid.content
+        );
+    }
+
+    #[tokio::test]
+    async fn multiline_matches_across_line_breaks() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), "start\nfn foo(\n    x: i32,\n)\nend\n").unwrap();
+
+        let off = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": r"fn foo\(\s+x: i32" }),
+        )
+        .await;
+        assert!(!off.is_error, "{}", off.content);
+        assert_eq!(off.content, "No matches found.");
+
+        let off_nl = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": r"fn foo\(\n\s+x: i32" }),
+        )
+        .await;
+        assert!(off_nl.is_error);
+
+        let on = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": r"fn foo\(\n\s+x: i32,\n\)",
+                "multiline": true
+            }),
+        )
+        .await;
+        assert!(!on.is_error, "{}", on.content);
+        assert!(
+            on.content.contains("a.txt:2:fn foo(\n    x: i32,\n)"),
+            "{}",
+            on.content
+        );
+    }
+
+    #[tokio::test]
+    async fn offset_paginates_across_all_output_modes() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.rs"), "HIT 1\nHIT 2\n").unwrap();
+        fs::write(tmp.path().join("b.rs"), "HIT 3\n").unwrap();
+        fs::write(tmp.path().join("c.rs"), "HIT 4\nHIT 5\n").unwrap();
+
+        // content mode
+        let content = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "HIT", "offset": 1, "limit": 2 }),
+        )
+        .await;
+        assert!(!content.is_error, "{}", content.content);
+        assert!(content.content.contains("a.rs:2:HIT 2"), "{}", content.content);
+        assert!(content.content.contains("b.rs:1:HIT 3"), "{}", content.content);
+        assert!(!content.content.contains("HIT 1"), "{}", content.content);
+        assert!(
+            content
+                .content
+                .contains("Showing matches 2-3 (offset 1, limit 2); more matches exist"),
+            "{}",
+            content.content
+        );
+        assert!(content.content.contains("`offset: 3`"), "{}", content.content);
+
+        // files_with_matches mode
+        let files = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "HIT",
+                "output_mode": "files_with_matches",
+                "offset": 1,
+                "limit": 1
+            }),
+        )
+        .await;
+        assert!(!files.is_error, "{}", files.content);
+        assert!(files.content.contains("b.rs"), "{}", files.content);
+        assert!(!files.content.contains("a.rs"), "{}", files.content);
+        assert!(
+            files
+                .content
+                .contains("Showing file 2 (offset 1, limit 1); more files exist"),
+            "{}",
+            files.content
+        );
+
+        // count mode
+        let count = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "HIT",
+                "output_mode": "count",
+                "offset": 2,
+                "limit": 2
+            }),
+        )
+        .await;
+        assert!(!count.is_error, "{}", count.content);
+        assert_eq!(count.content.lines().count(), 1, "{}", count.content);
+        assert!(count.content.ends_with("c.rs:2"), "{}", count.content);
+
+        // past end
+        let past = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "HIT", "offset": 10 }),
+        )
+        .await;
+        assert!(!past.is_error);
+        assert!(past.content.contains("No matches found"), "{}", past.content);
+    }
+
+    #[tokio::test]
+    async fn asymmetric_context_works_and_validates_bounds_and_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let body: String = (1..=10)
+            .map(|i| {
+                if i == 5 {
+                    "TARGET\n".to_string()
+                } else {
+                    format!("l{i}\n")
+                }
+            })
+            .collect();
+        fs::write(tmp.path().join("a.txt"), body).unwrap();
+
+        let r = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "TARGET",
+                "before_context": 2,
+                "after_context": 1
+            }),
+        )
+        .await;
+        assert!(!r.is_error, "{}", r.content);
+        let lines: Vec<&str> = r.content.lines().collect();
+        assert_eq!(lines.len(), 4, "{}", r.content);
+        assert!(lines[0].ends_with("a.txt-3-l3"), "{}", r.content);
+        assert!(lines[1].ends_with("a.txt-4-l4"), "{}", r.content);
+        assert!(lines[2].ends_with("a.txt:5:TARGET"), "{}", r.content);
+        assert!(lines[3].ends_with("a.txt-6-l6"), "{}", r.content);
+
+        let too_before = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "TARGET", "before_context": 11 }),
+        )
+        .await;
+        assert!(too_before.is_error && too_before.content.contains("at most 10"));
+
+        let too_after = grep(
+            tmp.path(),
+            serde_json::json!({ "pattern": "TARGET", "after_context": 11 }),
+        )
+        .await;
+        assert!(too_after.is_error && too_after.content.contains("at most 10"));
+
+        let bad_mode_before = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "TARGET",
+                "before_context": 1,
+                "output_mode": "files_with_matches"
+            }),
+        )
+        .await;
+        assert!(bad_mode_before.is_error && bad_mode_before.content.contains("content"));
+
+        let bad_mode_after = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": "TARGET",
+                "after_context": 1,
+                "output_mode": "count"
+            }),
+        )
+        .await;
+        assert!(bad_mode_after.is_error && bad_mode_after.content.contains("content"));
+    }
+
+    #[tokio::test]
+    async fn only_matching_prints_matched_substrings_and_rejects_non_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("a.txt"),
+            "head\nalpha=12 and beta=34\ntail\n",
+        )
+        .unwrap();
+
+        let r = grep(
+            tmp.path(),
+            serde_json::json!({
+                "pattern": r"\w+=\d+",
+                "only_matching": true,
+                "context": 1
+            }),
+        )
+        .await;
+        assert!(!r.is_error, "{}", r.content);
+        let lines: Vec<&str> = r.content.lines().collect();
+        assert_eq!(lines.len(), 4, "{}", r.content);
+        assert!(lines[0].ends_with("a.txt-1-head"), "{}", r.content);
+        assert!(lines[1].ends_with("a.txt:2:alpha=12"), "{}", r.content);
+        assert!(lines[2].ends_with("a.txt:2:beta=34"), "{}", r.content);
+        assert!(lines[3].ends_with("a.txt-3-tail"), "{}", r.content);
+
+        for mode in ["files_with_matches", "count"] {
+            let err = grep(
+                tmp.path(),
+                serde_json::json!({
+                    "pattern": r"\w+=\d+",
+                    "only_matching": true,
+                    "output_mode": mode
+                }),
+            )
+            .await;
+            assert!(
+                err.is_error && err.content.contains("content"),
+                "mode {mode}: {}",
+                err.content
+            );
+        }
     }
 }

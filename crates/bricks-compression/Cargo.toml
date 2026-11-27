@@ -16,7 +16,6 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = "0.1"
-toml = { workspace = true }
 tracing = { workspace = true }
 # Same grammar versions as bricks-tools (no new download; no dependency between
 # the two crates). JavaScript is parsed with the TSX grammar.

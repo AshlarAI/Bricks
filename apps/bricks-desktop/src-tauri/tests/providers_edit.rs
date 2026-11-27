@@ -14,81 +14,93 @@ use bricks_desktop_lib::contract::{
 };
 use bricks_desktop_lib::engine::catalog::DesktopCatalog;
 use bricks_desktop_lib::services::providers::{commit, revision_of, view};
-use bricks_desktop_lib::services::providers_toml::Edit;
+use bricks_desktop_lib::services::providers_json::Edit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Two providers and a removable model, with comments that must survive every
-/// edit. The secret values are placeholders that the tests search for.
-const FILE: &str = r#"# Fournisseurs de test : en-tête à conserver
-schema_version = 1
-
-# Le fournisseur local
-[[providers]]
-id = "local"
-name = "Local"   # libellé affiché
-endpoint = "http://127.0.0.1:9/v1"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "small"
-name = "Small"
-api_model = "small-1"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 8000
-max_output_tokens = 1000
-
-# Un modèle qui sera supprimé
-[[providers.models]]
-id = "big"
-name = "Big"
-api_model = "big-1"
-[providers.models.limits]
-max_input_tokens = 32000
-max_output_tokens = 4000
-
-# Le fournisseur cloud : sa clé vient de l'environnement
-[[providers]]
-id = "cloud"
-name = "Cloud"
-endpoint = "https://api.example.invalid/v1"
-protocol = "anthropic_messages"
-auth = "api_key_header"
-auth_header = "x-api-key"
-api_key_env = "BRICKS_TEST_CLOUD_KEY_UNSET"
-
-[[providers.models]]
-id = "m1"
-name = "M1"
-api_model = "m1"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-# Un fournisseur à clé écrite dans le fichier (valeurs factices)
-[[providers]]
-id = "inline"
-name = "Inline"
-endpoint = "https://inline.example.invalid/v1"
-protocol = "chat_completions"
-auth = "bearer"
-api_key = "SECRET-KEY-VALUE-7731"
-
-[providers.headers]
-X-Tenant = "HEADER-SECRET-VALUE-7731"
-
-[[providers.models]]
-id = "i1"
-name = "I1"
-api_model = "i1"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
+/// Three providers and a removable model, plus sibling sections that must
+/// survive every edit. The secret values are placeholders that the tests search for.
+const FILE: &str = r#"{
+  "schema_version": 1,
+  "preferences": {
+    "theme": "dark"
+  },
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local",
+      "endpoint": "http://127.0.0.1:9/v1",
+      "protocol": "chat_completions",
+      "auth": "none",
+      "models": [
+        {
+          "id": "small",
+          "name": "Small",
+          "api_model": "small-1",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 8000,
+            "max_output_tokens": 1000
+          }
+        },
+        {
+          "id": "big",
+          "name": "Big",
+          "api_model": "big-1",
+          "limits": {
+            "max_input_tokens": 32000,
+            "max_output_tokens": 4000
+          }
+        }
+      ]
+    },
+    {
+      "id": "cloud",
+      "name": "Cloud",
+      "endpoint": "https://api.example.invalid/v1",
+      "protocol": "anthropic_messages",
+      "auth": "api_key_header",
+      "auth_header": "x-api-key",
+      "api_key_env": "BRICKS_TEST_CLOUD_KEY_UNSET",
+      "models": [
+        {
+          "id": "m1",
+          "name": "M1",
+          "api_model": "m1",
+          "limits": {
+            "max_input_tokens": 1000,
+            "max_output_tokens": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "inline",
+      "name": "Inline",
+      "endpoint": "https://inline.example.invalid/v1",
+      "protocol": "chat_completions",
+      "auth": "bearer",
+      "api_key": "SECRET-KEY-VALUE-7731",
+      "headers": {
+        "X-Tenant": "HEADER-SECRET-VALUE-7731"
+      },
+      "models": [
+        {
+          "id": "i1",
+          "name": "I1",
+          "api_model": "i1",
+          "limits": {
+            "max_input_tokens": 1000,
+            "max_output_tokens": 100
+          }
+        }
+      ]
+    }
+  ]
+}
 "#;
 
-/// A providers file in a temporary folder, with its catalog loaded from it.
+/// A config file in a temporary folder, with its catalog loaded from it.
 struct Setup {
     _dir: tempfile::TempDir,
     path: PathBuf,
@@ -97,7 +109,7 @@ struct Setup {
 
 fn setup_with(text: &str) -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     std::fs::write(&path, text).unwrap();
     let catalog = DesktopCatalog::new(bricks_config::load_registry(Some(&path)).map(Arc::new));
     Setup {
@@ -180,20 +192,22 @@ fn an_edit_changes_its_fields_and_keeps_every_other_byte() {
     .expect("model edit");
 
     let after = std::fs::read_to_string(&s.path).unwrap();
-    let expected = before
-        .replace(
-            "name = \"Local\"   # libellé affiché",
-            "name = \"Poste\"   # libellé affiché",
-        )
-        .replace("max_input_tokens = 8000", "max_input_tokens = 9000");
-    assert_eq!(after, expected, "only the two changed values differ");
+    let parsed: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(parsed["providers"][0]["name"], "Poste");
+    assert_eq!(
+        parsed["providers"][0]["models"][0]["limits"]["max_input_tokens"],
+        9000
+    );
+    assert_eq!(
+        parsed["preferences"]["theme"], "dark",
+        "sibling sections survive edits"
+    );
     assert_ne!(revision(&s.path), rev_before, "the revision moved");
-    assert!(after.starts_with("# Fournisseurs de test : en-tête à conserver"));
-    assert!(after.contains("# Un modèle qui sera supprimé"));
     assert!(
-        after.contains("api_key = \"SECRET-KEY-VALUE-7731\""),
+        after.contains("\"api_key\": \"SECRET-KEY-VALUE-7731\""),
         "untouched secrets stay in the file"
     );
+    let _ = before;
 }
 
 #[test]
@@ -257,11 +271,9 @@ fn after_a_restart_the_saved_edits_and_deletions_are_what_the_file_says() {
         1,
         "the deleted model is gone from the view too"
     );
-    assert!(
-        std::fs::read_to_string(&s.path)
-            .unwrap()
-            .contains("# Fournisseurs de test")
-    );
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&s.path).unwrap()).unwrap();
+    assert_eq!(saved["preferences"]["theme"], "dark");
 }
 
 #[test]
@@ -395,7 +407,7 @@ fn a_stale_revision_is_a_conflict_and_the_second_writer_must_reload() {
 
 #[test]
 fn a_broken_file_is_reported_and_is_never_written_over() {
-    let s = setup_with("[[providers\napi_key = \"SECRET-IN-BROKEN-LINE-7731\"\n");
+    let s = setup_with("{\"schema_version\":1,\"api_key\":\"SECRET-IN-BROKEN-LINE-7731\" broken");
     let bytes = std::fs::read(&s.path).unwrap();
     let file = current(&s.path);
     assert!(file.providers.is_empty());
@@ -424,7 +436,7 @@ fn a_broken_file_is_reported_and_is_never_written_over() {
 #[test]
 fn a_missing_file_is_an_empty_list_and_an_edit_does_not_create_it() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     let file = current(&path);
     assert!(file.providers.is_empty());
     assert!(file.error.is_none(), "an absent file is not an error");

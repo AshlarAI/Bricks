@@ -339,7 +339,6 @@ async fn open_full(
     });
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     bricks.agents.admission_timeout_ms = 20_000;
     tweak(&mut bricks);
     let mut cfg = EngineConfig::new(
@@ -390,7 +389,6 @@ async fn restart(env: Env) -> Env {
     drop(ctl);
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     bricks.agents.admission_timeout_ms = 20_000;
     let mut cfg = EngineConfig::new(
         dir.path(),
@@ -1506,12 +1504,12 @@ async fn headless_delegation_is_refused_and_a_sub_agent_runs_its_own_commands() 
         &evs.last().unwrap().event,
         Event::RunFinished { failure: None, .. }
     ));
-    // The session's own command is asked; nobody can answer, so the run fails.
+    // The session's own mutative command is asked; nobody can answer, so the run fails.
     let mut env = open(
         vec![Reply::tool(
             "b0",
             "Bash",
-            json!({ "command": "echo parent" }),
+            json!({ "command": "touch parent_ran" }),
         )],
         None,
         false,

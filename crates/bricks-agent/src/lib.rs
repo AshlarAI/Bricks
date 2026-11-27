@@ -8,6 +8,7 @@ pub mod context;
 pub mod control;
 pub mod deferred;
 pub mod events;
+pub mod instruction_files;
 pub mod permission;
 pub mod reporters;
 mod request_env;
@@ -263,6 +264,10 @@ pub struct Agent {
     prompt_options: Option<system_prompt::SystemPromptOptions>,
     /// Environment facts of the requests (cached, git read when stale).
     request_env: request_env::RequestEnv,
+    /// Per-session cache of unchanged files already read via `Read`.
+    read_file_state: Arc<bricks_tools::ReadFileState>,
+    /// Differential `AGENTS.md` instruction tracker for this session.
+    instruction_files: parking_lot::Mutex<crate::instruction_files::InstructionFilesState>,
     /// The system of the last request built (what was measured and sent).
     last_system: parking_lot::Mutex<Option<String>>,
     append_system_prompt: Option<String>,
@@ -973,7 +978,7 @@ impl Agent {
                         std::mem::take(&mut o.mcp_instructions),
                         self.mcp_instructions().await,
                     );
-                    o.git_status = self.request_env.git(&self.working_dir).await;
+                    o.git_status = self.request_env.initial_git(&self.working_dir).await;
                     let shell_config = has("Bash").then(|| {
                         self.extensions
                             .get::<bricks_tools::shell::ShellConfig>()
@@ -1034,15 +1039,18 @@ impl Agent {
         system
     }
 
-    /// The workspace may have changed: the git state of the next request
-    /// is read again.
+    /// The workspace may have changed: the git state and instruction files of
+    /// the next request are checked again.
     pub(crate) fn workspace_may_have_changed(&self) {
         self.request_env.mark_git_stale();
+        self.instruction_files.lock().mark_stale();
     }
 
-    /// A user request starts: its first request reads the git state again.
+    /// A user request starts: its first request checks git state and
+    /// instruction files again.
     pub(crate) fn request_started(&self) {
         self.request_env.mark_git_stale();
+        self.instruction_files.lock().mark_stale();
     }
 
     /// The plan TodoWrite writes to (`None`: this agent has no TodoWrite and
@@ -1774,20 +1782,6 @@ impl AgentBuilder {
             own_plan = true;
         }
 
-        // The workspace's shared code understanding engine, for CodeScout
-        // (and the sub-agents of this workspace, through the registry).
-        if self.tools.iter().any(|t| t.name() == "CodeScout")
-            && self
-                .extensions
-                .get::<bricks_tools::code_scout::SemanticHandle>()
-                .is_none()
-        {
-            let engine = bricks_semantic::SemanticRegistry::global()
-                .engine_for(&working_dir, &bricks.semantic);
-            self.extensions
-                .insert(bricks_tools::code_scout::SemanticHandle(engine));
-        }
-
         // Jobs: one registry for the agent. The session's (in the
         // extensions: a session, a sub-agent) takes every tool that works
         // with jobs; otherwise the tools' own one becomes the agent's.
@@ -1825,6 +1819,10 @@ impl AgentBuilder {
             system_prompt: self.system_prompt,
             prompt_options: self.prompt_options,
             request_env: request_env::RequestEnv::default(),
+            read_file_state: Arc::new(bricks_tools::ReadFileState::new()),
+            instruction_files: parking_lot::Mutex::new(
+                crate::instruction_files::InstructionFilesState::new(),
+            ),
             last_system: parking_lot::Mutex::new(None),
             append_system_prompt: self.append_system_prompt,
             max_tokens: self.max_tokens,

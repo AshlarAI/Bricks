@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Commit 236 (2026/11/26)
+
+- Breaking change: unify user (`~/.bricks/config.json`) and project (`.bricks/config.json`) configuration into JSON with a strict project-config whitelist, remove `toml_edit` from the desktop backend, and migrate built-in compression rules and example configs from TOML to JSON.
+- Wire `bash_safety::analyze_command` into `BashTool` permission checks with `ShellState` alias and function override detection, add mid-run user steering (`Command::Inject` / `Event::MessageInjected`, protocol `SCHEMA_VERSION` 10) with desktop composer support, and introduce a wave-based concurrent and serial tool scheduler.
+- Breaking change: remove `CodeScout`, `CodeSearch`, `bricks-semantic`, `bricks-embeddings`, and `tantivy` while preserving `CodeStats` and moving lightweight lexical helpers into `bricks-tools`, and enrich `Grep` with `type`, `multiline`, `offset`, `before_context`, `after_context`, and `only_matching`.
+- Add video reading (`Read` magic-byte MIME detection, 20 MiB cap, `VideoSupport`, `ChatCompletions` video transport) and per-session `ReadFileState` memoization (`[file_unchanged]`, invalidated on edits, writes, patches, clear, revise, compaction, and eviction) while keeping unread-file `Edit` unblocked.
+- Cap `Event::ToolFinished.output` at 256 KiB with `output_truncated`, weight and evict active-context media blocks while protecting `LoadTools`, make `RawStore::put` O(1) with head+tail giant-error truncation, capture desktop login-shell environment snapshots for `ShellState`, load `AGENTS.md` differentially by SHA-256, add Windows shell guidance, emit on-demand git status deltas, and replace `PlanPanel` with `WorkPlanPopover` and refreshed timeline markers.
+
 ### Commit 235 (2026/11/26)
 
 - Bundle pinned Cua Driver binaries (`0.62.1` with SHA-256 and macOS signature verification) in macOS ARM64 and Windows x64 release builds via `apps/bricks-desktop/scripts/prepare_cua_driver.py` and `.github/workflows/release.yml`, and add local `prepare:cua-driver` and `build:app` npm scripts.

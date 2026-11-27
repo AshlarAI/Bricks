@@ -258,8 +258,8 @@ fn user_rules_dir() -> Option<PathBuf> {
 }
 
 /// The configuration files read for a session, in the order they apply:
-/// providers, the project's `bricks.toml`, the user's rule files. Only files
-/// that exist are listed.
+/// user `config.json`, the project's `.bricks/config.json`, the user's rule
+/// files (`~/.bricks/rules/*.json`). Only files that exist are listed.
 fn config_sources(
     providers: Option<&Path>,
     working_dir: &Path,
@@ -269,7 +269,7 @@ fn config_sources(
     if let Some(p) = providers.filter(|p| p.is_file()) {
         found.push(path_text(p));
     }
-    let project = working_dir.join("bricks.toml");
+    let project = bricks_config::project_config_file(working_dir);
     if project.is_file() {
         found.push(path_text(&project));
     }
@@ -278,7 +278,7 @@ fn config_sources(
             .into_iter()
             .flatten()
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "toml"))
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "json"))
             .collect();
         rules.sort();
         found.extend(rules.iter().map(|p| path_text(p)));
@@ -336,10 +336,6 @@ fn settings_of(snap: &Snapshot, bricks: &BricksConfig, agent: &Agent) -> Vec<Con
         entry(
             &tr!(msg::CONCURRENT_BACKGROUND_JOBS),
             bricks.background.max_jobs.to_string(),
-        ),
-        entry(
-            &tr!(msg::FILES_ANALYSED_BY_SEMANTIC_SEARCH),
-            grouped(bricks.semantic.max_files as u64),
         ),
         entry(
             &tr!(msg::CONFIGURATION_WARNINGS),
@@ -412,14 +408,19 @@ mod tests {
     /// its project settings. Its event stream is drained in the background.
     async fn scripted(
         fx: &Fixture,
-        bricks_toml: &str,
+        config_json: &str,
         script: Arc<Script>,
         interactive: bool,
     ) -> Controller {
+        let bricks = if config_json.trim().is_empty() {
+            BricksConfig::default()
+        } else {
+            BricksConfig::from_texts(Some(config_json), &[])
+        };
         let mut cfg = EngineConfig::new(
             &fx.wd,
             ScriptedCatalog::new(&["a"], script),
-            BricksConfig::from_texts(Some(bricks_toml), &[]),
+            bricks,
             fx.sessions.clone(),
         );
         cfg.interactive = interactive;
@@ -467,10 +468,10 @@ mod tests {
     async fn tools_carry_the_levels_and_the_verdicts_of_the_session_policy() {
         let fx = fixture();
         // Not chosen yet: reading is allowed, the rest is asked. The old
-        // `[permissions]` section of bricks.toml is not applied.
+        // `permissions` section is not applied.
         let ctl = scripted(
             &fx,
-            "[permissions]\nwrite = \"allow\"\n\n[permissions.tools]\nRead = \"deny\"\n",
+            r#"{"permissions":{"write":"allow","tools":{"Read":"deny"}}}"#,
             Script::new(vec![]),
             false,
         )
@@ -563,34 +564,31 @@ mod tests {
     async fn the_configuration_never_carries_a_provider_key() {
         const SECRET: &str = "sk-FAKE-SECRET-4242";
         let fx = fixture();
-        // A provider with an inline key, read from a real providers file.
-        let providers = fx.home.join("providers.toml");
+        // A provider with an inline key, read from a real config file.
+        let providers = fx.home.join("config.json");
         std::fs::write(
             &providers,
-            format!(
-                r#"schema_version = 1
-
-[[providers]]
-id = "p"
-name = "Fournisseur test"
-endpoint = "https://api.example.com/v1"
-protocol = "chat_completions"
-auth = "bearer"
-api_key = "{SECRET}"
-
-[[providers.models]]
-id = "m"
-name = "Modèle test"
-api_model = "vendor-m"
-input_modalities = ["text"]
-output_modalities = ["text"]
-streaming = true
-
-[providers.models.limits]
-max_input_tokens = 96000
-max_output_tokens = 8000
-"#
-            ),
+            serde_json::json!({
+                "schema_version": 1,
+                "providers": [{
+                    "id": "p",
+                    "name": "Fournisseur test",
+                    "endpoint": "https://api.example.com/v1",
+                    "protocol": "chat_completions",
+                    "auth": "bearer",
+                    "api_key": SECRET,
+                    "models": [{
+                        "id": "m",
+                        "name": "Modèle test",
+                        "api_model": "vendor-m",
+                        "input_modalities": ["text"],
+                        "output_modalities": ["text"],
+                        "streaming": true,
+                        "limits": { "max_input_tokens": 96000, "max_output_tokens": 8000 }
+                    }]
+                }]
+            })
+            .to_string(),
         )
         .unwrap();
         let registry = ProviderRegistry::load(Some(&providers)).expect("providers file");
@@ -632,21 +630,25 @@ max_output_tokens = 8000
 
     #[tokio::test]
     async fn configuration_reports_the_settings_without_quoting_diagnostics() {
-        const SECRET: &str = "sk-FAKE-IN-BRICKS-TOML-9";
+        const SECRET: &str = "sk-FAKE-IN-CONFIG-JSON-9";
         let fx = fixture();
         // A misspelt key next to a value that looks like a secret: the table
         // falls back to its defaults (the engine's rule), the diagnostic
         // counts as one, and its text is not shown.
-        let bricks = format!(
-            "[agents]\nenabled = true\nmax_concurrent = 3\n\n[background]\nmax_jobs = 5\nbogus = \"{SECRET}\"\n"
-        );
-        // The same text is on disk, where the engine reads a project's settings.
-        std::fs::write(fx.wd.join("bricks.toml"), &bricks).unwrap();
+        let bricks = serde_json::json!({
+            "agents": { "enabled": true, "max_concurrent": 3 },
+            "background": { "max_jobs": 5, "bogus": SECRET }
+        })
+        .to_string();
+        // Put a project config on disk so `config_sources` lists it.
+        let proj_cfg = bricks_config::project_config_file(&fx.wd);
+        std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
+        std::fs::write(&proj_cfg, r#"{"agent":{"model":"test/a"}}"#).unwrap();
         let ctl = scripted(&fx, &bricks, Script::new(vec![]), false).await;
         let info = config_of(&ctl, None).await.unwrap();
         assert!(info.agents_enabled);
         assert!(
-            info.sources.iter().any(|s| s.ends_with("bricks.toml")),
+            info.sources.iter().any(|s| s.ends_with(".bricks/config.json") || s.ends_with(".bricks\\config.json")),
             "{:?}",
             info.sources
         );
@@ -654,11 +656,11 @@ max_output_tokens = 8000
         assert_eq!(
             setting(&info, "Concurrent background jobs"),
             "16",
-            "[background] is rejected: its default"
+            "background is rejected: its default"
         );
         assert_eq!(setting(&info, "Configuration warnings"), "1");
         let text = serde_json::to_string(&info).unwrap();
-        assert!(!text.contains(SECRET), "a value of bricks.toml was quoted");
+        assert!(!text.contains(SECRET), "a value of config.json was quoted");
         // The session's policy: not chosen yet, writes are asked.
         assert_eq!(info.permission_policy, SessionPolicy::unchosen());
         assert!(!info.interactive);
@@ -715,28 +717,27 @@ max_output_tokens = 8000
     #[tokio::test]
     async fn an_open_session_is_located_by_its_controller() {
         let fx = fixture();
-        let registry = ProviderRegistry::from_toml_str(
-            r#"schema_version = 1
-
-[[providers]]
-id = "p"
-name = "Fournisseur test"
-endpoint = "https://api.example.com/v1"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "m"
-name = "Modèle test"
-api_model = "vendor-m"
-input_modalities = ["text"]
-output_modalities = ["text"]
-streaming = true
-
-[providers.models.limits]
-max_input_tokens = 96000
-max_output_tokens = 8000
-"#,
+        let registry = ProviderRegistry::from_json_str(
+            &serde_json::json!({
+                "schema_version": 1,
+                "providers": [{
+                    "id": "p",
+                    "name": "Fournisseur test",
+                    "endpoint": "https://api.example.com/v1",
+                    "protocol": "chat_completions",
+                    "auth": "none",
+                    "models": [{
+                        "id": "m",
+                        "name": "Modèle test",
+                        "api_model": "vendor-m",
+                        "input_modalities": ["text"],
+                        "output_modalities": ["text"],
+                        "streaming": true,
+                        "limits": { "max_input_tokens": 96000, "max_output_tokens": 8000 }
+                    }]
+                }]
+            })
+            .to_string(),
             "test",
         )
         .expect("registry");
@@ -794,22 +795,24 @@ max_output_tokens = 8000
         let rules = dir.path().join("rules");
         std::fs::create_dir_all(&wd).unwrap();
         std::fs::create_dir_all(&rules).unwrap();
-        let providers = dir.path().join("providers.toml");
-        std::fs::write(&providers, "schema_version = 1").unwrap();
-        std::fs::write(rules.join("b.toml"), "").unwrap();
-        std::fs::write(rules.join("a.toml"), "").unwrap();
+        let providers = dir.path().join("config.json");
+        std::fs::write(&providers, r#"{"schema_version":1}"#).unwrap();
+        std::fs::write(rules.join("b.json"), "{}").unwrap();
+        std::fs::write(rules.join("a.json"), "{}").unwrap();
         std::fs::write(rules.join("notes.txt"), "").unwrap();
 
-        // No project bricks.toml and no providers file on disk: the user's rules only.
-        let got = config_sources(Some(&dir.path().join("absent.toml")), &wd, Some(&rules));
+        // No project .bricks/config.json and no user config file on disk: the user's rules only.
+        let got = config_sources(Some(&dir.path().join("absent.json")), &wd, Some(&rules));
         assert_eq!(got.len(), 2, "{got:?}");
-        assert!(got[0].ends_with("a.toml") && got[1].ends_with("b.toml"));
+        assert!(got[0].ends_with("a.json") && got[1].ends_with("b.json"));
 
-        std::fs::write(wd.join("bricks.toml"), "").unwrap();
+        let proj_cfg = bricks_config::project_config_file(&wd);
+        std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
+        std::fs::write(&proj_cfg, "{}").unwrap();
         let got = config_sources(Some(&providers), &wd, Some(&rules));
         assert_eq!(got.len(), 4, "{got:?}");
-        assert!(got[0].ends_with("providers.toml"));
-        assert!(got[1].ends_with("bricks.toml"));
+        assert!(got[0].ends_with("config.json"));
+        assert!(got[1].ends_with(".bricks/config.json") || got[1].ends_with(".bricks\\config.json"));
 
         assert_eq!(
             config_sources(None, &wd, None).len(),
@@ -848,7 +851,6 @@ max_output_tokens = 8000
                 "Concurrent sub-agents",
                 "Maximum sub-agent depth",
                 "Concurrent background jobs",
-                "Files analysed by semantic search",
                 "Configuration warnings",
             ]
         );
@@ -860,6 +862,7 @@ max_output_tokens = 8000
             "Réserve pour la sortie",
             "Effort demandé",
             "Effort appliqué",
+            "Files analysed by semantic search",
         ];
         for old in removed {
             assert!(

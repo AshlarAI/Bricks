@@ -1,7 +1,7 @@
 //! CodeStats: the code, comment and blank lines of a file or a tree, counted
 //! in process with KodeStats.
 //!
-//! The walk is the one Grep and the semantic engine share (`.gitignore` and
+//! The walk is the one shared with Grep and Glob (`.gitignore` and
 //! `.ignore` rules, also outside a git checkout and nested), plus
 //! `.tokeignore`; hidden files are counted, VCS metadata directories are not,
 //! and directory links are never followed. A requested file goes through the
@@ -15,10 +15,8 @@
 //! one walk; nothing is kept once it ends.
 
 use super::*;
-use crate::code_scout::RunCancel;
+use crate::tool_primitives::lexical::{WalkFilters, walk_builder};
 use crate::tool_report::{ToolBody, ToolReport, ToolStatus};
-use bricks_semantic::CancellationToken;
-use bricks_semantic::lexical::{WalkFilters, walk_builder};
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 use kodestats::{Config, LanguageType};
@@ -31,6 +29,11 @@ use std::fs::{File, Metadata};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use tokio_util::sync::CancellationToken;
+
+/// Cancellation token of the run a tool call belongs to (set by the runner).
+#[derive(Clone)]
+pub struct RunCancel(pub CancellationToken);
 
 /// The ignore file read for this tool only, as KodeStats does.
 const TOKEIGNORE: &str = ".tokeignore";

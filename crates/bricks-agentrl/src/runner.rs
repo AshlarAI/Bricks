@@ -677,17 +677,29 @@ mod bricks_config_tests {
     }
 
     #[tokio::test]
-    async fn a_custom_rule_from_bricks_toml_is_applied() {
+    async fn a_custom_rule_from_project_config_json_is_applied() {
         let work = tempfile::tempdir().unwrap();
+        let proj_cfg = work.path().join(".bricks").join("config.json");
+        std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
         std::fs::write(
-            work.path().join("bricks.toml"),
-            "[compression]\nlevel = \"minimal\"\n\n[compression.filters.mytool]\n\
-             match = [{ program = \"mytool\" }]\nstrip_lines_matching = ['^noise line ']\n",
+            &proj_cfg,
+            r#"{
+                "compression": {
+                    "level": "minimal",
+                    "filters": {
+                        "mytool": {
+                            "match": [{ "program": "mytool" }],
+                            "strip_lines_matching": ["^noise line "]
+                        }
+                    }
+                }
+            }"#,
         )
         .unwrap();
         let config = bricks_agent::BricksConfig::from_sources(&bricks_compression::RuleSources {
             user_rules_dir: None,
-            bricks_toml: Some(work.path().join("bricks.toml")),
+            user_config: None,
+            project_config: Some(proj_cfg),
         });
         assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
         let r = runner(work.path()).with_bricks_config(config);

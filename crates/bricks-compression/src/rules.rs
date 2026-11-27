@@ -4,9 +4,10 @@
 //!
 //! Rules are loaded in three layers, later layers winning:
 //!
-//! 1. the built-in rules embedded in this crate (`src/rules/*.toml`);
-//! 2. user files `~/.bricks/rules/*.toml`, in byte order of their file names;
-//! 3. the `[compression.filters.<id>]` tables of a `bricks.toml`.
+//! 1. the built-in rules embedded in this crate (`src/rules/*.json`);
+//! 2. user configuration (`~/.bricks/config.json` `compression.filters`) and
+//!    user rule files `~/.bricks/rules/*.json`, in byte order of their file names;
+//! 3. project configuration (`<project>/.bricks/config.json` `compression.filters`).
 //!
 //! Every rule has an id (its table name). A rule with the id of an existing
 //! one replaces it entirely; `disabled = true` removes it. An invalid rule is
@@ -31,17 +32,17 @@ use std::path::{Path, PathBuf};
 
 /// Built-in rule files, in load order.
 const BUILTIN_RULE_FILES: &[(&str, &str)] = &[
-    ("builtin:generic.toml", include_str!("rules/generic.toml")),
-    ("builtin:exact.toml", include_str!("rules/exact.toml")),
-    ("builtin:git.toml", include_str!("rules/git.toml")),
-    ("builtin:rust.toml", include_str!("rules/rust.toml")),
-    ("builtin:go.toml", include_str!("rules/go.toml")),
+    ("builtin:generic.json", include_str!("rules/generic.json")),
+    ("builtin:exact.json", include_str!("rules/exact.json")),
+    ("builtin:git.json", include_str!("rules/git.json")),
+    ("builtin:rust.json", include_str!("rules/rust.json")),
+    ("builtin:go.json", include_str!("rules/go.json")),
     (
-        "builtin:javascript.toml",
-        include_str!("rules/javascript.toml"),
+        "builtin:javascript.json",
+        include_str!("rules/javascript.json"),
     ),
-    ("builtin:python.toml", include_str!("rules/python.toml")),
-    ("builtin:devops.toml", include_str!("rules/devops.toml")),
+    ("builtin:python.json", include_str!("rules/python.json")),
+    ("builtin:devops.json", include_str!("rules/devops.json")),
 ];
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ const BUILTIN_RULE_FILES: &[(&str, &str)] = &[
 struct RuleFile {
     schema_version: u32,
     #[serde(default)]
-    filters: BTreeMap<String, toml::Value>,
+    filters: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Default)]
@@ -274,18 +275,27 @@ impl std::fmt::Display for RuleDiagnostic {
 /// Where to look for rules beyond the built-in ones.
 #[derive(Debug, Clone, Default)]
 pub struct RuleSources {
-    /// Directory of `*.toml` rule files (normally `~/.bricks/rules`).
+    /// Directory of `*.json` rule files (normally `~/.bricks/rules`).
     pub user_rules_dir: Option<PathBuf>,
-    /// A `bricks.toml` whose `[compression.filters]` tables add rules.
-    pub bricks_toml: Option<PathBuf>,
+    /// User configuration file (normally `~/.bricks/config.json`) whose
+    /// `compression.filters` object adds user-layer rules.
+    pub user_config: Option<PathBuf>,
+    /// Project configuration file (`<working_dir>/.bricks/config.json`) whose
+    /// `compression.filters` object adds project-layer rules.
+    pub project_config: Option<PathBuf>,
 }
 
 impl RuleSources {
-    /// `~/.bricks/rules` and `<working_dir>/bricks.toml`.
+    /// `~/.bricks/config.json`, `~/.bricks/rules` (respecting `$BRICKS_HOME`),
+    /// and `<working_dir>/.bricks/config.json`.
     pub fn standard(working_dir: &Path) -> Self {
+        let home = std::env::var_os("BRICKS_HOME")
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".bricks")));
         Self {
-            user_rules_dir: dirs::home_dir().map(|h| h.join(".bricks").join("rules")),
-            bricks_toml: Some(working_dir.join("bricks.toml")),
+            user_rules_dir: home.as_ref().map(|h| h.join("rules")),
+            user_config: home.map(|h| h.join("config.json")),
+            project_config: Some(working_dir.join(".bricks").join("config.json")),
         }
     }
 }
@@ -319,14 +329,27 @@ impl RuleSet {
         for (name, text) in BUILTIN_RULE_FILES {
             loader.load_rule_file(0, name, text);
         }
-        if let Some(dir) = &sources.user_rules_dir {
-            loader.load_dir(dir);
-        }
-        if let Some(path) = &sources.bricks_toml
+        if let Some(path) = &sources.user_config
             && path.exists()
         {
             match std::fs::read_to_string(path) {
-                Ok(text) => loader.load_bricks_toml(&path.display().to_string(), &text),
+                Ok(text) => loader.load_config_json(1, &path.display().to_string(), &text),
+                Err(e) => loader.diag(
+                    &path.display().to_string(),
+                    None,
+                    format!("cannot read: {e}"),
+                ),
+            }
+        }
+        if let Some(dir) = &sources.user_rules_dir {
+            loader.load_dir(dir);
+        }
+        if let Some(path) = &sources.project_config
+            && path.exists()
+            && !same_path_opt(sources.user_config.as_deref(), Some(path.as_path()))
+        {
+            match std::fs::read_to_string(path) {
+                Ok(text) => loader.load_config_json(2, &path.display().to_string(), &text),
                 Err(e) => loader.diag(
                     &path.display().to_string(),
                     None,
@@ -337,17 +360,29 @@ impl RuleSet {
         loader.finish()
     }
 
-    /// Load from in-memory texts (tests, embedding).
-    pub fn from_texts(user_files: &[(&str, &str)], bricks_toml: Option<&str>) -> Self {
+    /// Load from in-memory JSON texts (tests, embedding).
+    pub fn from_texts(user_files: &[(&str, &str)], project_config: Option<&str>) -> Self {
+        Self::from_layered_texts(None, user_files, project_config)
+    }
+
+    /// Load from in-memory user config JSON, user rule files, and project config JSON.
+    pub fn from_layered_texts(
+        user_config: Option<&str>,
+        user_files: &[(&str, &str)],
+        project_config: Option<&str>,
+    ) -> Self {
         let mut loader = Loader::default();
         for (name, text) in BUILTIN_RULE_FILES {
             loader.load_rule_file(0, name, text);
         }
+        if let Some(text) = user_config {
+            loader.load_config_json(1, "config.json", text);
+        }
         for (name, text) in user_files {
             loader.load_rule_file(1, name, text);
         }
-        if let Some(text) = bricks_toml {
-            loader.load_bricks_toml("bricks.toml", text);
+        if let Some(text) = project_config {
+            loader.load_config_json(2, ".bricks/config.json", text);
         }
         loader.finish()
     }
@@ -429,7 +464,7 @@ impl Loader {
         };
         let mut files: Vec<PathBuf> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("toml"))
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
             .collect();
         // Byte order of the file names: stable across platforms and runs.
         files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
@@ -443,13 +478,13 @@ impl Loader {
     }
 
     fn load_rule_file(&mut self, layer: u8, source: &str, text: &str) {
-        let file: RuleFile = match toml::from_str(text) {
+        let file: RuleFile = match serde_json::from_str(text) {
             Ok(f) => f,
             Err(e) => {
                 self.diag(
                     source,
                     None,
-                    format!("invalid TOML: {}", one_line(&e.to_string())),
+                    format!("invalid JSON: {}", one_line(&e.to_string())),
                 );
                 return;
             }
@@ -470,14 +505,14 @@ impl Loader {
         }
     }
 
-    fn load_bricks_toml(&mut self, source: &str, text: &str) {
-        let doc: toml::Value = match toml::from_str(text) {
+    fn load_config_json(&mut self, layer: u8, source: &str, text: &str) {
+        let doc: serde_json::Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
                 self.diag(
                     source,
                     None,
-                    format!("invalid TOML: {}", one_line(&e.to_string())),
+                    format!("invalid JSON: {}", one_line(&e.to_string())),
                 );
                 return;
             }
@@ -485,20 +520,23 @@ impl Loader {
         let Some(filters) = doc.get("compression").and_then(|c| c.get("filters")) else {
             return;
         };
-        let Some(table) = filters.as_table() else {
+        if filters.is_null() {
+            return;
+        }
+        let Some(table) = filters.as_object() else {
             self.diag(
                 source,
                 None,
-                "`compression.filters` must be a table of rules".into(),
+                "`compression.filters` must be an object of rules".into(),
             );
             return;
         };
         for (id, value) in table.clone() {
-            self.add(2, source, id, value);
+            self.add(layer, source, id, value);
         }
     }
 
-    fn add(&mut self, layer: u8, source: &str, id: String, value: toml::Value) {
+    fn add(&mut self, layer: u8, source: &str, id: String, value: serde_json::Value) {
         self.order += 1;
         if !valid_id(&id) {
             self.diag(
@@ -559,6 +597,19 @@ impl Loader {
             disabled: self.disabled,
             diagnostics: self.diagnostics,
         }
+    }
+}
+
+fn same_path_opt(a: Option<&Path>, b: Option<&Path>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else {
+        return false;
+    };
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
     }
 }
 
@@ -795,54 +846,67 @@ mod tests {
 
     #[test]
     fn user_files_override_and_disable_in_order() {
-        let a = r#"
-schema_version = 1
-[filters.cargo-test]
-match = [{ program = "cargo", subcommands = ["test"] }]
-max_lines = 7
-"#;
-        let b = r#"
-schema_version = 1
-[filters.cargo-test]
-match = [{ program = "cargo", subcommands = ["test"] }]
-max_lines = 9
-[filters.git-log]
-disabled = true
-"#;
+        let a = r#"{
+            "schema_version": 1,
+            "filters": {
+                "cargo-test": {
+                    "match": [{ "program": "cargo", "subcommands": ["test"] }],
+                    "max_lines": 7
+                }
+            }
+        }"#;
+        let b = r#"{
+            "schema_version": 1,
+            "filters": {
+                "cargo-test": {
+                    "match": [{ "program": "cargo", "subcommands": ["test"] }],
+                    "max_lines": 9
+                },
+                "git-log": { "disabled": true }
+            }
+        }"#;
         // `b-...` sorts after `a-...`: it wins.
-        let set = RuleSet::from_texts(&[("a-first.toml", a), ("b-second.toml", b)], None);
+        let set = RuleSet::from_texts(&[("a-first.json", a), ("b-second.json", b)], None);
         assert_eq!(set.get("cargo-test").unwrap().max_lines, Some(9));
         assert!(set.get("git-log").is_none());
         assert_eq!(set.disabled()[0].0, "git-log");
 
-        // bricks.toml beats every user file.
-        let toml = r#"
-[compression.filters.cargo-test]
-match = [{ program = "cargo", subcommands = ["test"] }]
-max_lines = 11
-"#;
-        let set = RuleSet::from_texts(&[("a.toml", a), ("b.toml", b)], Some(toml));
+        // project config beats every user file.
+        let project = r#"{
+            "compression": {
+                "filters": {
+                    "cargo-test": {
+                        "match": [{ "program": "cargo", "subcommands": ["test"] }],
+                        "max_lines": 11
+                    }
+                }
+            }
+        }"#;
+        let set = RuleSet::from_texts(&[("a.json", a), ("b.json", b)], Some(project));
         let r = set.get("cargo-test").unwrap();
         assert_eq!((r.max_lines, r.origin.layer), (Some(11), 2));
     }
 
     #[test]
     fn an_invalid_rule_is_reported_and_does_not_disable_others() {
-        let bad = r#"
-schema_version = 1
-[filters.cargo-test]
-match = [{ program = "cargo", subcommands = ["test"] }]
-strip_lines_matching = ["(unclosed"]
-
-[filters.typo]
-match = [{ program = "x" }]
-max_line = 3
-
-[filters.good]
-match = [{ program = "mytool" }]
-max_lines = 5
-"#;
-        let set = RuleSet::from_texts(&[("mine.toml", bad)], None);
+        let bad = r#"{
+            "schema_version": 1,
+            "filters": {
+                "cargo-test": {
+                    "match": [{ "program": "cargo", "subcommands": ["test"] }],
+                    "strip_lines_matching": ["(unclosed"]
+                },
+                "typo": {
+                    "match": [{ "program": "x" }],
+                    "max_line": 3
+                },
+                "good": {
+                    "match": [{ "program": "mytool" }],
+                    "max_lines": 5
+                }
+            }
+        }"#;
+        let set = RuleSet::from_texts(&[("mine.json", bad)], None);
         let d = set.diagnostics();
         assert_eq!(d.len(), 2, "{d:#?}");
         assert!(d[0].message.contains("strip_lines_matching[0]"), "{}", d[0]);
@@ -858,29 +922,32 @@ max_lines = 5
     fn a_broken_file_does_not_stop_the_next_one() {
         let set = RuleSet::from_texts(
             &[
-                ("a.toml", "schema_version = 1\n[filters.x\n"),
+                ("a.json", "{\"schema_version\": 1, \"filters\":"),
                 (
-                    "b.toml",
-                    "schema_version = 1\n[filters.mine]\nmatch = [{ program = \"mine\" }]\n",
+                    "b.json",
+                    r#"{"schema_version":1,"filters":{"mine":{"match":[{"program":"mine"}]}}}"#,
                 ),
-                ("c.toml", "schema_version = 2\n"),
+                ("c.json", r#"{"schema_version":2}"#),
             ],
             None,
         );
         assert_eq!(set.diagnostics().len(), 2);
-        assert!(set.diagnostics()[0].message.starts_with("invalid TOML"));
+        assert!(set.diagnostics()[0].message.starts_with("invalid JSON"));
         assert!(set.diagnostics()[1].message.contains("schema_version 2"));
         assert!(set.get("mine").is_some());
     }
 
     #[test]
     fn ties_are_broken_by_layer_then_order() {
-        let user = r#"
-schema_version = 1
-[filters.my-cargo-test]
-match = [{ program = "cargo", subcommands = ["test"] }]
-"#;
-        let set = RuleSet::from_texts(&[("u.toml", user)], None);
+        let user = r#"{
+            "schema_version": 1,
+            "filters": {
+                "my-cargo-test": {
+                    "match": [{ "program": "cargo", "subcommands": ["test"] }]
+                }
+            }
+        }"#;
+        let set = RuleSet::from_texts(&[("u.json", user)], None);
         assert_eq!(set.find(&inv("cargo test")).unwrap().id, "my-cargo-test");
     }
 
@@ -889,16 +956,17 @@ match = [{ program = "cargo", subcommands = ["test"] }]
         let dir = tempfile::tempdir().unwrap();
         let rule = |n: usize| {
             format!(
-                "schema_version = 1\n[filters.mine]\nmatch = [{{ program = \"mine\" }}]\nmax_lines = {n}\n"
+                r#"{{"schema_version":1,"filters":{{"mine":{{"match":[{{"program":"mine"}}],"max_lines":{n}}}}}}}"#
             )
         };
-        std::fs::write(dir.path().join("20-late.toml"), rule(20)).unwrap();
-        std::fs::write(dir.path().join("10-early.toml"), rule(10)).unwrap();
+        std::fs::write(dir.path().join("20-late.json"), rule(20)).unwrap();
+        std::fs::write(dir.path().join("10-early.json"), rule(10)).unwrap();
         std::fs::write(dir.path().join("notes.txt"), "ignored").unwrap();
-        let toml = dir.path().join("bricks.toml");
+        let project = dir.path().join("config.json");
         let sources = RuleSources {
             user_rules_dir: Some(dir.path().to_path_buf()),
-            bricks_toml: Some(toml.clone()),
+            user_config: None,
+            project_config: Some(project.clone()),
         };
         assert_eq!(
             RuleSet::load(&sources).get("mine").unwrap().max_lines,
@@ -906,8 +974,8 @@ match = [{ program = "cargo", subcommands = ["test"] }]
         );
         // A later edit is picked up by the next load: no recompilation.
         std::fs::write(
-            &toml,
-            "[compression.filters.mine]\nmatch = [{ program = \"mine\" }]\nmax_lines = 30\n",
+            &project,
+            r#"{"compression":{"filters":{"mine":{"match":[{"program":"mine"}],"max_lines":30}}}}"#,
         )
         .unwrap();
         assert_eq!(

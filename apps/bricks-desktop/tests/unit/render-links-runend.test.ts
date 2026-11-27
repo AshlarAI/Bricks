@@ -202,9 +202,18 @@ describe('run-end card: a finished run shows its reason, its error and the files
 		expect(text).toContain('img.png binaire');
 	});
 
-	it('leaves the error of a failed run to the banner above the composer: no line under the answer', () => {
-		const { conv, item } = runOf({ outcome: 'failed', error: 'quota dépassé', at: T0 + 120 }, []);
-		expect(visibleCard(conv, item)).toBe('');
+	it('shows the resolved single-line error of a failed run', () => {
+		const { conv: providerConv, item: providerItem } = runOf(
+			{ outcome: 'failed', error: 'Provider error 400: bad request', at: T0 + 120 },
+			[],
+		);
+		expect(visibleCard(providerConv, providerItem)).toBe('Le fournisseur a renvoyé une erreur 400.');
+
+		const { conv: plainConv, item: plainItem } = runOf(
+			{ outcome: 'failed', error: 'quota dépassé', at: T0 + 120 },
+			[],
+		);
+		expect(visibleCard(plainConv, plainItem)).toBe('quota dépassé');
 	});
 
 	it('gives the reason of an incomplete run and the approvals it never got', () => {

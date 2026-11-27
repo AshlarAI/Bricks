@@ -12,8 +12,6 @@ members = [
     "crates/bricks-hooks",
     "crates/bricks-mcp",
     "crates/bricks-lsp",
-    "crates/bricks-semantic",
-    "crates/bricks-embeddings",
     "crates/bricks-compression",
     "crates/bricks-skills",
     "crates/bricks-vms",
@@ -58,7 +56,6 @@ hickory-resolver = { version = "0.26.3", default-features = false, features = ["
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
 
 # Error handling
 anyhow = "1"
@@ -114,8 +111,6 @@ bricks-memory = { path = "crates/bricks-memory", version = "2026.11.15" }
 bricks-hooks = { path = "crates/bricks-hooks", version = "2026.11.15" }
 bricks-mcp = { path = "crates/bricks-mcp", version = "2026.11.15" }
 bricks-lsp = { path = "crates/bricks-lsp", version = "2026.11.15" }
-bricks-semantic = { path = "crates/bricks-semantic", version = "2026.11.15" }
-bricks-embeddings = { path = "crates/bricks-embeddings", version = "2026.11.15" }
 bricks-compression = { path = "crates/bricks-compression", version = "2026.11.15" }
 bricks-skills = { path = "crates/bricks-skills", version = "2026.11.15" }
 bricks-vms = { path = "crates/bricks-vms", version = "2026.11.15" }

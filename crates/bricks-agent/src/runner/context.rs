@@ -4,25 +4,53 @@
 use super::history::save_session;
 use super::{record_run_usage, send};
 use crate::Agent;
-use crate::context::{BudgetDecision, ContextStatus, ModelView, RequestView};
+use crate::context::{BudgetDecision, ContextPolicy, ContextStatus, ModelView, RequestView};
 use crate::events::{AgentEvent, CompactReason};
 use bricks_provider::CompletionRequest;
 use bricks_types::*;
+use std::collections::HashSet;
 use tokio::sync::mpsc;
 
-fn tool_result_len(content: &ToolResultContent) -> usize {
+/// Equivalent char weights for non-text media inside the active context,
+/// derived from [`ContextPolicy`] token estimates (~4 chars per token).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MediaWeights {
+    pub image_chars: usize,
+    pub video_chars: usize,
+    pub document_chars: usize,
+}
+
+impl Default for MediaWeights {
+    fn default() -> Self {
+        Self::from_policy(&ContextPolicy::default())
+    }
+}
+
+impl MediaWeights {
+    pub(crate) fn from_policy(policy: &ContextPolicy) -> Self {
+        let chars = |tokens: u64| usize::try_from(tokens.saturating_mul(4)).unwrap_or(usize::MAX);
+        Self {
+            image_chars: chars(policy.image_tokens),
+            video_chars: chars(policy.document_tokens),
+            document_chars: chars(policy.document_tokens),
+        }
+    }
+}
+
+fn content_block_len(block: &ContentBlock, weights: MediaWeights) -> usize {
+    match block {
+        ContentBlock::Text { text } => text.len(),
+        ContentBlock::Image { .. } | ContentBlock::Audio { .. } => weights.image_chars,
+        ContentBlock::Video { .. } => weights.video_chars,
+        ContentBlock::Document { .. } => weights.document_chars,
+        _ => 0,
+    }
+}
+
+fn tool_result_len(content: &ToolResultContent, weights: MediaWeights) -> usize {
     match content {
         ToolResultContent::Text(t) => t.len(),
-        ToolResultContent::Blocks(b) => b
-            .iter()
-            .map(|bb| {
-                if let ContentBlock::Text { text } = bb {
-                    text.len()
-                } else {
-                    0
-                }
-            })
-            .sum(),
+        ToolResultContent::Blocks(b) => b.iter().map(|bb| content_block_len(bb, weights)).sum(),
     }
 }
 
@@ -63,7 +91,13 @@ pub fn apply_tool_result_budget_with(
     budget_chars: usize,
     placeholder: impl FnMut(&str, usize) -> String,
 ) -> bool {
-    apply_tool_result_budget_protected(messages, budget_chars, &[], placeholder)
+    apply_tool_result_budget_protected(
+        messages,
+        budget_chars,
+        MediaWeights::default(),
+        &[],
+        placeholder,
+    )
 }
 
 /// A tool result carrying one of `protected` (the markers of active skill
@@ -78,25 +112,128 @@ fn is_protected(content: &ToolResultContent, protected: &[String]) -> bool {
         }
 }
 
+fn collect_protected_tool_use_ids(messages: &[Message]) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for msg in messages {
+        if let MessageContent::Blocks(blocks) = &msg.content {
+            for b in blocks {
+                if let ContentBlock::ToolUse { id, name, .. } = b
+                    && name == crate::deferred::LOAD_TOOLS
+                {
+                    ids.insert(id.clone());
+                }
+            }
+        }
+    }
+    ids
+}
+
+fn is_media_marker(text: &str) -> bool {
+    text.starts_with(bricks_tools::TOOL_IMAGE_MARK)
+        || text.starts_with(bricks_tools::TOOL_VIDEO_MARK)
+}
+
+fn extract_media_path(text: &str) -> Option<String> {
+    for mark in [
+        bricks_tools::TOOL_IMAGE_MARK,
+        bricks_tools::TOOL_VIDEO_MARK,
+    ] {
+        if let Some(rest) = text.strip_prefix(mark)
+            && let Some((_, after_id)) = rest.split_once("] ")
+            && let Some((path, _)) = after_id.split_once(", ")
+        {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() && trimmed != "(no path)" {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    for line in text.lines() {
+        for prefix in ["Image ", "Video "] {
+            if let Some(rest) = line.strip_prefix(prefix)
+                && let Some((path, _)) = rest.split_once(": ")
+            {
+                let trimmed = path.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn media_eviction_placeholder(path: Option<&str>, size: usize) -> String {
+    match path {
+        Some(p) => format!(
+            "[media removed from active context to save space ({size} chars); re-read {p} if needed]"
+        ),
+        None => format!(
+            "[media removed from active context to save space ({size} chars); re-read the file if needed]"
+        ),
+    }
+}
+
+fn content_has_media(content: &ToolResultContent) -> bool {
+    match content {
+        ToolResultContent::Text(_) => false,
+        ToolResultContent::Blocks(blocks) => blocks.iter().any(|b| {
+            matches!(
+                b,
+                ContentBlock::Image { .. }
+                    | ContentBlock::Video { .. }
+                    | ContentBlock::Audio { .. }
+                    | ContentBlock::Document { .. }
+            )
+        }),
+    }
+}
+
+fn path_from_tool_result(content: &ToolResultContent) -> Option<String> {
+    let ToolResultContent::Blocks(blocks) = content else {
+        return None;
+    };
+    for b in blocks {
+        if let ContentBlock::Text { text } = b
+            && let Some(p) = extract_media_path(text)
+        {
+            return Some(p);
+        }
+    }
+    None
+}
+
 /// [`apply_tool_result_budget_with`], keeping the results that carry an
-/// active skill activation.
+/// active skill activation or `LoadTools` activation, and counting + evicting
+/// tool-produced media blocks (`Image`, `Video`, etc.) by weight.
 pub(crate) fn apply_tool_result_budget_protected(
     messages: &mut [Message],
     budget_chars: usize,
+    weights: MediaWeights,
     protected: &[String],
     mut placeholder: impl FnMut(&str, usize) -> String,
 ) -> bool {
+    let protected_ids = collect_protected_tool_use_ids(messages);
+
     let total: usize = messages
         .iter()
         .flat_map(|m| match &m.content {
             MessageContent::Blocks(blocks) => blocks
                 .iter()
                 .filter_map(|b| match b {
-                    ContentBlock::ToolResult { content, .. }
-                        if !is_protected(content, protected) =>
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        ..
+                    } if !protected_ids.contains(tool_use_id)
+                        && !is_protected(content, protected) =>
                     {
-                        Some(tool_result_len(content))
+                        Some(tool_result_len(content, weights))
                     }
+                    ContentBlock::Image { .. }
+                    | ContentBlock::Video { .. }
+                    | ContentBlock::Audio { .. }
+                    | ContentBlock::Document { .. } => Some(content_block_len(b, weights)),
                     _ => None,
                 })
                 .collect::<Vec<_>>(),
@@ -118,22 +255,79 @@ pub(crate) fn apply_tool_result_budget_protected(
             break;
         }
         if let MessageContent::Blocks(blocks) = &mut msg.content {
-            for block in blocks.iter_mut() {
-                if freed >= target_free {
-                    break;
+            let mut i = 0usize;
+            while i < blocks.len() && freed < target_free {
+                let media_pair_info = match (blocks.get(i), blocks.get(i + 1)) {
+                    (Some(ContentBlock::Text { text }), Some(next))
+                        if is_media_marker(text)
+                            && matches!(
+                                next,
+                                ContentBlock::Image { .. }
+                                    | ContentBlock::Video { .. }
+                                    | ContentBlock::Audio { .. }
+                                    | ContentBlock::Document { .. }
+                            ) =>
+                    {
+                        Some((content_block_len(next, weights), extract_media_path(text)))
+                    }
+                    _ => None,
+                };
+                if let Some((size, path)) = media_pair_info {
+                    blocks[i] = ContentBlock::Text {
+                        text: media_eviction_placeholder(path.as_deref(), size),
+                    };
+                    blocks.remove(i + 1);
+                    freed += size;
+                    changed = true;
+                    i += 1;
+                    continue;
                 }
-                if let ContentBlock::ToolResult {
-                    tool_use_id,
-                    content,
-                    ..
-                } = block
-                {
-                    let size = tool_result_len(content);
-                    let already = matches!(content, ToolResultContent::Text(t) if t.starts_with("[tool result removed"));
-                    if size > 200 && !already && !is_protected(content, protected) {
+                match &mut blocks[i] {
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        ..
+                    } => {
+                        let size = tool_result_len(content, weights);
+                        let already = matches!(
+                            content,
+                            ToolResultContent::Text(t)
+                                if t.starts_with("[tool result removed")
+                                    || t.starts_with("[media removed")
+                        );
+                        if size > 200
+                            && !already
+                            && !protected_ids.contains(tool_use_id)
+                            && !is_protected(content, protected)
+                        {
+                            let replacement = if content_has_media(content) {
+                                media_eviction_placeholder(
+                                    path_from_tool_result(content).as_deref(),
+                                    size,
+                                )
+                            } else {
+                                placeholder(tool_use_id, size)
+                            };
+                            freed += size;
+                            *content = ToolResultContent::Text(replacement);
+                            changed = true;
+                        }
+                        i += 1;
+                    }
+                    ContentBlock::Image { .. }
+                    | ContentBlock::Video { .. }
+                    | ContentBlock::Audio { .. }
+                    | ContentBlock::Document { .. } => {
+                        let size = content_block_len(&blocks[i], weights);
+                        blocks[i] = ContentBlock::Text {
+                            text: media_eviction_placeholder(None, size),
+                        };
                         freed += size;
-                        *content = ToolResultContent::Text(placeholder(tool_use_id, size));
                         changed = true;
+                        i += 1;
+                    }
+                    _ => {
+                        i += 1;
                     }
                 }
             }
@@ -365,6 +559,9 @@ pub(super) async fn run_compaction(
                 memory_key,
             });
             *agent.messages.lock() = new;
+            agent.read_file_state.clear();
+            agent.instruction_files.lock().mark_compacted();
+            agent.request_env.mark_full_git();
             agent
                 .context
                 .lock()

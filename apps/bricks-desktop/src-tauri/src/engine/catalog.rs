@@ -1,5 +1,5 @@
 //! The model catalog of the desktop: the provider registry as last loaded
-//! from `providers.toml`, swappable when the file changes. Every session
+//! from `config.json`, swappable when the file changes. Every session
 //! reads it through the engine's `ModelCatalog`, so a change reaches the
 //! sessions at their next run (their running provider is never replaced
 //! mid-run).
@@ -72,34 +72,39 @@ impl ModelCatalog for DesktopCatalog {
 mod tests {
     use super::*;
 
-    const ONE_MODEL: &str = r#"
-schema_version = 1
-
-[[providers]]
-id = "local"
-name = "Local"
-endpoint = "http://127.0.0.1:9/v1"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "small"
-name = "Small"
-api_model = "small"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-"#;
+    const ONE_MODEL: &str = r#"{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local",
+      "endpoint": "http://127.0.0.1:9/v1",
+      "protocol": "chat_completions",
+      "auth": "none",
+      "models": [
+        {
+          "id": "small",
+          "name": "Small",
+          "api_model": "small",
+          "limits": {
+            "max_input_tokens": 1000,
+            "max_output_tokens": 100
+          }
+        }
+      ]
+    }
+  ]
+}"#;
 
     #[test]
     fn a_replacement_changes_the_models_and_the_revision() {
-        let first = ProviderRegistry::from_toml_str(ONE_MODEL, "test").unwrap();
+        let first = ProviderRegistry::from_json_str(ONE_MODEL, "test").unwrap();
         let catalog = DesktopCatalog::new(Ok(Arc::new(first)));
         assert_eq!(catalog.models().len(), 1);
         assert_eq!(catalog.revision(), 0);
 
         catalog.replace(Ok(Arc::new(
-            ProviderRegistry::from_toml_str("schema_version = 1\n", "test").unwrap(),
+            ProviderRegistry::from_json_str(r#"{"schema_version":1}"#, "test").unwrap(),
         )));
         assert!(
             catalog.models().is_empty(),
@@ -110,12 +115,12 @@ max_output_tokens = 100
 
     #[test]
     fn a_removed_model_is_a_build_error_and_a_broken_file_says_why() {
-        let first = ProviderRegistry::from_toml_str(ONE_MODEL, "test").unwrap();
+        let first = ProviderRegistry::from_json_str(ONE_MODEL, "test").unwrap();
         let catalog = DesktopCatalog::new(Ok(Arc::new(first)));
         assert!(catalog.build("local/small", None).is_ok());
 
         catalog.replace(Ok(Arc::new(
-            ProviderRegistry::from_toml_str("schema_version = 1\n", "test").unwrap(),
+            ProviderRegistry::from_json_str(r#"{"schema_version":1}"#, "test").unwrap(),
         )));
         let err = catalog
             .build("local/small", None)
@@ -123,11 +128,11 @@ max_output_tokens = 100
             .expect("removed model");
         assert!(err.contains("local"), "names what is missing: {err}");
 
-        catalog.replace(Err("providers.toml: invalid TOML".into()));
+        catalog.replace(Err("config.json: invalid JSON".into()));
         assert!(catalog.models().is_empty());
         assert_eq!(
             catalog.build("local/small", None).err().as_deref(),
-            Some("providers.toml: invalid TOML")
+            Some("config.json: invalid JSON")
         );
     }
 }

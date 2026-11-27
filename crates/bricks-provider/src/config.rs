@@ -1,11 +1,11 @@
 //! Provider configuration: the single source of truth for which providers and
 //! models exist, how to reach them and what they can do.
 //!
-//! The file is TOML (`~/.bricks/providers.toml`) or JSON — both deserialize
-//! into the same Serde types, with the same defaults and the same validation.
-//! Nothing here talks to the network and nothing reads the environment. The
-//! file holds no key: keys live in the system's secure storage (see
-//! [`crate::keys`]) and are read when a provider is built.
+//! The file is JSON (`~/.bricks/config.json`). Sibling top-level sections of
+//! the unified Bricks user configuration (`mcp`, `agent`, `preferences`, …) are
+//! ignored here while unknown top-level typos and unknown provider/model fields
+//! are still rejected. Nothing here talks to the network and nothing reads the
+//! environment.
 //!
 //! Errors always name the provider, the model and the field at fault, and never
 //! echo a value that could be a secret.
@@ -22,9 +22,25 @@ use std::path::{Path, PathBuf};
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Default location of the configuration file, relative to the home directory.
-pub const DEFAULT_CONFIG_RELATIVE_PATH: &str = ".bricks/providers.toml";
+pub const DEFAULT_CONFIG_RELATIVE_PATH: &str = ".bricks/config.json";
 
-/// `~/.bricks/providers.toml`, or `None` when no home directory is known.
+/// Top-level sections that belong to other subsystems in `~/.bricks/config.json`.
+const UNIFIED_CONFIG_SECTIONS: &[&str] = &[
+    "mcp",
+    "agent",
+    "agents",
+    "context",
+    "compression",
+    "background",
+    "bash",
+    "web",
+    "semantic",
+    "memory",
+    "preferences",
+    "permissions",
+];
+
+/// `~/.bricks/config.json`, or `None` when no home directory is known.
 pub fn default_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(DEFAULT_CONFIG_RELATIVE_PATH))
 }
@@ -550,18 +566,11 @@ impl From<ConfigError> for bricks_types::BricksError {
 
 // ─── Loading ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Format {
-    Toml,
-    Json,
-}
-
 impl ProvidersConfig {
-    /// Load and validate a configuration file.
+    /// Load and validate a JSON configuration file.
     ///
     /// `explicit` replaces the default path entirely — the two are never
-    /// merged. The extension selects the format: `.toml` or `.json`; anything
-    /// else is rejected.
+    /// merged. Only `.json` files are accepted.
     pub fn load(explicit: Option<&Path>) -> Result<Self, ConfigError> {
         let path = match explicit {
             Some(p) => p.to_path_buf(),
@@ -569,83 +578,64 @@ impl ProvidersConfig {
                 ConfigError::new(
                     "providers config",
                     "",
-                    "no home directory found, so the default `~/.bricks/providers.toml` \
+                    "no home directory found, so the default `~/.bricks/config.json` \
                      cannot be located; pass an explicit path",
                 )
             })?,
         };
         let origin = path.display().to_string();
-        let format = match path
+        match path
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_ascii_lowercase())
             .as_deref()
         {
-            Some("toml") => Format::Toml,
-            Some("json") => Format::Json,
+            Some("json") => {}
             other => {
                 return Err(ConfigError::new(
                     &origin,
                     "",
                     format!(
-                        "unsupported file extension {}; use `.toml` or `.json`",
+                        "unsupported file extension {}; use `.json`",
                         other
                             .map(|e| format!("`.{e}`"))
                             .unwrap_or_else(|| "(none)".into())
                     ),
                 ));
             }
-        };
+        }
         let text = std::fs::read_to_string(&path).map_err(|e| {
             let hint = if e.kind() == std::io::ErrorKind::NotFound {
                 "file not found; create it (an annotated example ships in \
-                 `docs/providers.example.toml`)"
+                 `docs/providers.example.json`)"
                     .to_string()
             } else {
                 format!("cannot read file: {}", e.kind())
             };
             ConfigError::new(&origin, "", hint)
         })?;
-        Self::parse(&text, format, &origin)
-    }
-
-    /// Parse and validate TOML text. `origin` labels errors.
-    pub fn from_toml_str(text: &str, origin: &str) -> Result<Self, ConfigError> {
-        Self::parse(text, Format::Toml, origin)
+        Self::from_json_str(&text, &origin)
     }
 
     /// Parse and validate JSON text. `origin` labels errors.
     pub fn from_json_str(text: &str, origin: &str) -> Result<Self, ConfigError> {
-        Self::parse(text, Format::Json, origin)
-    }
-
-    fn parse(text: &str, format: Format, origin: &str) -> Result<Self, ConfigError> {
-        // Both formats go through the same generic value, so they cannot drift.
-        let raw: Value = match format {
-            Format::Toml => toml::from_str(text).map_err(|e| {
-                // The toml error's Display quotes the offending source line,
-                // which may be an `api_key`. Report position and message only.
-                let (line, col) = e.span().map(|s| line_col(text, s.start)).unwrap_or((0, 0));
-                let at = if line > 0 {
-                    format!(" (line {line}, column {col})")
-                } else {
-                    String::new()
-                };
-                ConfigError::new(origin, "", format!("invalid TOML{at}: {}", e.message()))
-            })?,
-            Format::Json => serde_json::from_str(text).map_err(|e| {
-                ConfigError::new(
-                    origin,
-                    "",
-                    format!(
-                        "invalid JSON (line {}, column {}): {}",
-                        e.line(),
-                        e.column(),
-                        json_syntax_kind(&e)
-                    ),
-                )
-            })?,
-        };
+        let mut raw: Value = serde_json::from_str(text).map_err(|e| {
+            ConfigError::new(
+                origin,
+                "",
+                format!(
+                    "invalid JSON (line {}, column {}): {}",
+                    e.line(),
+                    e.column(),
+                    json_syntax_kind(&e)
+                ),
+            )
+        })?;
+        if let Some(obj) = raw.as_object_mut() {
+            for section in UNIFIED_CONFIG_SECTIONS {
+                obj.remove(*section);
+            }
+        }
         let config: ProvidersConfig = serde_path_to_error::deserialize(&raw)
             .map_err(|e| locate_serde_error(origin, &raw, e))?;
         config.validate(origin)?;
@@ -679,19 +669,6 @@ impl ProvidersConfig {
     pub fn provider(&self, id: &str) -> Option<&ProviderConfig> {
         self.providers.iter().find(|p| p.id == id)
     }
-}
-
-fn line_col(text: &str, offset: usize) -> (usize, usize) {
-    let offset = offset.min(text.len());
-    let before = &text[..offset];
-    let line = before.bytes().filter(|b| *b == b'\n').count() + 1;
-    let col = before
-        .rsplit('\n')
-        .next()
-        .map(|l| l.chars().count())
-        .unwrap_or(0)
-        + 1;
-    (line, col)
 }
 
 /// serde_json syntax errors never quote input, but keep only the category.
@@ -813,9 +790,9 @@ fn backticked_after(message: &str, prefix: &str) -> Option<String> {
     Some(rest.split('`').next()?.to_string())
 }
 
-/// serde's `invalid type`/`invalid value` messages quote the offending value
-/// (`invalid type: string "sk-…", expected u64`). A mistyped secret must not be
-/// echoed, so cut everything between the kind and `, expected`.
+/// serde's `invalid type`/`invalid value`/`unknown variant` messages quote the
+/// offending value (`invalid type: string "sk-…", expected u64`). A mistyped
+/// secret must not be echoed, so cut everything between the kind and `, expected`.
 fn sanitize_serde_message(message: &str) -> String {
     for prefix in ["invalid type: ", "invalid value: "] {
         if let Some(rest) = message.strip_prefix(prefix) {
@@ -823,6 +800,10 @@ fn sanitize_serde_message(message: &str) -> String {
             let expected = rest.find(", expected").map(|i| &rest[i..]).unwrap_or("");
             return format!("wrong type (got {kind}){expected}");
         }
+    }
+    if let Some(rest) = message.strip_prefix("unknown variant ") {
+        let expected = rest.find(", expected").map(|i| &rest[i..]).unwrap_or("");
+        return format!("unknown value{expected}");
     }
     message.to_string()
 }
@@ -1210,66 +1191,72 @@ impl ModelConfig {
 
 #[cfg(test)]
 pub(crate) mod tests_support {
-    pub(crate) const BASIC: &str = r#"
-schema_version = 1
-
-[[providers]]
-id = "custom"
-name = "Mon fournisseur"
-endpoint = "https://api.example.com/v1"
-protocol = "chat_completions"
-auth = "bearer"
-api_key_env = "BRICKS_CUSTOM_API_KEY"
-
-[[providers.models]]
-id = "flash"
-name = "Mon modèle Flash"
-api_model = "vendor-flash"
-input_modalities = ["text", "image"]
-output_modalities = ["text"]
-streaming = true
-
-[providers.models.limits]
-max_input_tokens = 96000
-max_output_tokens = 32000
-
-[providers.models.pricing]
-currency = "USD"
-per_tokens = 1000000
-input = "0.30"
-output = "1.20"
-cache_read = "0.03"
-cache_write = "0.40"
-
-[providers.models.reasoning]
-default = "approfondi"
-
-[[providers.models.reasoning.profiles]]
-id = "rapide"
-label = "Rapide"
-parameters = { reasoning_effort = "low" }
-
-[[providers.models.reasoning.profiles]]
-id = "approfondi"
-label = "Approfondi"
-parameters = { reasoning_effort = "high" }
-
-[[providers.models]]
-id = "expert"
-name = "Mon modèle Expert"
-api_model = "vendor-expert"
-protocol = "responses"
-input_modalities = ["text"]
-output_modalities = ["text"]
-streaming = true
-
-[providers.models.limits]
-max_input_tokens = 64000
-max_output_tokens = 16000
-
-[providers.models.reasoning]
-profiles = []
-"#;
+    pub(crate) const BASIC: &str = r#"{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "custom",
+      "name": "Mon fournisseur",
+      "endpoint": "https://api.example.com/v1",
+      "protocol": "chat_completions",
+      "auth": "bearer",
+      "api_key_env": "BRICKS_CUSTOM_API_KEY",
+      "models": [
+        {
+          "id": "flash",
+          "name": "Mon modèle Flash",
+          "api_model": "vendor-flash",
+          "input_modalities": ["text", "image"],
+          "output_modalities": ["text"],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 96000,
+            "max_output_tokens": 32000
+          },
+          "pricing": {
+            "currency": "USD",
+            "per_tokens": 1000000,
+            "input": "0.30",
+            "output": "1.20",
+            "cache_read": "0.03",
+            "cache_write": "0.40"
+          },
+          "reasoning": {
+            "default": "approfondi",
+            "profiles": [
+              {
+                "id": "rapide",
+                "label": "Rapide",
+                "parameters": { "reasoning_effort": "low" }
+              },
+              {
+                "id": "approfondi",
+                "label": "Approfondi",
+                "parameters": { "reasoning_effort": "high" }
+              }
+            ]
+          }
+        },
+        {
+          "id": "expert",
+          "name": "Mon modèle Expert",
+          "api_model": "vendor-expert",
+          "protocol": "responses",
+          "input_modalities": ["text"],
+          "output_modalities": ["text"],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 64000,
+            "max_output_tokens": 16000
+          },
+          "reasoning": {
+            "profiles": []
+          }
+        }
+      ]
+    }
+  ]
+}"#;
 }
 
 #[cfg(test)]
@@ -1278,12 +1265,18 @@ mod tests {
     use super::*;
 
     fn err(text: &str) -> ConfigError {
-        ProvidersConfig::from_toml_str(text, "test.toml").unwrap_err()
+        ProvidersConfig::from_json_str(text, "test.json").unwrap_err()
+    }
+
+    fn mutate(f: impl FnOnce(&mut Value)) -> String {
+        let mut v: Value = serde_json::from_str(BASIC).unwrap();
+        f(&mut v);
+        serde_json::to_string(&v).unwrap()
     }
 
     #[test]
     fn contract_example_loads() {
-        let cfg = ProvidersConfig::from_toml_str(BASIC, "test.toml").unwrap();
+        let cfg = ProvidersConfig::from_json_str(BASIC, "test.json").unwrap();
         assert_eq!(cfg.providers.len(), 1);
         let p = &cfg.providers[0];
         assert_eq!(p.models.len(), 2);
@@ -1297,53 +1290,64 @@ mod tests {
     /// Tools start during the stream unless a model says `false`.
     #[test]
     fn async_tool_calls_is_on_unless_turned_off() {
-        let cfg = ProvidersConfig::from_toml_str(BASIC, "t").unwrap();
+        let cfg = ProvidersConfig::from_json_str(BASIC, "t").unwrap();
         assert!(cfg.providers[0].models[0].async_tool_calls);
-        let off = BASIC.replace(
-            "streaming = true\n",
-            "streaming = true\nasync_tool_calls = false\n",
-        );
-        let cfg = ProvidersConfig::from_toml_str(&off, "t").unwrap();
+        let off = mutate(|v| {
+            v["providers"][0]["models"][0]["async_tool_calls"] = Value::Bool(false);
+        });
+        let cfg = ProvidersConfig::from_json_str(&off, "t").unwrap();
         assert!(!cfg.providers[0].models[0].async_tool_calls);
     }
 
     #[test]
-    fn toml_and_json_are_equivalent() {
-        let toml_cfg = ProvidersConfig::from_toml_str(BASIC, "a.toml").unwrap();
-        let as_value: Value = toml::from_str(BASIC).unwrap();
-        let json_text = serde_json::to_string(&as_value).unwrap();
-        let json_cfg = ProvidersConfig::from_json_str(&json_text, "a.json").unwrap();
-        assert_eq!(format!("{toml_cfg:?}"), format!("{json_cfg:?}"));
+    fn unified_config_sibling_sections_are_tolerated_while_typos_fail() {
+        let with_siblings = mutate(|v| {
+            v["mcp"] = serde_json::json!({"servers": []});
+            v["preferences"] = serde_json::json!({"theme": "dark"});
+            v["agent"] = serde_json::json!({"model": "custom/flash"});
+        });
+        let cfg = ProvidersConfig::from_json_str(&with_siblings, "config.json").unwrap();
+        assert_eq!(cfg.providers.len(), 1);
+
+        let typo = mutate(|v| {
+            v["providres"] = serde_json::json!([]);
+        });
+        let e = err(&typo);
+        assert_eq!(e.field, "providres");
+        assert!(e.message.contains("unknown field"));
     }
 
     #[test]
     fn default_path_is_under_the_home_directory() {
         if let Some(p) = default_config_path() {
-            assert!(p.ends_with(".bricks/providers.toml"), "{}", p.display());
+            assert!(p.ends_with(".bricks/config.json"), "{}", p.display());
         }
     }
 
     #[test]
     fn unknown_extension_is_rejected_and_explicit_path_is_used() {
         let dir = tempfile::tempdir().unwrap();
-        let yaml = dir.path().join("providers.yaml");
-        std::fs::write(&yaml, "x").unwrap();
-        let e = ProvidersConfig::load(Some(&yaml)).unwrap_err();
-        assert!(e.message.contains("unsupported file extension"), "{e}");
+        for bad in ["providers.yaml", "providers.toml"] {
+            let p = dir.path().join(bad);
+            std::fs::write(&p, "x").unwrap();
+            let e = ProvidersConfig::load(Some(&p)).unwrap_err();
+            assert!(e.message.contains("unsupported file extension"), "{e}");
+        }
 
-        let json = dir.path().join("p.json");
-        let value: Value = toml::from_str(BASIC).unwrap();
-        std::fs::write(&json, serde_json::to_string(&value).unwrap()).unwrap();
+        let json = dir.path().join("config.json");
+        std::fs::write(&json, BASIC).unwrap();
         assert!(ProvidersConfig::load(Some(&json)).is_ok());
 
-        let missing = dir.path().join("missing.toml");
+        let missing = dir.path().join("missing.json");
         let e = ProvidersConfig::load(Some(&missing)).unwrap_err();
         assert!(e.message.contains("file not found"), "{e}");
     }
 
     #[test]
     fn errors_name_provider_model_and_field() {
-        let text = BASIC.replace("max_input_tokens = 96000", "max_input_tokens = 0");
+        let text = mutate(|v| {
+            v["providers"][0]["models"][0]["limits"]["max_input_tokens"] = 0.into();
+        });
         let e = err(&text);
         assert_eq!(e.provider.as_deref(), Some("custom"));
         assert_eq!(e.model.as_deref(), Some("flash"));
@@ -1354,47 +1358,53 @@ mod tests {
 
     #[test]
     fn missing_and_unknown_fields_are_located() {
-        let e = err(&BASIC.replace("api_model = \"vendor-flash\"\n", ""));
+        let missing = mutate(|v| {
+            v["providers"][0]["models"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("api_model");
+        });
+        let e = err(&missing);
         assert_eq!(
             (e.model.as_deref(), e.field.as_str()),
             (Some("flash"), "api_model")
         );
         assert_eq!(e.message, "required field is missing");
 
-        let e = err(&BASIC.replace(
-            "streaming = true\n\n[providers.models.limits]\nmax_input_tokens = 96000",
-            "streamin = true\n\n[providers.models.limits]\nmax_input_tokens = 96000",
-        ));
+        let unknown = mutate(|v| {
+            v["providers"][0]["models"][0]["streamin"] = true.into();
+        });
+        let e = err(&unknown);
         assert_eq!(e.field, "streamin");
         assert!(e.message.contains("unknown field"));
     }
 
     #[test]
     fn duplicates_are_rejected() {
-        let dup_model = BASIC.replace("id = \"expert\"", "id = \"flash\"");
+        let dup_model = mutate(|v| {
+            v["providers"][0]["models"][1]["id"] = "flash".into();
+        });
         let e = err(&dup_model);
         assert_eq!(e.field, "id");
         assert!(e.message.contains("duplicate model id"));
 
-        let two_providers = format!(
-            "{BASIC}\n{}",
-            BASIC
-                .split_once("[[providers]]")
-                .unwrap()
-                .1
-                .split_once("[[providers.models]]")
-                .map(|(h, _)| format!("[[providers]]{h}"))
-                .unwrap()
-        );
+        let two_providers = mutate(|v| {
+            let first = v["providers"][0].clone();
+            v["providers"].as_array_mut().unwrap().push(first);
+        });
         let e = err(&two_providers);
         assert!(e.message.contains("duplicate provider id"), "{e}");
     }
 
     #[test]
     fn schema_version_is_checked() {
-        let e = err(&BASIC.replace("schema_version = 1", "schema_version = 2"));
+        let e = err(&mutate(|v| {
+            v["schema_version"] = 2.into();
+        }));
         assert_eq!(e.field, "schema_version");
-        let e = err(&BASIC.replace("schema_version = 1\n", ""));
+        let e = err(&mutate(|v| {
+            v.as_object_mut().unwrap().remove("schema_version");
+        }));
         assert_eq!(e.field, "schema_version");
     }
 
@@ -1402,26 +1412,24 @@ mod tests {
     fn auth_rules() {
         // The key is written in the file; a former variable name still loads
         // and is never used.
-        let both = BASIC.replace(
-            "api_key_env = \"BRICKS_CUSTOM_API_KEY\"",
-            "api_key_env = \"X\"\napi_key = \" k \"",
-        );
-        let cfg = ProvidersConfig::from_toml_str(&both, "test.toml").unwrap();
+        let both = mutate(|v| {
+            v["providers"][0]["api_key_env"] = "X".into();
+            v["providers"][0]["api_key"] = " k ".into();
+        });
+        let cfg = ProvidersConfig::from_json_str(&both, "test.json").unwrap();
         assert_eq!(cfg.providers[0].key(), Some("k"));
-        let env_only = ProvidersConfig::from_toml_str(BASIC, "test.toml").unwrap();
+        let env_only = ProvidersConfig::from_json_str(BASIC, "test.json").unwrap();
         assert_eq!(env_only.providers[0].key(), None);
         assert!(env_only.providers[0].legacy_api_key_env.is_some());
         // auth_header only with api_key_header.
-        let hdr = BASIC.replace(
-            "auth = \"bearer\"",
-            "auth = \"bearer\"\nauth_header = \"x-key\"",
-        );
+        let hdr = mutate(|v| {
+            v["providers"][0]["auth_header"] = "x-key".into();
+        });
         assert_eq!(err(&hdr).field, "auth_header");
         // Credentials in the URL.
-        let url = BASIC.replace(
-            "https://api.example.com/v1",
-            "https://user:pw@api.example.com/v1",
-        );
+        let url = mutate(|v| {
+            v["providers"][0]["endpoint"] = "https://user:pw@api.example.com/v1".into();
+        });
         let e = err(&url);
         assert_eq!(e.field, "endpoint");
         assert!(!e.to_string().contains("pw"));
@@ -1430,70 +1438,73 @@ mod tests {
     #[test]
     fn secrets_never_appear_in_debug_or_errors() {
         let key = "sk-super-secret-1234567890";
-        let text = BASIC
-            .replace(
-                "api_key_env = \"BRICKS_CUSTOM_API_KEY\"",
-                &format!("api_key = \"{key}\""),
-            )
-            .replace("max_input_tokens = 96000", "max_input_tokens = 0");
+        let text = mutate(|v| {
+            v["providers"][0]["api_key"] = key.into();
+            v["providers"][0]["models"][0]["limits"]["max_input_tokens"] = 0.into();
+        });
         let e = err(&text);
         assert!(!e.to_string().contains(key));
 
-        let ok = BASIC.replace(
-            "api_key_env = \"BRICKS_CUSTOM_API_KEY\"",
-            &format!("api_key = \"{key}\""),
-        );
-        let cfg = ProvidersConfig::from_toml_str(&ok, "t").unwrap();
+        let ok = mutate(|v| {
+            v["providers"][0]["api_key"] = key.into();
+        });
+        let cfg = ProvidersConfig::from_json_str(&ok, "t").unwrap();
         assert!(!format!("{cfg:?}").contains(key));
         assert!(format!("{cfg:?}").contains("redacted"));
 
         // A mistyped secret is not echoed back by the type error.
-        let wrong = BASIC.replace(
-            "api_key_env = \"BRICKS_CUSTOM_API_KEY\"",
-            "api_key = 123456789",
-        );
+        let wrong = mutate(|v| {
+            v["providers"][0]["api_key"] = 123456789.into();
+        });
         let e = err(&wrong);
         assert!(!e.to_string().contains("123456789"), "{e}");
 
-        // A TOML syntax error on a line holding a key must not quote the line.
-        let broken = format!("{BASIC}\napi_key = \"{key}\" garbage\n");
+        // A JSON syntax error on a line holding a key must not quote the line.
+        let broken = format!(r#"{{"schema_version":1,"api_key":"{key}" garbage}}"#);
         let e = err(&broken);
         assert!(!e.to_string().contains(key), "{e}");
-        assert!(e.message.starts_with("invalid TOML"), "{e}");
+        assert!(e.message.starts_with("invalid JSON"), "{e}");
 
         // Header values are secrets too.
-        let h = BASIC.replace(
-            "auth = \"bearer\"\n",
-            "auth = \"bearer\"\nheaders = { \"x-token\" = \"hdr-secret-value\" }\n",
-        );
-        let cfg = ProvidersConfig::from_toml_str(&h, "t").unwrap();
+        let h = mutate(|v| {
+            v["providers"][0]["headers"] = serde_json::json!({ "x-token": "hdr-secret-value" });
+        });
+        let cfg = ProvidersConfig::from_json_str(&h, "t").unwrap();
         assert!(!format!("{cfg:?}").contains("hdr-secret-value"));
     }
 
     #[test]
     fn modality_and_document_rules() {
-        let doc = BASIC.replace(
-            "input_modalities = [\"text\", \"image\"]",
-            "input_modalities = [\"text\", \"document\"]",
-        );
+        let doc = mutate(|v| {
+            v["providers"][0]["models"][0]["input_modalities"] =
+                serde_json::json!(["text", "document"]);
+        });
         assert_eq!(err(&doc).field, "document_mime_types");
-        let ok = doc.replace("streaming = true\n\n[providers.models.limits]\nmax_input_tokens = 96000",
-            "document_mime_types = [\"application/pdf\"]\nstreaming = true\n\n[providers.models.limits]\nmax_input_tokens = 96000");
-        ProvidersConfig::from_toml_str(&ok, "t").unwrap();
-        let dup = BASIC.replace("[\"text\", \"image\"]", "[\"text\", \"text\"]");
+        let ok = mutate(|v| {
+            v["providers"][0]["models"][0]["input_modalities"] =
+                serde_json::json!(["text", "document"]);
+            v["providers"][0]["models"][0]["document_mime_types"] =
+                serde_json::json!(["application/pdf"]);
+        });
+        ProvidersConfig::from_json_str(&ok, "t").unwrap();
+        let dup = mutate(|v| {
+            v["providers"][0]["models"][0]["input_modalities"] =
+                serde_json::json!(["text", "text"]);
+        });
         assert!(err(&dup).message.contains("listed twice"));
-        let unknown = BASIC.replace("[\"text\", \"image\"]", "[\"text\", \"smell\"]");
+        let unknown = mutate(|v| {
+            v["providers"][0]["models"][0]["input_modalities"] =
+                serde_json::json!(["text", "smell"]);
+        });
         assert!(err(&unknown).field.starts_with("input_modalities"));
     }
 
     #[test]
     fn removed_tool_calls_option_is_rejected() {
         for value in [true, false] {
-            let doc = BASIC.replacen(
-                "streaming = true\n",
-                &format!("streaming = true\ntool_calls = {value}\n"),
-                1,
-            );
+            let doc = mutate(|v| {
+                v["providers"][0]["models"][0]["tool_calls"] = value.into();
+            });
             let error = err(&doc);
             assert_eq!(error.field, "tool_calls");
             assert!(error.message.contains("unknown field"));
@@ -1502,7 +1513,7 @@ mod tests {
 
     #[test]
     fn limits_rules() {
-        let l = ProvidersConfig::from_toml_str(BASIC, "t")
+        let l = ProvidersConfig::from_json_str(BASIC, "t")
             .unwrap()
             .providers[0]
             .models[0]
@@ -1510,92 +1521,105 @@ mod tests {
         assert_eq!((l.max_input_tokens, l.max_output_tokens), (96000, 32000));
         // A former shared window keeps the budget it gave with the maximum
         // output reserved.
-        let legacy = BASIC.replace(
-            "max_output_tokens = 32000\n",
-            "max_output_tokens = 32000\ncontext_window_tokens = 100000\n",
-        );
-        let l = ProvidersConfig::from_toml_str(&legacy, "t")
+        let legacy = mutate(|v| {
+            v["providers"][0]["models"][0]["limits"]["context_window_tokens"] = 100000.into();
+        });
+        let l = ProvidersConfig::from_json_str(&legacy, "t")
             .unwrap()
             .providers[0]
             .models[0]
             .limits;
         assert_eq!(l.max_input_tokens, 68000);
         // A window too small for the output leaves no input: refused.
-        let tiny = BASIC.replace(
-            "max_output_tokens = 32000\n",
-            "max_output_tokens = 32000\ncontext_window_tokens = 1000\n",
-        );
+        let tiny = mutate(|v| {
+            v["providers"][0]["models"][0]["limits"]["context_window_tokens"] = 1000.into();
+        });
         assert_eq!(err(&tiny).field, "limits.max_input_tokens");
     }
 
     #[test]
     fn reasoning_rules() {
         // A former default, even unknown, is read and ignored.
-        let text = BASIC.replace("default = \"approfondi\"", "default = \"ultra\"");
-        assert!(ProvidersConfig::from_toml_str(&text, "test.toml").is_ok());
-        let dup = BASIC.replace("id = \"rapide\"", "id = \"approfondi\"");
+        let text = mutate(|v| {
+            v["providers"][0]["models"][0]["reasoning"]["default"] = "ultra".into();
+        });
+        assert!(ProvidersConfig::from_json_str(&text, "test.json").is_ok());
+        let dup = mutate(|v| {
+            v["providers"][0]["models"][0]["reasoning"]["profiles"][0]["id"] = "approfondi".into();
+        });
         assert!(err(&dup).message.contains("duplicate profile id"));
     }
 
     #[test]
     fn structural_fields_are_protected_at_load() {
-        let model_param = BASIC.replace(
-            "[providers.models.reasoning]\ndefault = \"approfondi\"",
-            "[providers.models.parameters]\nmessages = []\n\n[providers.models.reasoning]\ndefault = \"approfondi\"",
-        );
+        let model_param = mutate(|v| {
+            v["providers"][0]["models"][0]["parameters"] = serde_json::json!({ "messages": [] });
+        });
         assert_eq!(err(&model_param).field, "parameters.messages");
-        let prof = BASIC.replace(
-            "parameters = { reasoning_effort = \"low\" }",
-            "parameters = { tools = [] }",
-        );
+        let prof = mutate(|v| {
+            v["providers"][0]["models"][0]["reasoning"]["profiles"][0]["parameters"] =
+                serde_json::json!({ "tools": [] });
+        });
         assert!(err(&prof).field.contains("parameters.tools"));
-        let rm = BASIC.replace(
-            "parameters = { reasoning_effort = \"low\" }",
-            "remove = [\"/messages/0\"]",
-        );
+        let rm = mutate(|v| {
+            v["providers"][0]["models"][0]["reasoning"]["profiles"][0]["remove"] =
+                serde_json::json!(["/messages/0"]);
+        });
         assert!(err(&rm).field.ends_with(".remove"));
-        let rp = BASIC.replacen(
-            "streaming = true\n",
-            "streaming = true\nremove_parameters = [\"/messages\"]\n",
-            1,
-        );
+        let rp = mutate(|v| {
+            v["providers"][0]["models"][0]["remove_parameters"] =
+                serde_json::json!(["/messages"]);
+        });
         assert_eq!(err(&rp).field, "remove_parameters");
-        let bad_ptr = BASIC.replace(
-            "parameters = { reasoning_effort = \"low\" }",
-            "remove = [\"temperature\"]",
-        );
+        let bad_ptr = mutate(|v| {
+            v["providers"][0]["models"][0]["reasoning"]["profiles"][0]["remove"] =
+                serde_json::json!(["temperature"]);
+        });
         assert!(err(&bad_ptr).message.contains("must start with"));
         // `input` is structural for responses, not for chat_completions.
-        let resp_input = BASIC.replace(
-            "[providers.models.reasoning]\nprofiles = []",
-            "[providers.models.parameters]\ninput = []\n\n[providers.models.reasoning]\nprofiles = []",
-        );
+        let resp_input = mutate(|v| {
+            v["providers"][0]["models"][1]["parameters"] = serde_json::json!({ "input": [] });
+        });
         assert_eq!(err(&resp_input).field, "parameters.input");
     }
 
     #[test]
     fn pricing_rules() {
-        let e = err(&BASIC.replace("currency = \"USD\"", "currency = \"EUR\""));
+        let e = err(&mutate(|v| {
+            v["providers"][0]["models"][0]["pricing"]["currency"] = "EUR".into();
+        }));
         assert_eq!(e.field, "pricing.currency");
-        let e = err(&BASIC.replace("per_tokens = 1000000", "per_tokens = 1000"));
+        let e = err(&mutate(|v| {
+            v["providers"][0]["models"][0]["pricing"]["per_tokens"] = 1000.into();
+        }));
         assert_eq!(e.field, "pricing.per_tokens");
-        let e = err(&BASIC.replace("input = \"0.30\"", "input = \"-1\""));
+        let e = err(&mutate(|v| {
+            v["providers"][0]["models"][0]["pricing"]["input"] = "-1".into();
+        }));
         assert!(e.field.starts_with("pricing"), "{e}");
     }
 
     #[test]
     fn selector_parts_are_validated() {
         assert_eq!(
-            err(&BASIC.replace("id = \"custom\"", "id = \"a/b\"")).field,
+            err(&mutate(|v| {
+                v["providers"][0]["id"] = "a/b".into();
+            }))
+            .field,
             "id"
         );
         assert_eq!(
-            err(&BASIC.replace("id = \"custom\"", "id = \"\"")).field,
+            err(&mutate(|v| {
+                v["providers"][0]["id"] = "".into();
+            }))
+            .field,
             "id"
         );
         // Model ids may contain `/` (selection splits at the first one only).
-        ProvidersConfig::from_toml_str(
-            &BASIC.replace("id = \"flash\"", "id = \"org/flash:7b\""),
+        ProvidersConfig::from_json_str(
+            &mutate(|v| {
+                v["providers"][0]["models"][0]["id"] = "org/flash:7b".into();
+            }),
             "t",
         )
         .unwrap();
@@ -1603,23 +1627,22 @@ mod tests {
 
     #[test]
     fn effective_auth_follows_protocol_override() {
-        let cfg = ProvidersConfig::from_toml_str(BASIC, "t").unwrap();
+        let cfg = ProvidersConfig::from_json_str(BASIC, "t").unwrap();
         let p = &cfg.providers[0];
         assert_eq!(p.models[0].effective_auth(p), AuthMode::Bearer);
         // `expert` overrides to responses: still bearer by convention.
         assert_eq!(p.models[1].effective_auth(p), AuthMode::Bearer);
-        let anth = BASIC.replace(
-            "protocol = \"responses\"",
-            "protocol = \"anthropic_messages\"",
-        );
-        let cfg = ProvidersConfig::from_toml_str(&anth, "t").unwrap();
+        let anth = mutate(|v| {
+            v["providers"][0]["models"][1]["protocol"] = "anthropic_messages".into();
+        });
+        let cfg = ProvidersConfig::from_json_str(&anth, "t").unwrap();
         let p = &cfg.providers[0];
         assert_eq!(p.models[1].effective_auth(p), AuthMode::ApiKeyHeader);
-        let explicit = anth.replace(
-            "protocol = \"anthropic_messages\"",
-            "protocol = \"anthropic_messages\"\nauth = \"bearer\"",
-        );
-        let cfg = ProvidersConfig::from_toml_str(&explicit, "t").unwrap();
+        let explicit = mutate(|v| {
+            v["providers"][0]["models"][1]["protocol"] = "anthropic_messages".into();
+            v["providers"][0]["models"][1]["auth"] = "bearer".into();
+        });
+        let cfg = ProvidersConfig::from_json_str(&explicit, "t").unwrap();
         let p = &cfg.providers[0];
         assert_eq!(p.models[1].effective_auth(p), AuthMode::Bearer);
     }

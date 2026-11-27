@@ -481,7 +481,6 @@ struct Env {
 fn bricks() -> BricksConfig {
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     bricks
 }
 

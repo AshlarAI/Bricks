@@ -61,35 +61,33 @@ fn serve_once(bodies: Arc<Mutex<Vec<String>>>) -> String {
 }
 
 fn provider(endpoint: &str) -> bricks_provider::ConfiguredProvider {
-    let toml = format!(
-        r#"
-schema_version = 1
-[[providers]]
-id = "p"
-name = "P"
-endpoint = "{endpoint}"
-protocol = "chat_completions"
-auth = "bearer"
-api_key_env = "BRICKS_TEST_API_KEY"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "am"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 4000
-[providers.models.reasoning]
-default = "careful"
-[[providers.models.reasoning.profiles]]
-id = "careful"
-parameters = {{ effort_knob = "high" }}
-[[providers.models.reasoning.profiles]]
-id = "quick"
-parameters = {{ effort_knob = "low" }}
-"#
-    );
-    ProviderRegistry::from_toml_str(&toml, "t.toml")
+    let json = serde_json::json!({
+        "schema_version": 1,
+        "providers": [{
+            "id": "p",
+            "name": "P",
+            "endpoint": endpoint,
+            "protocol": "chat_completions",
+            "auth": "bearer",
+            "api_key_env": "BRICKS_TEST_API_KEY",
+            "models": [{
+                "id": "m",
+                "name": "M",
+                "api_model": "am",
+                "streaming": true,
+                "limits": { "max_input_tokens": 100000, "max_output_tokens": 4000 },
+                "reasoning": {
+                    "default": "careful",
+                    "profiles": [
+                        { "id": "careful", "parameters": { "effort_knob": "high" } },
+                        { "id": "quick", "parameters": { "effort_knob": "low" } }
+                    ]
+                }
+            }]
+        }]
+    })
+    .to_string();
+    ProviderRegistry::from_json_str(&json, "t.json")
         .unwrap()
         .resolve("p/m")
         .unwrap()

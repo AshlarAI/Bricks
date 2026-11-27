@@ -1,0 +1,103 @@
+{
+  "agent": {},
+  "context": {
+    "safety_margin_tokens": 1024,
+    "safety_margin_ratio": 0.02,
+    "large_injection_tokens": 8000,
+    "preflight_ratio": 0.8,
+    "compact_threshold": 0.85,
+    "keep_recent_messages": 10,
+    "max_recent_ratio": 0.3,
+    "summary_max_tokens": 4096,
+    "min_compaction_gain": 0.2,
+    "max_compaction_failures": 3,
+    "max_overflow_recoveries": 1,
+    "image_tokens": 1600,
+    "document_tokens": 3000
+  },
+  "compression": {
+    "level": "minimal",
+    "max_output_chars": 40000,
+    "max_lines": 300,
+    "max_error_lines": 250,
+    "max_block_lines": 80,
+    "context_lines": 2,
+    "max_line_chars": 2000,
+    "json_summary_min_bytes": 16384,
+    "json_sample_items": 3,
+    "json_max_depth": 6,
+    "json_max_keys": 40,
+    "json_max_string_chars": 200,
+    "json_max_output_bytes": 12000,
+    "skeleton_min_lines": 150,
+    "filters": {
+      "make": {
+        "description": "make: directory changes removed; compiler diagnostics kept by the built-in detectors.",
+        "match": [
+          {
+            "program": "make"
+          },
+          {
+            "program": "gmake"
+          }
+        ],
+        "options_with_value": [
+          "-C",
+          "-f",
+          "-j"
+        ],
+        "strip_lines_matching": [
+          "^make(\\[\\d+\\])?: (Entering|Leaving) directory"
+        ],
+        "max_lines": 200
+      }
+    }
+  },
+  "web": {
+    "search": {
+      "provider": "duckduckgo",
+      "fallback": [],
+      "max_attempts": 3,
+      "timeout_ms": 5000,
+      "budget_ms": 12000,
+      "max_retry_wait_ms": 2000
+    },
+    "fetch": {
+      "max_pages": 5,
+      "concurrency": 5,
+      "per_host": 2,
+      "page_timeout_ms": 4000,
+      "max_page_bytes": 1500000,
+      "max_total_bytes": 8000000,
+      "max_redirects": 5,
+      "budget_ms": 12000,
+      "allow_private": []
+    },
+    "extract": {
+      "max_elements": 60000,
+      "concurrency": 2,
+      "min_reliable_chars": 400
+    },
+    "passages": {
+      "min_chars": 500,
+      "max_chars": 1500,
+      "max_passages": 5,
+      "budget_chars": 6000,
+      "per_source": 2
+    },
+    "store": {
+      "max_session_bytes": 67108864
+    }
+  },
+  "agents": {},
+  "bash": {},
+  "background": {},
+  "semantic": {
+    "lsp": {}
+  },
+  "memory": {
+    "enabled": false,
+    "max_index_notes": 200,
+    "max_index_tokens": 1500
+  }
+}

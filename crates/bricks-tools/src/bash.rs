@@ -86,8 +86,7 @@ pub(crate) fn progress_for(ctx: &ToolContext, tool: &'static str) -> Option<shel
     })
 }
 
-/// First word of each simple command (for permission details).
-#[cfg(unix)]
+/// First word of each simple command (for permission details and override checks).
 fn invoked_names(command: &str) -> Vec<String> {
     let mut names = Vec::new();
     for segment in command.split(['\n', ';', '|', '&', '(', ')', '{', '}']) {
@@ -101,6 +100,43 @@ fn invoked_names(command: &str) -> Vec<String> {
         }
     }
     names
+}
+
+fn classify_bash_permission(input: &Value, session_id: Option<&str>) -> PermissionLevel {
+    use crate::tool_primitives::bash_safety::{BashRiskLevel, analyze_command};
+
+    let Some(command) = input.get("command").and_then(|v| v.as_str()) else {
+        return PermissionLevel::Execute;
+    };
+    let analysis = analyze_command(command);
+    if analysis.risk == BashRiskLevel::Forbidden {
+        return PermissionLevel::Forbidden;
+    }
+    let background = input
+        .get("background")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if background {
+        return PermissionLevel::Execute;
+    }
+    match analysis.risk {
+        BashRiskLevel::Forbidden => PermissionLevel::Forbidden,
+        BashRiskLevel::Safe => {
+            if let Some(sid) = session_id {
+                let mut names = analysis.commands;
+                for n in invoked_names(command) {
+                    if !names.iter().any(|existing| existing == &n) {
+                        names.push(n);
+                    }
+                }
+                if shell::session_has_override(sid, &names) {
+                    return PermissionLevel::Execute;
+                }
+            }
+            PermissionLevel::ReadOnly
+        }
+        BashRiskLevel::Moderate | BashRiskLevel::High => PermissionLevel::Execute,
+    }
 }
 
 #[async_trait]
@@ -123,6 +159,23 @@ impl Tool for BashTool {
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::Execute
     }
+
+    fn permission_level_for(&self, input: &Value) -> PermissionLevel {
+        classify_bash_permission(input, None)
+    }
+
+    fn permission_level_for_ctx(&self, input: &Value, ctx: &ToolContext) -> PermissionLevel {
+        classify_bash_permission(input, Some(&ctx.session_id))
+    }
+
+    fn is_concurrent_safe(&self, input: &Value) -> bool {
+        self.permission_level_for(input) == PermissionLevel::ReadOnly
+    }
+
+    fn is_concurrent_safe_ctx(&self, input: &Value, ctx: &ToolContext) -> bool {
+        self.permission_level_for_ctx(input, ctx) == PermissionLevel::ReadOnly
+    }
+
     fn category(&self) -> ToolCategory {
         ToolCategory::Shell
     }

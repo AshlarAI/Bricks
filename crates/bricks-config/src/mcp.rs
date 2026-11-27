@@ -1,28 +1,15 @@
-//! MCP servers, as every frontend reads them: the person's own, in
-//! `<home>/mcp.toml`, and the project's, declared under `[[mcp.servers]]` in
-//! its `bricks.toml`. A server a repository declares is connected only once
-//! the person approved it, as declared: a changed declaration (command,
-//! arguments, URL, headers…) is asked again. Approvals are kept in
-//! `<home>/mcp-approvals.json`, never in the repository.
-//!
-//! ```toml
-//! # ~/.bricks/mcp.toml
-//! [[servers]]
-//! name = "files"
-//! command = "npx"
-//! args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
-//!
-//! [[servers]]
-//! name = "docs"
-//! type = "http"
-//! url = "https://mcp.example.com/mcp"
-//! headers = { Authorization = "Bearer ${DOCS_TOKEN}" }
-//! enabled = false
-//! ```
+//! MCP servers, as every frontend reads them: the person's own, under
+//! `mcp.servers` in `<home>/config.json`, and the project's, declared under
+//! `mcp.servers` in `<project>/.bricks/config.json`. A server a repository
+//! declares is connected only once the person approved it, as declared: a
+//! changed declaration (command, arguments, URL, headers…) is asked again.
+//! Approvals are kept in `<home>/mcp-approvals.json`, never in the repository.
 
 use bricks_mcp::McpServerConfig;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// One server and whether it is used.
@@ -67,24 +54,18 @@ impl ServerEntry {
 }
 
 /// JSON text with object keys sorted, at every level.
-fn canonical(value: &serde_json::Value) -> String {
+fn canonical(value: &Value) -> String {
     match value {
-        serde_json::Value::Object(map) => {
+        Value::Object(map) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort();
             let fields: Vec<String> = keys
                 .into_iter()
-                .map(|k| {
-                    format!(
-                        "{}:{}",
-                        serde_json::Value::String(k.clone()),
-                        canonical(&map[k])
-                    )
-                })
+                .map(|k| format!("{}:{}", Value::String(k.clone()), canonical(&map[k])))
                 .collect();
             format!("{{{}}}", fields.join(","))
         }
-        serde_json::Value::Array(items) => {
+        Value::Array(items) => {
             format!(
                 "[{}]",
                 items.iter().map(canonical).collect::<Vec<_>>().join(",")
@@ -98,9 +79,9 @@ fn canonical(value: &serde_json::Value) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
-    /// `<home>/mcp.toml`: the person's own.
+    /// `<home>/config.json`: the person's own.
     User,
-    /// The project's `bricks.toml`.
+    /// `<project>/.bricks/config.json`.
     Project,
 }
 
@@ -166,76 +147,189 @@ impl Selection {
     }
 }
 
-// ─── The person's file ───────────────────────────────────────────────────────
+// ─── Shared JSON section shape ───────────────────────────────────────────────
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct UserFile {
+#[derive(Debug, Default, Deserialize)]
+struct ConfigFileMcp {
+    #[serde(default)]
+    mcp: Option<McpSection>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct McpSection {
     #[serde(default)]
     servers: Vec<ServerEntry>,
 }
 
+// ─── The person's file (`<home>/config.json`) ────────────────────────────────
+
 pub fn user_file(home: &Path) -> PathBuf {
-    home.join("mcp.toml")
+    home.join("config.json")
 }
 
 /// The person's servers; an absent file has none, an invalid one is an error.
 pub fn read_user(home: &Path) -> Result<Vec<ServerEntry>, String> {
+    let _guard = crate::user_config_lock().lock();
+    read_user_unlocked(home)
+}
+
+fn sanitize_json_error(e: &serde_json::Error) -> String {
+    let msg = e.to_string();
+    for prefix in ["invalid type: ", "invalid value: "] {
+        if let Some(rest) = msg.strip_prefix(prefix) {
+            let kind = rest.split([' ', ',']).next().unwrap_or("value");
+            let expected = rest.find(", expected").map(|i| &rest[i..]).unwrap_or("");
+            return format!("wrong type (got {kind}){expected}");
+        }
+    }
+    if let Some(rest) = msg.strip_prefix("unknown variant ") {
+        let expected = rest.find(", expected").map(|i| &rest[i..]).unwrap_or("");
+        return format!("unknown value{expected}");
+    }
+    msg
+}
+
+fn read_user_unlocked(home: &Path) -> Result<Vec<ServerEntry>, String> {
     let path = user_file(home);
     match std::fs::read_to_string(&path) {
-        Ok(text) => toml::from_str::<UserFile>(&text)
-            .map(|f| f.servers)
-            .map_err(|e| format!("{}: {}", path.display(), e.message())),
+        Ok(text) => serde_json::from_str::<ConfigFileMcp>(&text)
+            .map(|f| f.mcp.map(|m| m.servers).unwrap_or_default())
+            .map_err(|e| format!("{}: {}", path.display(), sanitize_json_error(&e))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }
 
-/// A server as written in the file: the values left at their default go.
-fn compact(entry: &ServerEntry) -> Result<toml::Value, String> {
-    let mut value = toml::Value::try_from(entry).map_err(|e| e.to_string())?;
-    let defaults = toml::Value::try_from(ServerEntry::new(McpServerConfig::stdio("", "", &[])))
+/// A server as written in the file: values left at their default are omitted.
+fn compact(entry: &ServerEntry) -> Result<Value, String> {
+    let mut value = serde_json::to_value(entry).map_err(|e| e.to_string())?;
+    let defaults = serde_json::to_value(ServerEntry::new(McpServerConfig::stdio("", "", &[])))
         .map_err(|e| e.to_string())?;
-    if let (Some(table), Some(defaults)) = (value.as_table_mut(), defaults.as_table()) {
-        table.retain(|key, v| {
+    if let (Some(map), Some(defaults)) = (value.as_object_mut(), defaults.as_object()) {
+        map.retain(|key, v| {
             key == "name"
                 || match defaults.get(key) {
                     Some(d) => d != v,
                     None => {
-                        !matches!(v, toml::Value::Array(a) if a.is_empty())
-                            && !matches!(v, toml::Value::Table(t) if t.is_empty())
+                        !v.is_null()
+                            && !matches!(v, Value::Array(a) if a.is_empty())
+                            && !matches!(v, Value::Object(o) if o.is_empty())
                     }
                 }
         });
         // An HTTP server needs its type; a stdio one is the default.
         if entry.config.server_type != "stdio" {
-            table.insert(
-                "type".into(),
-                toml::Value::String(entry.config.server_type.clone()),
-            );
+            map.insert("type".into(), Value::String(entry.config.server_type.clone()));
         }
     }
     Ok(value)
 }
 
-fn write_user(home: &Path, servers: &[ServerEntry]) -> Result<(), String> {
+fn write_user_unlocked(home: &Path, servers: &[ServerEntry]) -> Result<(), String> {
     let path = user_file(home);
+    let mut root: Map<String, Value> = match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let parsed: Value =
+                serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            match parsed {
+                Value::Object(map) => map,
+                _ => {
+                    return Err(format!(
+                        "{}: configuration root must be a JSON object",
+                        path.display()
+                    ));
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut m = Map::new();
+            m.insert(
+                "schema_version".into(),
+                Value::from(bricks_provider::config::SCHEMA_VERSION),
+            );
+            m
+        }
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    root.entry("schema_version".to_string())
+        .or_insert_with(|| Value::from(bricks_provider::config::SCHEMA_VERSION));
+
     let list = servers.iter().map(compact).collect::<Result<Vec<_>, _>>()?;
-    let mut file = toml::map::Map::new();
-    file.insert("servers".into(), toml::Value::Array(list));
-    let body = toml::to_string_pretty(&toml::Value::Table(file)).map_err(|e| e.to_string())?;
-    let text =
-        format!("# MCP servers of Bricks (`bricks mcp`, or Settings › Extensions).\n\n{body}");
+    let mcp_obj = root
+        .entry("mcp".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !mcp_obj.is_object() {
+        *mcp_obj = Value::Object(Map::new());
+    }
+    if let Some(map) = mcp_obj.as_object_mut() {
+        map.insert("servers".into(), Value::Array(list));
+    }
+
+    let text = serde_json::to_string_pretty(&Value::Object(root)).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(home).map_err(|e| format!("{}: {e}", home.display()))?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic_private(&path, format!("{text}\n").as_bytes())
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn unique_tmp_path(dir: &Path, name: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    dir.join(format!(".{name}.{}.{nanos:x}.{seq}.tmp", std::process::id()))
+}
+
+fn write_atomic_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("no parent folder"))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("config.json");
+    let tmp = unique_tmp_path(dir, name);
+    let permissions = std::fs::metadata(path).map(|m| m.permissions()).ok();
+    let written = (|| {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut file = opts.open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        if let Some(p) = permissions {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let masked = p.mode() & 0o700;
+                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(masked))?;
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::set_permissions(&tmp, p)?;
+            }
+        }
+        std::fs::rename(&tmp, path)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// Adds a server of the person's. Refused when it is not valid or its name
 /// is taken.
 pub fn add_user(home: &Path, entry: ServerEntry) -> Result<(), String> {
     entry.config.validate()?;
-    let mut servers = read_user(home)?;
+    let _guard = crate::user_config_lock().lock();
+    let mut servers = read_user_unlocked(home)?;
     if servers.iter().any(|s| s.config.name == entry.config.name) {
         return Err(format!(
             "an MCP server named '{}' already exists",
@@ -243,52 +337,46 @@ pub fn add_user(home: &Path, entry: ServerEntry) -> Result<(), String> {
         ));
     }
     servers.push(entry);
-    write_user(home, &servers)
+    write_user_unlocked(home, &servers)
 }
 
 /// Removes a server of the person's; `false` when there was none.
 pub fn remove_user(home: &Path, name: &str) -> Result<bool, String> {
-    let mut servers = read_user(home)?;
+    let _guard = crate::user_config_lock().lock();
+    let mut servers = read_user_unlocked(home)?;
     let before = servers.len();
     servers.retain(|s| s.config.name != name);
     if servers.len() == before {
         return Ok(false);
     }
-    write_user(home, &servers).map(|_| true)
+    write_user_unlocked(home, &servers).map(|_| true)
 }
 
 /// Turns a server of the person's on or off.
 pub fn set_enabled(home: &Path, name: &str, enabled: bool) -> Result<(), String> {
-    let mut servers = read_user(home)?;
+    let _guard = crate::user_config_lock().lock();
+    let mut servers = read_user_unlocked(home)?;
     let server = servers
         .iter_mut()
         .find(|s| s.config.name == name)
         .ok_or_else(|| format!("no MCP server named '{name}'"))?;
     server.enabled = enabled;
-    write_user(home, &servers)
+    write_user_unlocked(home, &servers)
 }
 
 // ─── The project's servers and their approvals ───────────────────────────────
 
-#[derive(Debug, Default, Deserialize)]
-struct ProjectFile {
-    #[serde(default)]
-    mcp: Option<ProjectMcp>,
+pub fn project_file(project: &Path) -> PathBuf {
+    crate::project_config_file(project)
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct ProjectMcp {
-    #[serde(default)]
-    servers: Vec<ServerEntry>,
-}
-
-/// The servers `<project>/bricks.toml` declares.
+/// The servers `<project>/.bricks/config.json` declares.
 pub fn read_project(project: &Path) -> Result<Vec<ServerEntry>, String> {
-    let path = project.join("bricks.toml");
+    let path = project_file(project);
     match std::fs::read_to_string(&path) {
-        Ok(text) => toml::from_str::<ProjectFile>(&text)
+        Ok(text) => serde_json::from_str::<ConfigFileMcp>(&text)
             .map(|f| f.mcp.map(|m| m.servers).unwrap_or_default())
-            .map_err(|e| format!("{} [mcp]: {}", path.display(), e.message())),
+            .map_err(|e| format!("{} (mcp): {}", path.display(), sanitize_json_error(&e))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
@@ -347,6 +435,7 @@ pub fn decide(home: &Path, project: &Path, name: &str, approved: bool) -> Result
         .into_iter()
         .find(|s| s.config.name == name)
         .ok_or_else(|| format!("the project declares no MCP server named '{name}'"))?;
+    let _guard = crate::user_config_lock().lock();
     let mut approvals = load_approvals(home)?;
     approvals.insert(
         approval_key(project, name),
@@ -358,15 +447,25 @@ pub fn decide(home: &Path, project: &Path, name: &str, approved: bool) -> Result
     let text = serde_json::to_string_pretty(&approvals).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(home).map_err(|e| e.to_string())?;
     let path = approvals_file(home);
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    write_atomic_private(&path, text.as_bytes()).map_err(|e| e.to_string())
 }
 
 // ─── Both, as one selection ──────────────────────────────────────────────────
 
+fn same_file(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
 /// The servers of `home`, then those of `project` (when given). A project
-/// server named like one of the person's is hidden by it.
+/// server named like one of the person's is hidden by it. When `project`
+/// points at the home directory itself (so `<project>/.bricks/config.json` is
+/// `<home>/config.json`), the user servers are not duplicated as project ones.
 pub fn select(home: &Path, project: Option<&Path>) -> Selection {
     let mut out = Selection::default();
     match read_user(home) {
@@ -380,7 +479,9 @@ pub fn select(home: &Path, project: Option<&Path>) -> Selection {
             })),
         Err(e) => out.errors.push(e),
     }
-    if let Some(project) = project {
+    if let Some(project) = project
+        && !same_file(&user_file(home), &project_file(project))
+    {
         match read_project(project) {
             Ok(servers) => {
                 for entry in servers {
@@ -417,9 +518,21 @@ mod tests {
         ServerEntry::new(McpServerConfig::stdio(name, "echo", &["hi"]))
     }
 
+    fn write_project_cfg(project: &Path, body: &str) {
+        let p = project_file(project);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, body).unwrap();
+    }
+
     #[test]
     fn the_persons_servers_are_added_listed_turned_off_and_removed() {
         let home = tempfile::tempdir().unwrap();
+        // Pre-existing sibling section in config.json must survive MCP writes.
+        std::fs::write(
+            user_file(home.path()),
+            r#"{"schema_version":1,"preferences":{"theme":"dark"}}"#,
+        )
+        .unwrap();
         add_user(home.path(), stdio("a")).unwrap();
         add_user(
             home.path(),
@@ -448,19 +561,24 @@ mod tests {
         );
         assert!(remove_user(home.path(), "a").unwrap());
         assert!(!remove_user(home.path(), "a").unwrap());
-        let text = std::fs::read_to_string(user_file(home.path())).unwrap();
-        assert!(
-            text.contains("name = \"b\"") && text.contains("enabled = false"),
-            "{text}"
-        );
+        let saved: Value =
+            serde_json::from_str(&std::fs::read_to_string(user_file(home.path())).unwrap())
+                .unwrap();
+        assert_eq!(saved["preferences"]["theme"], "dark");
+        assert_eq!(saved["mcp"]["servers"][0]["name"], "b");
+        assert_eq!(saved["mcp"]["servers"][0]["enabled"], false);
     }
 
     #[test]
     fn a_project_server_waits_for_approval_and_a_change_asks_again() {
         let home = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
-        let toml = "[context]\nx = 1\n\n[[mcp.servers]]\nname = \"repo\"\ncommand = \"node\"\nargs = [\"server.js\"]\n";
-        std::fs::write(project.path().join("bricks.toml"), toml).unwrap();
+        let json = r#"{
+            "mcp": {
+                "servers": [{ "name": "repo", "command": "node", "args": ["server.js"] }]
+            }
+        }"#;
+        write_project_cfg(project.path(), json);
         let sel = select(home.path(), Some(project.path()));
         assert_eq!(sel.pending().len(), 1);
         assert!(sel.active().is_empty(), "not connected before approval");
@@ -469,11 +587,7 @@ mod tests {
         assert_eq!(select(home.path(), Some(project.path())).active().len(), 1);
 
         // The declaration changes: asked again.
-        std::fs::write(
-            project.path().join("bricks.toml"),
-            toml.replace("server.js", "other.js"),
-        )
-        .unwrap();
+        write_project_cfg(project.path(), &json.replace("server.js", "other.js"));
         let sel = select(home.path(), Some(project.path()));
         assert_eq!(sel.pending().len(), 1);
         assert!(sel.active().is_empty());
@@ -489,11 +603,10 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         add_user(home.path(), stdio("same")).unwrap();
-        std::fs::write(
-            project.path().join("bricks.toml"),
-            "[[mcp.servers]]\nname = \"same\"\ncommand = \"evil\"\n",
-        )
-        .unwrap();
+        write_project_cfg(
+            project.path(),
+            r#"{"mcp":{"servers":[{"name":"same","command":"evil"}]}}"#,
+        );
         let sel = select(home.path(), Some(project.path()));
         let active = sel.active();
         assert_eq!(active.len(), 1);
@@ -502,9 +615,20 @@ mod tests {
     }
 
     #[test]
+    fn opening_home_as_project_does_not_duplicate_user_servers() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join(".bricks");
+        add_user(&home, stdio("mine")).unwrap();
+        let sel = select(&home, Some(root.path()));
+        assert_eq!(sel.servers.len(), 1);
+        assert_eq!(sel.servers[0].source, Source::User);
+        assert!(sel.errors.is_empty(), "{:?}", sel.errors);
+    }
+
+    #[test]
     fn unreadable_files_are_reported_not_taken_for_empty() {
         let home = tempfile::tempdir().unwrap();
-        std::fs::write(user_file(home.path()), "[[servers]\nname=").unwrap();
+        std::fs::write(user_file(home.path()), "{ broken").unwrap();
         let sel = select(home.path(), None);
         assert_eq!(sel.errors.len(), 1, "{:?}", sel.errors);
         assert!(

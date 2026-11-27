@@ -25,6 +25,7 @@ pub mod background;
 pub mod bash;
 pub mod capture;
 pub mod clean;
+pub mod init_snapshot;
 pub mod powershell;
 pub mod procs;
 pub mod state;
@@ -241,6 +242,14 @@ pub fn close_session_now(id: &str) {
 /// (`None`: no shell yet, or it starts in the tools' directory).
 pub fn session_cwd(id: &str) -> Option<PathBuf> {
     REGISTRY.get(id).and_then(|s| s.state.cwd())
+}
+
+/// True if session `id` already has a shell state defining an alias or
+/// function for any name in `names`. Never creates a session as a side effect.
+pub fn session_has_override(id: &str, names: &[String]) -> bool {
+    REGISTRY
+        .get(id)
+        .is_some_and(|s| s.state.has_override(names))
 }
 
 /// The `PATH` the next Bash command of session `id` starts with: the session's

@@ -453,7 +453,7 @@ import type { McpTestResult } from './bindings/McpTestResult'
 export type { McpServersView, McpServerInput, McpTestResult }
 export type { McpServerItem } from './bindings/McpServerItem'
 
-/** Your servers (~/.bricks/mcp.toml) and those of the project `projectId`. */
+/** Your servers (~/.bricks/config.json) and those of the project `projectId`. */
 export const mcpServers = (projectId: string | null) => call<McpServersView>('mcp_servers', { projectId })
 export const mcpAdd = (input: McpServerInput, projectId: string | null) =>
   call<McpServersView>('mcp_add', { input, projectId })

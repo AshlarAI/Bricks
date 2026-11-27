@@ -60,17 +60,20 @@ describe('composer: the banner is placed above the editor card', () => {
 	});
 });
 
-describe('run-end card: no raw error line', () => {
+describe('run-end card: routes summary.error through resolveChatError', () => {
 	const runEnd = src(RUN_END);
 
-	it('does not read conversation.error', () => {
+	it('does not read conversation.error or run.error directly', () => {
 		expect(runEnd).not.toContain('conversation.error');
-	});
-
-	it('does not print the run error text', () => {
-		expect(runEnd).not.toMatch(/summary\.error/);
 		expect(runEnd).not.toMatch(/run\.error/);
 		expect(runEnd).not.toMatch(/Error:\s*\{/);
+	});
+
+	it('routes summary.error through resolveChatError and renders the resolved message', () => {
+		expect(runEnd).toContain("import { resolveChatError } from '../chat-error'");
+		expect(runEnd).toContain('const errorMessage = summary.error ? resolveChatError(summary.error).message : null');
+		expect(runEnd).toContain('{errorMessage}');
+		expect(runEnd).not.toContain('{summary.error}');
 	});
 
 	it('still shows the incomplete reason from the run summary', () => {

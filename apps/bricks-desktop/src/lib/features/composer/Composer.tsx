@@ -14,6 +14,8 @@ import { t, useLanguage } from '$lib/i18n/i18n'
 import { hintIndex } from './hints'
 import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview'
 import { Button } from '$lib/components/ui/button'
+import { Marker, MarkerContent, MarkerIcon } from '$lib/components/ui/marker'
+import { Spinner } from '$lib/components/ui/spinner'
 import { Textarea } from '$lib/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '$lib/components/ui/tooltip'
 import { app, useApp } from '$lib/state/app'
@@ -87,6 +89,9 @@ const REJECTION_LABELS: Record<string, string> = {
   get submit() {
     return t('composer.sendingRefused')
   },
+  get inject() {
+    return t('composer.steeringRefused')
+  },
   get set_model() {
     return t('composer.modelChangeRefused')
   },
@@ -96,6 +101,38 @@ const REJECTION_LABELS: Record<string, string> = {
   get compact() {
     return t('composer.compactionRefused')
   },
+}
+
+export interface ComposerSendInput {
+  editable: boolean
+  running: boolean
+  sending: boolean
+  saving: number
+  importing: boolean
+  blocked: boolean
+  hasConversation: boolean
+  text: string
+  attachmentCount: number
+}
+
+/** Computes send, mid-run steering inject, and slash command readiness for the composer. */
+export function composerSendState(input: ComposerSendInput) {
+  /** A `/` line is run by the composer, never sent as a prompt (leading spaces do not count). */
+  const isSlashLine = input.text.trimStart().startsWith('/')
+  const hasContent = input.text.trim() !== '' || input.attachmentCount > 0
+  const ready = input.editable && !input.sending && input.saving === 0
+  const canSend = ready && !input.running && !input.importing && !input.blocked && hasContent
+  const canInject =
+    ready &&
+    input.running &&
+    !input.importing &&
+    !input.blocked &&
+    input.hasConversation &&
+    input.text.trim() !== '' &&
+    input.attachmentCount === 0 &&
+    !isSlashLine
+  const slashReady = isSlashLine && ready
+  return { isSlashLine, hasContent, canSend, canInject, slashReady }
 }
 
 type DraftOwner =
@@ -256,11 +293,17 @@ export function Composer({ conversation }: ComposerProps) {
 
   const blocked = draft.attachments.some((a) => chipError(a) !== null)
   const importing = draft.attachments.some((a) => a.importing)
-  const hasContent = draft.text.trim() !== '' || draft.attachments.length > 0
-  const canSend = editable && !running && !sending && saving === 0 && !importing && !blocked && hasContent
-  /** A `/` line is run by the composer, never sent as a prompt (leading spaces do not count). */
-  const isSlashLine = draft.text.trimStart().startsWith('/')
-  const slashReady = isSlashLine && editable && !sending && saving === 0
+  const { isSlashLine, canSend, canInject, slashReady } = composerSendState({
+    editable,
+    running,
+    sending,
+    saving,
+    importing,
+    blocked,
+    hasConversation: conversation !== null,
+    text: draft.text,
+    attachmentCount: draft.attachments.length,
+  })
 
   const placeholder = (() => {
     if (!project) return t('composer.createAProjectToWrite')
@@ -674,8 +717,30 @@ export function Composer({ conversation }: ComposerProps) {
     createdForRef.current = null
   }
 
+  async function inject() {
+    if (!canInject || !conversation) {
+      if (running && blocked) setRefusal(t('composer.removeTheFailedAttachmentsToSend'))
+      return
+    }
+    setRefusal(null)
+    const originOwner = owner
+    const text = readDraft(originOwner).text.trim()
+    if (!text) return
+    setSending(true)
+    try {
+      await conversation.inject(text)
+      const restore = cursor.end()
+      updateDraft(originOwner, () => ({ text: restore?.text ?? '' }))
+    } catch (e) {
+      setRefusal(errorMessage(e))
+    } finally {
+      setSending(false)
+    }
+  }
+
   async function send() {
     if (isSlashLine) return runSlashDraft()
+    if (running) return inject()
     if (!canSend) {
       if (blocked) setRefusal(t('composer.removeTheFailedAttachmentsToSend'))
       return
@@ -1298,8 +1363,10 @@ export function Composer({ conversation }: ComposerProps) {
     }
     if (e.key !== 'Enter' || e.shiftKey || e.altKey) return
     e.preventDefault()
-    // While a run is going, a prompt waits; a `/` line still runs (its command decides).
-    if (running && !isSlashLine) return
+    if (running && !isSlashLine) {
+      if (canInject) void inject()
+      return
+    }
     void send()
   }
 
@@ -1376,9 +1443,20 @@ export function Composer({ conversation }: ComposerProps) {
           {/* Notices sit on a strip tucked under the card: the card overlaps its lower edge. */}
           {compactStatus && (
             <div className="relative z-0 mx-2 -mb-3.5 flex flex-col gap-1 rounded-t-2xl bg-popover px-3.5 pt-1.5 pb-5 text-xs">
-              <p className="py-0.5 text-muted-foreground" role="status">
-                {compactStatus}
-              </p>
+              {compactStatus === t('common.compacting') ? (
+                <Marker role="status" className="py-0.5">
+                  <MarkerIcon>
+                    <Spinner aria-hidden="true" />
+                  </MarkerIcon>
+                  <MarkerContent className="shimmer motion-reduce:shimmer-none">
+                    {compactStatus}
+                  </MarkerContent>
+                </Marker>
+              ) : (
+                <Marker role="status" className="py-0.5">
+                  <MarkerContent>{compactStatus}</MarkerContent>
+                </Marker>
+              )}
             </div>
           )}
 
@@ -1499,22 +1577,49 @@ export function Composer({ conversation }: ComposerProps) {
               onClick={syncCaret}
               onSelect={syncCaret}
               dir="auto"
-              className="max-h-[200px] min-h-[44px] resize-none overflow-y-auto rounded-xl border-0 bg-transparent py-3 pr-12 pl-4 text-ui leading-[1.55] text-start shadow-none focus-visible:ring-0 dark:bg-transparent"
+              className={cn(
+                'max-h-[200px] min-h-[44px] resize-none overflow-y-auto rounded-xl border-0 bg-transparent py-3 pl-4 text-ui leading-[1.55] text-start shadow-none focus-visible:ring-0 dark:bg-transparent',
+                running ? 'pr-20' : 'pr-12',
+              )}
             />
 
-            {/* Send or stop: one square in the card's top right corner. */}
-            <div className="absolute top-2 right-2">
-              {running && !isSlashLine ? (
-                <Button
-                  variant="outline"
-                  size="icon-compact"
-                  className="size-7 rounded-lg border-border bg-background p-0 text-foreground shadow-none hover:bg-element-hover"
-                  aria-label={t('composer.stopGenerating')}
-                  title={t('common.stop')}
-                  onClick={() => void cancel()}
-                >
-                  <SquareIcon className="size-2.5 fill-current" aria-hidden="true" />
-                </Button>
+            {/* Send or stop: action buttons in the card's top right corner. */}
+            <div className="absolute top-2 right-2 flex items-center gap-1">
+              {running ? (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon-compact"
+                        className="size-7 rounded-lg border-border bg-background p-0 text-foreground shadow-none hover:bg-element-hover disabled:border-transparent disabled:text-muted-foreground"
+                        aria-label={isSlashLine ? t('composer.sendMessage') : t('composer.sendSteeringMessage')}
+                        disabled={isSlashLine ? !slashReady : !canInject}
+                        onClick={() => void (isSlashLine ? send() : inject())}
+                      >
+                        <ArrowUpIcon className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {isSlashLine ? t('common.send') : t('composer.sendSteeringMessage')}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon-compact"
+                        className="size-7 rounded-lg border-border bg-background p-0 text-foreground shadow-none hover:bg-element-hover"
+                        aria-label={t('composer.stopGenerating')}
+                        title={t('common.stop')}
+                        onClick={() => void cancel()}
+                      >
+                        <SquareIcon className="size-2.5 fill-current" aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t('common.stop')}</TooltipContent>
+                  </Tooltip>
+                </>
               ) : (
                 <Tooltip>
                   <TooltipTrigger asChild>

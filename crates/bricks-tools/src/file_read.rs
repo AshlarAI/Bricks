@@ -12,11 +12,12 @@ impl Tool for FileReadTool {
         "Read"
     }
     fn description(&self) -> &str {
-        "Read a file from the filesystem: text, or an image (PNG, JPEG, GIF or WebP, up to \
-         3.75 MB) that you see itself. When the relevant region of a file is already known \
-         (for example after Grep), pass offset and limit to read only that slice. Do not \
-         re-read a file right after modifying it with Edit or Write just to verify the write; \
-         those tools already return an error if the modification fails."
+        "Read a file from the filesystem: text, an image (PNG, JPEG, GIF or WebP, up to \
+         3.75 MB), or a video (MP4, MOV, WebM or AVI, up to 20 MB) that you see itself. \
+         When the relevant region of a file is already known (for example after Grep), pass \
+         offset and limit to read only that slice. Do not re-read a file right after modifying \
+         it with Edit or Write just to verify the write; those tools already return an error \
+         if the modification fails."
     }
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::ReadOnly
@@ -65,34 +66,106 @@ impl Tool for FileReadTool {
             ));
         }
 
-        // An image is shown to the model; offset and limit are for text.
+        // Images and videos are shown to the model; offset and limit are for text.
+        enum MediaKind {
+            Image,
+            Video,
+            Other,
+        }
         let head = resolved.clone();
-        let is_image =
-            tokio::task::spawn_blocking(move || crate::view_image::starts_like_image(&head))
-                .await
-                .unwrap_or(false);
-        if is_image {
-            if input.offset.is_some() || input.limit.is_some() {
-                return ToolResult::error(format!(
-                    "{} is an image: offset and limit apply to text files only. Read it without them.",
-                    input.file_path
-                ));
+        let media = tokio::task::spawn_blocking(move || {
+            if crate::view_image::starts_like_image(&head) {
+                MediaKind::Image
+            } else if crate::view_video::starts_like_video(&head) {
+                MediaKind::Video
+            } else {
+                MediaKind::Other
             }
-            return crate::view_image::view(resolved.clone(), &input.file_path).await;
+        })
+        .await
+        .unwrap_or(MediaKind::Other);
+        match media {
+            MediaKind::Image => {
+                if input.offset.is_some() || input.limit.is_some() {
+                    return ToolResult::error(format!(
+                        "{} is an image: offset and limit apply to text files only. Read it without them.",
+                        input.file_path
+                    ));
+                }
+                return crate::view_image::view(resolved.clone(), &input.file_path).await;
+            }
+            MediaKind::Video => {
+                if input.offset.is_some() || input.limit.is_some() {
+                    return ToolResult::error(format!(
+                        "{} is a video: offset and limit apply to text files only. Read it without them.",
+                        input.file_path
+                    ));
+                }
+                return crate::view_video::view(resolved.clone(), &input.file_path, ctx).await;
+            }
+            MediaKind::Other => {}
         }
         // `offset` is the 1-based line to start at, as numbered in the output
         // and by Grep; 0 is taken as 1. `read_window` counts lines skipped.
         let offset = input.offset.unwrap_or(1).saturating_sub(1);
         let limit = input.limit.unwrap_or(2000);
+        let read_state = crate::read_state::ReadFileState::from_extensions(&ctx.extensions);
         let p = path.to_path_buf();
-        let window = match tokio::task::spawn_blocking(move || {
-            pfs::read_window(&p, offset, limit, MAX_LINE_CHARS)
+        let state_for_task = read_state.clone();
+        enum ReadOutcome {
+            Unchanged,
+            Window(pfs::Window, Option<crate::read_state::ReadStamp>),
+        }
+        let outcome = match tokio::task::spawn_blocking(move || -> std::io::Result<ReadOutcome> {
+            let pre_stamp = if let Some(ref state) = state_for_task {
+                let stamp = crate::read_state::file_fingerprint(&p);
+                if let Some(ref s) = stamp
+                    && state.check_unchanged(&p, offset, limit, s)
+                {
+                    return Ok(ReadOutcome::Unchanged);
+                }
+                stamp
+            } else {
+                None
+            };
+            let window = pfs::read_window(&p, offset, limit, MAX_LINE_CHARS)?;
+            let record_stamp = if state_for_task.is_some()
+                && matches!(window.kind, pfs::FileKind::Text { .. })
+                && !window.changed_during_read
+            {
+                let post_stamp = crate::read_state::file_fingerprint(&p);
+                if post_stamp.is_some() && post_stamp == pre_stamp {
+                    post_stamp
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            Ok(ReadOutcome::Window(window, record_stamp))
         })
         .await
         {
-            Ok(Ok(w)) => w,
+            Ok(Ok(o)) => o,
             Ok(Err(e)) => return ToolResult::error(format!("Failed to read file: {e}")),
             Err(e) => return ToolResult::error(format!("Failed to read file: {e}")),
+        };
+
+        let (window, record_stamp) = match outcome {
+            ReadOutcome::Unchanged => {
+                let range_desc = if input.offset.is_none() && input.limit.is_none() {
+                    "full file, up to 2000 lines".to_string()
+                } else if limit == 0 {
+                    format!("from line {}", offset + 1)
+                } else {
+                    format!("lines {}..{}", offset + 1, offset + limit)
+                };
+                return ToolResult::success(format!(
+                    "[file_unchanged] {} ({range_desc}) is unchanged since your last read in this session.",
+                    input.file_path
+                ));
+            }
+            ReadOutcome::Window(w, s) => (w, s),
         };
 
         match &window.kind {
@@ -154,6 +227,9 @@ impl Tool for FileReadTool {
             out.push_str(
                 "[The file changed while it was being read: read it again before relying on it.]\n",
             );
+        }
+        if let (Some(state), Some(stamp)) = (&read_state, record_stamp) {
+            state.record(path, offset, limit, stamp);
         }
         ToolResult::success(out.trim_end_matches('\n').to_string()).with_metadata(
             serde_json::json!({
@@ -545,5 +621,84 @@ mod tests {
         assert!(props.contains_key("file_path"));
         assert!(props.contains_key("offset"));
         assert!(props.contains_key("limit"));
+    }
+
+    #[tokio::test]
+    async fn read_state_memoizes_repeats_and_misses_on_window_disk_edit_or_clear() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("memo.txt");
+        std::fs::write(&path, "alpha\nbeta\ngamma\ndelta\n").unwrap();
+
+        let state = Arc::new(crate::read_state::ReadFileState::default());
+        let mut ctx = test_ctx();
+        ctx.working_dir = tmp.path().to_path_buf();
+        ctx.extensions.insert(Arc::clone(&state));
+
+        let first = FileReadTool
+            .execute(serde_json::json!({ "file_path": "memo.txt" }), &ctx)
+            .await;
+        assert!(!first.is_error, "{}", first.content);
+        assert!(first.content.contains("1 | alpha"), "{}", first.content);
+
+        // Repeat with identical default window -> [file_unchanged].
+        let second = FileReadTool
+            .execute(serde_json::json!({ "file_path": "memo.txt" }), &ctx)
+            .await;
+        assert!(!second.is_error, "{}", second.content);
+        assert!(
+            second.content.starts_with("[file_unchanged]"),
+            "{}",
+            second.content
+        );
+
+        // Different window (offset/limit) -> returns full window content.
+        let slice = FileReadTool
+            .execute(
+                serde_json::json!({ "file_path": "memo.txt", "offset": 2, "limit": 2 }),
+                &ctx,
+            )
+            .await;
+        assert!(!slice.is_error, "{}", slice.content);
+        assert!(slice.content.contains("2 | beta"), "{}", slice.content);
+        assert!(!slice.content.contains("[file_unchanged]"));
+
+        // Repeating that same slice -> [file_unchanged] with line range.
+        let slice_again = FileReadTool
+            .execute(
+                serde_json::json!({ "file_path": "memo.txt", "offset": 2, "limit": 2 }),
+                &ctx,
+            )
+            .await;
+        assert!(!slice_again.is_error);
+        assert!(
+            slice_again.content.contains("[file_unchanged]")
+                && slice_again.content.contains("lines 2..3"),
+            "{}",
+            slice_again.content
+        );
+
+        // External disk modification -> returns updated content.
+        std::fs::write(&path, "ALPHA\nbeta\ngamma\ndelta\n").unwrap();
+        let after_edit = FileReadTool
+            .execute(serde_json::json!({ "file_path": "memo.txt" }), &ctx)
+            .await;
+        assert!(!after_edit.is_error);
+        assert!(
+            after_edit.content.contains("1 | ALPHA"),
+            "{}",
+            after_edit.content
+        );
+
+        // Clearing state (e.g. compaction) -> returns full content again.
+        state.clear();
+        let after_clear = FileReadTool
+            .execute(serde_json::json!({ "file_path": "memo.txt" }), &ctx)
+            .await;
+        assert!(!after_clear.is_error);
+        assert!(
+            after_clear.content.contains("1 | ALPHA"),
+            "{}",
+            after_clear.content
+        );
     }
 }

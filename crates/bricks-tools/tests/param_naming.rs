@@ -2,7 +2,7 @@
 //!
 //! `file_path` names a specific file (Read/Write/Edit);
 //! `path` names a search *scope* that may be a directory
-//! (Glob/Grep/CodeSearch/CodeStats). This mirrors the tool
+//! (Glob/Grep/CodeStats). This mirrors the tool
 //! surface models are most heavily trained on, so unifying the names was
 //! rejected — as was re-adding alias coercion, which F-10 removed after alias
 //! leniency on `Edit` caused the silent search-widening bug (see the

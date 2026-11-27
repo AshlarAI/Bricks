@@ -17,51 +17,47 @@ const KEY: &str = "sk-test-key-123456";
 
 /// A reasoning-capable model (default profile `deep`, with `fast`, `off`
 /// and an alias `ultra`), and a model without any profile.
-const EXTRA: &str = r#"
-[[providers.models]]
-id = "think"
-name = "Think"
-api_model = "vendor-think"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-[providers.models.parameters]
-temperature = 0.5
-reasoning = { summary = "auto", effort = "model-default" }
-[providers.models.reasoning]
-default = "deep"
-[[providers.models.reasoning.profiles]]
-id = "fast"
-label = "Rapide"
-parameters = { reasoning = { effort = "low" } }
-[[providers.models.reasoning.profiles]]
-id = "deep"
-parameters = { reasoning = { effort = "high" } }
-[[providers.models.reasoning.profiles]]
-id = "off"
-label = "Aucun"
-remove = ["/reasoning", "/temperature"]
-parameters = { thinking = { type = "disabled" } }
-[[providers.models.reasoning.profiles]]
-id = "ultra"
-parameters = { reasoning = { effort = "high" }, extra_budget = 99999 }
-
-[[providers.models]]
-id = "plain"
-name = "No profiles"
-api_model = "vendor-plain"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-[providers.models.reasoning]
-profiles = []
-"#;
+fn extra_models() -> Vec<Value> {
+    vec![
+        json!({
+            "id": "think",
+            "name": "Think",
+            "api_model": "vendor-think",
+            "streaming": true,
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 },
+            "parameters": {
+                "temperature": 0.5,
+                "reasoning": { "summary": "auto", "effort": "model-default" }
+            },
+            "reasoning": {
+                "default": "deep",
+                "profiles": [
+                    { "id": "fast", "label": "Rapide", "parameters": { "reasoning": { "effort": "low" } } },
+                    { "id": "deep", "parameters": { "reasoning": { "effort": "high" } } },
+                    {
+                        "id": "off",
+                        "label": "Aucun",
+                        "remove": ["/reasoning", "/temperature"],
+                        "parameters": { "thinking": { "type": "disabled" } }
+                    },
+                    { "id": "ultra", "parameters": { "reasoning": { "effort": "high" }, "extra_budget": 99999 } }
+                ]
+            }
+        }),
+        json!({
+            "id": "plain",
+            "name": "No profiles",
+            "api_model": "vendor-plain",
+            "streaming": true,
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 },
+            "reasoning": { "profiles": [] }
+        }),
+    ]
+}
 
 fn setup(replies: Vec<Reply>) -> (Mock, ProviderRegistry) {
     let mock = serve(replies);
-    let reg = registry_for(&mock.base, EXTRA);
+    let reg = registry_for(&mock.base, extra_models(), Vec::new());
     (mock, reg)
 }
 

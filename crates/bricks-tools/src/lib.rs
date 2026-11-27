@@ -2,9 +2,8 @@
 
 pub mod apply_patch;
 pub mod bash;
-pub mod code_scout;
-pub mod code_search;
 pub mod code_stats;
+pub use code_stats::RunCancel;
 pub mod file_edit;
 pub mod file_history;
 pub mod file_lock;
@@ -22,6 +21,8 @@ pub mod memory_tools;
 pub mod permissions;
 pub mod powershell;
 pub mod preview;
+pub mod read_state;
+pub use read_state::ReadFileState;
 pub mod shell;
 pub mod skill_tool;
 pub mod todo_write;
@@ -29,6 +30,7 @@ pub mod tool_feedback;
 pub mod tool_primitives;
 pub mod tool_report;
 pub mod view_image;
+pub mod view_video;
 #[cfg(feature = "vms")]
 pub mod vm_tools;
 pub mod web_fetch;
@@ -65,6 +67,25 @@ pub trait Tool: Send + Sync {
     /// [`Tool::permission_level`].
     fn permission_level_for(&self, _input: &Value) -> PermissionLevel {
         self.permission_level()
+    }
+
+    /// Context-aware variant of [`Tool::permission_level_for`], allowing tools
+    /// such as `Bash` to inspect session state (for example, shell aliases or
+    /// functions overriding otherwise read-only commands).
+    fn permission_level_for_ctx(&self, input: &Value, _ctx: &ToolContext) -> PermissionLevel {
+        self.permission_level_for(input)
+    }
+
+    /// Whether two concurrent invocations of this tool are safe to run in the
+    /// same parallel batch. Read-only tools and file-locked editors default to
+    /// `true`; mutative or stateful shells override this to `false`.
+    fn is_concurrent_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
+    /// Context-aware variant of [`Tool::is_concurrent_safe`].
+    fn is_concurrent_safe_ctx(&self, input: &Value, _ctx: &ToolContext) -> bool {
+        self.is_concurrent_safe(input)
     }
 
     /// Category for grouping in tool listings.
@@ -159,6 +180,9 @@ pub struct ToolResult {
     /// Images the result shows the model (`Read` of an image). The agent carries
     /// them as the model's protocol allows, or says why it cannot.
     pub images: Vec<ToolImage>,
+    /// Videos the result shows the model (`Read` of a video). The agent carries
+    /// them as the model's protocol allows, or says why it cannot.
+    pub videos: Vec<ToolVideo>,
 }
 
 /// The text that names, for the model and the desktop, an image a tool call
@@ -174,10 +198,41 @@ pub fn tool_image_label(tool_use_id: &str, image: &ToolImage) -> String {
 /// The start of [`tool_image_label`].
 pub const TOOL_IMAGE_MARK: &str = "[image from tool call ";
 
+/// The text that names, for the model and the desktop, a video a tool call
+/// showed next to its result: `[video from tool call <id>] <path>, <type>, <n> bytes`.
+pub fn tool_video_label(tool_use_id: &str, video: &ToolVideo) -> String {
+    let path = video.path.as_deref().unwrap_or("(no path)");
+    format!(
+        "{TOOL_VIDEO_MARK}{tool_use_id}] {path}, {}, {} bytes",
+        video.media_type, video.bytes
+    )
+}
+
+/// The start of [`tool_video_label`].
+pub const TOOL_VIDEO_MARK: &str = "[video from tool call ";
+
+/// Whether the active model/protocol supports video input (injected into
+/// `ToolContext::extensions` by the agent runner).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoSupport(pub bool);
+
 /// An image a tool result shows the model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolImage {
     /// `image/png`, `image/jpeg`, `image/gif` or `image/webp`.
+    pub media_type: String,
+    /// The bytes, base64 (standard alphabet).
+    pub data_base64: String,
+    /// Where it was read, for the person and the model.
+    pub path: Option<String>,
+    /// Size of the decoded bytes.
+    pub bytes: usize,
+}
+
+/// A video a tool result shows the model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolVideo {
+    /// e.g. `video/mp4`, `video/quicktime`, `video/webm`, `video/x-msvideo`.
     pub media_type: String,
     /// The bytes, base64 (standard alphabet).
     pub data_base64: String,
@@ -195,6 +250,7 @@ impl ToolResult {
             metadata: None,
             report: None,
             images: Vec::new(),
+            videos: Vec::new(),
         }
     }
 
@@ -205,12 +261,19 @@ impl ToolResult {
             metadata: None,
             report: None,
             images: Vec::new(),
+            videos: Vec::new(),
         }
     }
 
     /// The same result, showing `images` to the model.
     pub fn with_images(mut self, images: Vec<ToolImage>) -> Self {
         self.images = images;
+        self
+    }
+
+    /// The same result, showing `videos` to the model.
+    pub fn with_videos(mut self, videos: Vec<ToolVideo>) -> Self {
+        self.videos = videos;
         self
     }
 
@@ -238,6 +301,7 @@ impl ToolResult {
             content: content.trim_end_matches('\n').to_string(),
             report: Some(Box::new(report)),
             images: Vec::new(),
+            videos: Vec::new(),
         }
     }
 
@@ -498,12 +562,8 @@ pub fn coding() -> Vec<Box<dyn Tool>> {
     tools
 }
 
-/// File system tools: Read (text and images), Write, Edit, ApplyPatch, Glob, Grep,
-/// CodeScout, CodeStats.
-///
-/// CodeSearch is not among them: without embeddings it is a ranked full-text
-/// search that Grep and CodeScout already cover. Add
-/// [`code_search::CodeSearchTool::with_embeddings`] where a provider is set up.
+/// File system tools: Read (text, images, and videos), Write, Edit, ApplyPatch,
+/// Glob, Grep, CodeStats.
 pub fn filesystem() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(file_read::FileReadTool),
@@ -512,7 +572,6 @@ pub fn filesystem() -> Vec<Box<dyn Tool>> {
         Box::new(apply_patch::ApplyPatchTool),
         Box::new(glob_tool::GlobTool),
         Box::new(grep_tool::GrepTool),
-        Box::new(code_scout::CodeScoutTool),
         Box::new(code_stats::CodeStatsTool),
     ]
 }
@@ -656,9 +715,9 @@ mod unknown_parameter_policy {
 
     /// The built-in tools with no required parameter, in `all()` order.
     #[cfg(unix)]
-    const UNPROBED: &[&str] = &["CodeScout", "CodeStats", "Job", "WebFetch"];
+    const UNPROBED: &[&str] = &["CodeStats", "Job", "WebFetch"];
     #[cfg(not(unix))]
-    const UNPROBED: &[&str] = &["CodeScout", "CodeStats", "WebFetch"];
+    const UNPROBED: &[&str] = &["CodeStats", "WebFetch"];
 
     /// Every tool must reject a parameter it does not declare.
     ///

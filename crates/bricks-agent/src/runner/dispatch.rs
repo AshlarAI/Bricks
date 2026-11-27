@@ -170,7 +170,7 @@ async fn decide(
         let request = PermissionRequest {
             tool_name: tool_name.to_string(),
             tool_input: input.clone(),
-            permission_level: tool.permission_level_for(input),
+            permission_level: tool.permission_level_for_ctx(input, site.tool_ctx),
             category: tool.category(),
             description: description.clone(),
             id: site.tool_id.to_string(),
@@ -219,8 +219,8 @@ async fn execute_admitted(
 ) -> ToolResult {
     use bricks_tools::PermissionLevel as L;
     let writes = matches!(
-        tool.permission_level_for(&input),
-        L::Write | L::Execute | L::Dangerous
+        tool.permission_level_for_ctx(&input, ctx),
+        L::Write | L::Execute | L::Dangerous | L::Forbidden
     ) && !crate::subagent::DELEGATION_TOOLS.contains(&tool.name());
     if !writes {
         return tool.execute(input, ctx).await;
@@ -228,7 +228,7 @@ async fn execute_admitted(
     if let Some(other) = another_agents_worktree(&input, ctx) {
         return ToolResult::error(format!(
             "`{}` is in {other}'s worktree: another agent's worktree is read-only for you \
-             (Read, Grep, CodeScout, CodeStats). Write in your own workspace.",
+             (Read, Grep, Glob, CodeStats). Write in your own workspace.",
             other_path(&input, ctx).unwrap_or_default()
         ));
     }

@@ -158,74 +158,85 @@ pub fn sse_events(events: &[(Option<&str>, Value)]) -> String {
 }
 
 /// One provider with one model per protocol, pointed at `base`.
-pub fn registry_for(base: &str, extra_model_toml: &str) -> ProviderRegistry {
-    let text = format!(
-        r#"
-schema_version = 1
-
-[[providers]]
-id = "mock"
-name = "Mock"
-endpoint = "{base}/v1"
-protocol = "chat_completions"
-auth = "bearer"
-api_key_env = "BRICKS_MOCK_API_KEY"
-
-[[providers.models]]
-id = "chat"
-name = "Chat"
-api_model = "vendor-chat"
-streaming = true
-input_modalities = ["text", "image", "audio", "document"]
-document_mime_types = ["application/pdf"]
-[providers.models.limits]
-max_input_tokens = 96000
-max_output_tokens = 4000
-context_window_tokens = 100000
-[providers.models.pricing]
-currency = "USD"
-per_tokens = 1000000
-input = "1"
-output = "2"
-cache_read = "0.1"
-
-[[providers.models]]
-id = "resp"
-name = "Resp"
-api_model = "vendor-resp"
-protocol = "responses"
-streaming = true
-input_modalities = ["text", "image", "document"]
-document_mime_types = ["application/pdf"]
-[providers.models.limits]
-max_input_tokens = 64000
-max_output_tokens = 4000
-
-[[providers.models]]
-id = "anth"
-name = "Anth"
-api_model = "vendor-anth"
-protocol = "anthropic_messages"
-streaming = true
-input_modalities = ["text", "image", "document"]
-document_mime_types = ["application/pdf"]
-[providers.models.limits]
-max_input_tokens = 64000
-max_output_tokens = 4000
-[providers.models.pricing]
-currency = "USD"
-per_tokens = 1000000
-input = "3"
-output = "15"
-cache_read = "0.3"
-cache_write = "3.75"
-[providers.models.pricing.cache_write_variants]
-"1h" = "6"
-
-{extra_model_toml}
-"#
-    );
-    ProviderRegistry::from_toml_str(&text, "mock.toml").unwrap()
+pub fn registry_for(
+    base: &str,
+    extra_models: Vec<Value>,
+    extra_providers: Vec<Value>,
+) -> ProviderRegistry {
+    let mut models = vec![
+        serde_json::json!({
+            "id": "chat",
+            "name": "Chat",
+            "api_model": "vendor-chat",
+            "streaming": true,
+            "input_modalities": ["text", "image", "audio", "document"],
+            "document_mime_types": ["application/pdf"],
+            "limits": {
+                "max_input_tokens": 96000,
+                "max_output_tokens": 4000,
+                "context_window_tokens": 100000
+            },
+            "pricing": {
+                "currency": "USD",
+                "per_tokens": 1000000,
+                "input": "1",
+                "output": "2",
+                "cache_read": "0.1"
+            }
+        }),
+        serde_json::json!({
+            "id": "resp",
+            "name": "Resp",
+            "api_model": "vendor-resp",
+            "protocol": "responses",
+            "streaming": true,
+            "input_modalities": ["text", "image", "document"],
+            "document_mime_types": ["application/pdf"],
+            "limits": {
+                "max_input_tokens": 64000,
+                "max_output_tokens": 4000
+            }
+        }),
+        serde_json::json!({
+            "id": "anth",
+            "name": "Anth",
+            "api_model": "vendor-anth",
+            "protocol": "anthropic_messages",
+            "streaming": true,
+            "input_modalities": ["text", "image", "document"],
+            "document_mime_types": ["application/pdf"],
+            "limits": {
+                "max_input_tokens": 64000,
+                "max_output_tokens": 4000
+            },
+            "pricing": {
+                "currency": "USD",
+                "per_tokens": 1000000,
+                "input": "3",
+                "output": "15",
+                "cache_read": "0.3",
+                "cache_write": "3.75",
+                "cache_write_variants": { "1h": "6" }
+            }
+        }),
+    ];
+    models.extend(extra_models);
+    let mut providers = vec![serde_json::json!({
+        "id": "mock",
+        "name": "Mock",
+        "endpoint": format!("{base}/v1"),
+        "protocol": "chat_completions",
+        "auth": "bearer",
+        "api_key_env": "BRICKS_MOCK_API_KEY",
+        "models": models
+    })];
+    providers.extend(extra_providers);
+    let text = serde_json::json!({
+        "schema_version": 1,
+        "providers": providers
+    })
+    .to_string();
+    ProviderRegistry::from_json_str(&text, "mock.json").unwrap()
 }
 
 pub fn model(reg: &ProviderRegistry, sel: &str) -> ResolvedModel {

@@ -11,6 +11,7 @@ import QuestionCard from './timeline/QuestionCard'
 import SkillsTrustBanner from './timeline/SkillsTrustBanner'
 import TimelineEntry from './timeline/TimelineEntry'
 import WorkBlock from './timeline/WorkBlock'
+import WorkPlanPopover from './timeline/WorkPlanPopover'
 import MessageRail from './MessageRail'
 import { timelineBlocks, turnWindow, turnsRequiredForKey } from './runBlocks'
 
@@ -120,6 +121,15 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
   const runningWithoutBlock =
     conversation.runningRunId !== null &&
     !blocks.some((block) => block.kind === 'work' && block.runId === conversation.runningRunId)
+
+  const planWorkRunId = (() => {
+    if (runningWithoutBlock && conversation.runningRunId) return conversation.runningRunId
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const block = blocks[i]
+      if (block.kind === 'work') return block.runId
+    }
+    return null
+  })()
 
   /** Waiting approvals with no card in the timeline (e.g. after a reload). */
   const orphanApprovals = useMemo(
@@ -409,6 +419,7 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
                     runId={block.runId}
                     items={block.items}
                     answerReasoning={block.answerReasoning}
+                    showPlan={block.runId === planWorkRunId}
                   />
                 ) : (
                   <TimelineEntry item={block.item} conversation={conversation} answer={block.answer} />
@@ -427,7 +438,18 @@ export function ConversationTimeline({ conversation }: ConversationTimelineProps
 
           {/* A running run with nothing in the view (it started elsewhere): its bar goes last. */}
           {runningWithoutBlock && conversation.runningRunId && (
-            <WorkBlock conversation={conversation} runId={conversation.runningRunId} items={[]} />
+            <WorkBlock
+              conversation={conversation}
+              runId={conversation.runningRunId}
+              items={[]}
+              showPlan={conversation.runningRunId === planWorkRunId}
+            />
+          )}
+
+          {planWorkRunId === null && conversation.plan && conversation.plan.todos.length > 0 && (
+            <div className="flex items-center">
+              <WorkPlanPopover plan={conversation.plan} running={running} />
+            </div>
           )}
 
           {conversation.skillsTrust && (

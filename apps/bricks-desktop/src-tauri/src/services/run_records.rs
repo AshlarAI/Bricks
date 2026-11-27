@@ -626,6 +626,7 @@ impl Recorder {
                 output,
                 executed,
                 status,
+                ..
             } => run.tool_finished(
                 None,
                 tool_call_id,
@@ -882,6 +883,7 @@ mod tests {
                 is_error: false,
                 duration_ms: 40,
                 output: "ok\n".into(),
+                output_truncated: false,
                 executed: Some(true),
                 status: Some("success".into()),
             },
@@ -979,6 +981,7 @@ mod tests {
             is_error: true,
             duration_ms: 0,
             output: "Permission denied".into(),
+            output_truncated: false,
             executed: Some(false),
             status: Some("failure".into()),
         };
@@ -1023,6 +1026,7 @@ mod tests {
                 is_error: false,
                 duration_ms: 900,
                 output: "started".into(),
+                output_truncated: false,
                 executed: Some(true),
                 status: Some("running".into()),
             },

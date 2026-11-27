@@ -322,6 +322,27 @@ pub enum InjectRefusal {
     Finished,
 }
 
+impl std::fmt::Display for InjectRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InjectRefusal::Empty => f.write_str("the message is empty"),
+            InjectRefusal::TooLarge => {
+                write!(
+                    f,
+                    "the message exceeds the maximum length ({MAX_INJECTED_BYTES} bytes)"
+                )
+            }
+            InjectRefusal::QueueFull => {
+                write!(
+                    f,
+                    "too many queued messages ({MAX_PENDING_MESSAGES} waiting already)"
+                )
+            }
+            InjectRefusal::Finished => f.write_str("the run has already ended"),
+        }
+    }
+}
+
 /// Messages waiting for the next model request, at most.
 pub const MAX_PENDING_MESSAGES: usize = 32;
 /// One injected message, at most (UTF-8 bytes).

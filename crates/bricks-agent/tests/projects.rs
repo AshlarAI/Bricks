@@ -1,5 +1,5 @@
 //! A session's project follows the session: resuming a session of another
-//! folder loads that folder's project (rules, prompt, semantic settings)
+//! folder loads that folder's project (rules, prompt, config)
 //! before anything is switched; a failure leaves the open session intact.
 
 use bricks_agent::BricksConfig;
@@ -11,9 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// A project, read from its folder: `broken` makes it fail; the prompt and
-/// the semantic limits name it. (Permissions are per session, not per
-/// project.)
+/// A project, read from its folder: `broken` makes it fail; the prompt
+/// names it. (Permissions are per session, not per project.)
 struct Folders;
 
 impl ProjectLoader for Folders {
@@ -24,8 +23,6 @@ impl ProjectLoader for Folders {
         let name = wd.file_name().unwrap().to_string_lossy().into_owned();
         let mut bricks = BricksConfig::default();
         bricks.agent.model = Some("test/a".into());
-        bricks.semantic.lsp.enabled = false;
-        bricks.semantic.max_results = if name == "B" { 7 } else { 9 };
         Ok(ProjectContext {
             working_dir: wd.to_path_buf(),
             prompt_options: None,
@@ -204,11 +201,6 @@ async fn resuming_another_projects_session_loads_that_project() {
         "B's policy"
     );
     assert_eq!(ctl.project().system_prompt.as_deref(), Some("PROJECT-B"));
-    assert_eq!(
-        ctl.semantic_engine().config().max_results,
-        7,
-        "B's semantic settings"
-    );
     assert_eq!(ctl.agent().working_dir(), b.as_path());
 
     // A write in B: no question (B's policy runs it), relative to B.
@@ -266,27 +258,12 @@ async fn a_resume_that_cannot_be_prepared_changes_nothing() {
 }
 
 #[tokio::test]
-async fn codescout_stays_in_the_resumed_projects_folder() {
+async fn grep_stays_in_the_resumed_projects_folder() {
     let w = World::new(vec![
         Reply::text("B created"),
         Reply::tools(vec![
-            (
-                "s1",
-                "CodeScout",
-                json!({"query": "SECRET_A", "paths": ["../A"]}),
-            ),
-            (
-                "s2",
-                "CodeScout",
-                json!({"query": "SECRET_A", "paths": ["/"]}),
-            ),
-            ("s3", "CodeScout", json!({"query": "SECRET_A"})),
-            (
-                "s4",
-                "CodeScout",
-                json!({"query": "SECRET_A", "paths": ["link"]}),
-            ),
-            ("s5", "CodeScout", json!({"query": "VISIBLE_B"})),
+            ("s1", "Grep", json!({"pattern": "SECRET_A"})),
+            ("s2", "Grep", json!({"pattern": "VISIBLE_B"})),
         ]),
         Reply::text("done"),
     ]);
@@ -312,17 +289,12 @@ async fn codescout_stays_in_the_resumed_projects_folder() {
             })
             .unwrap()
     };
-    for id in ["s1", "s2"] {
-        assert!(out(id).contains("outside your scope"), "{id}: {}", out(id));
-    }
-    for id in ["s1", "s2", "s3", "s4"] {
-        assert!(
-            !out(id).contains("secret.rs"),
-            "{id} reached A: {}",
-            out(id)
-        );
-    }
-    assert!(out("s5").contains("lib.rs"), "{}", out("s5"));
+    assert!(
+        !out("s1").contains("secret.rs"),
+        "s1 reached A (including via symlink): {}",
+        out("s1")
+    );
+    assert!(out("s2").contains("lib.rs"), "{}", out("s2"));
 }
 
 #[cfg(unix)]

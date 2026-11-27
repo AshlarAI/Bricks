@@ -207,6 +207,7 @@ describe('SlashPresent: every view of the binding has a desktop effect', () => {
 /** One sample command per engine type, as the registry (or the dispatcher) can produce it. */
 const ENGINE: { type: string; registry: boolean; command: Command }[] = [
 	{ type: 'submit', registry: true, command: { type: 'submit', prompt: { blocks: [{ kind: 'text', text: 'Bonjour' }], skills: ['pdf'] } } },
+	{ type: 'inject', registry: false, command: { type: 'inject', text: 'Continuez' } },
 	{ type: 'cancel', registry: false, command: { type: 'cancel' } },
 	{ type: 'set_model', registry: true, command: { type: 'set_model', model: 'test/b', reasoning: 'deep' } },
 	{ type: 'set_reasoning', registry: true, command: { type: 'set_reasoning', profile: null } },
@@ -547,6 +548,18 @@ describe('engine Command: desktop effect of each type', () => {
 		expect(await runSlashLine('/revise', fake.host)).toEqual({
 			kind: 'refused',
 			message: 'Un message se modifie depuis la conversation (crayon du message).'
+		});
+		expect(fake.calls.map((c) => c.name)).toEqual(['parse']);
+	});
+
+	it('inject is refused in the dispatcher: steering is sent from the composer', async () => {
+		const fake = fakeHost({
+			kind: 'engine',
+			command: { type: 'inject', text: 'Continuez' }
+		});
+		expect(await runSlashLine('/inject', fake.host)).toEqual({
+			kind: 'refused',
+			message: 'Commande invalide.'
 		});
 		expect(fake.calls.map((c) => c.name)).toEqual(['parse']);
 	});

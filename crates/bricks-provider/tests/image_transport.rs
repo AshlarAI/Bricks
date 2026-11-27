@@ -7,88 +7,78 @@ use bricks_provider::{
 };
 use bricks_types::Result;
 
-const TOML: &str = r#"
-schema_version = 1
-
-[[providers]]
-id = "p"
-name = "Provider"
-endpoint = "http://127.0.0.1:9/v1"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "chat_vision"
-name = "Chat vision"
-api_model = "vendor-chat-vision"
-input_modalities = ["text", "image"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "chat_text"
-name = "Chat text"
-api_model = "vendor-chat-text"
-input_modalities = ["text"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "resp_vision"
-name = "Responses vision"
-api_model = "vendor-resp-vision"
-protocol = "responses"
-input_modalities = ["text", "image"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "resp_text"
-name = "Responses text"
-api_model = "vendor-resp-text"
-protocol = "responses"
-input_modalities = ["text"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "anth_vision"
-name = "Anthropic vision"
-api_model = "vendor-anth-vision"
-protocol = "anthropic_messages"
-input_modalities = ["text", "image"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "anth_text"
-name = "Anthropic text"
-api_model = "vendor-anth-text"
-protocol = "anthropic_messages"
-input_modalities = ["text"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "anth_document"
-name = "Anthropic documents only"
-api_model = "vendor-anth-doc"
-protocol = "anthropic_messages"
-input_modalities = ["text", "document"]
-document_mime_types = ["application/pdf"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-"#;
+const CONFIG_JSON: &str = r#"{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "p",
+      "name": "Provider",
+      "endpoint": "http://127.0.0.1:9/v1",
+      "protocol": "chat_completions",
+      "auth": "none",
+      "models": [
+        {
+          "id": "chat_vision",
+          "name": "Chat vision",
+          "api_model": "vendor-chat-vision",
+          "input_modalities": ["text", "image"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "chat_text",
+          "name": "Chat text",
+          "api_model": "vendor-chat-text",
+          "input_modalities": ["text"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "resp_vision",
+          "name": "Responses vision",
+          "api_model": "vendor-resp-vision",
+          "protocol": "responses",
+          "input_modalities": ["text", "image"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "resp_text",
+          "name": "Responses text",
+          "api_model": "vendor-resp-text",
+          "protocol": "responses",
+          "input_modalities": ["text"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "anth_vision",
+          "name": "Anthropic vision",
+          "api_model": "vendor-anth-vision",
+          "protocol": "anthropic_messages",
+          "input_modalities": ["text", "image"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "anth_text",
+          "name": "Anthropic text",
+          "api_model": "vendor-anth-text",
+          "protocol": "anthropic_messages",
+          "input_modalities": ["text"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        },
+        {
+          "id": "anth_document",
+          "name": "Anthropic documents only",
+          "api_model": "vendor-anth-doc",
+          "protocol": "anthropic_messages",
+          "input_modalities": ["text", "document"],
+          "document_mime_types": ["application/pdf"],
+          "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }
+      ]
+    }
+  ]
+}"#;
 
 fn transport(selection: &str) -> ImageTransport {
-    let reg = ProviderRegistry::from_toml_str(TOML, "image-transport.toml").unwrap();
+    let reg = ProviderRegistry::from_json_str(CONFIG_JSON, "image-transport.json").unwrap();
     reg.resolve(selection)
         .unwrap()
         .provider()

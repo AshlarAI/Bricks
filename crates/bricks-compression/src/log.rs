@@ -535,8 +535,8 @@ mod tests {
         // A rule that strips every line still keeps the error.
         let set = RuleSet::from_texts(
             &[(
-                "x.toml",
-                "schema_version = 1\n[filters.all]\nmatch = [{ program = \"x\" }]\nstrip_lines_matching = ['.*']\n",
+                "x.json",
+                r#"{"schema_version":1,"filters":{"all":{"match":[{"program":"x"}],"strip_lines_matching":[".*"]}}}"#,
             )],
             None,
         );
@@ -580,8 +580,8 @@ mod tests {
     fn match_output_never_hides_a_failure() {
         let set = RuleSet::from_texts(
             &[(
-                "x.toml",
-                "schema_version = 1\n[filters.m]\nmatch = [{ program = \"m\" }]\nmatch_output = [{ pattern = 'done', message = 'all good' }]\n",
+                "x.json",
+                r#"{"schema_version":1,"filters":{"m":{"match":[{"program":"m"}],"match_output":[{"pattern":"done","message":"all good"}]}}}"#,
             )],
             None,
         );
@@ -600,8 +600,8 @@ mod tests {
     fn stream_sections_are_kept_and_the_exit_code_comes_from_outside() {
         let set = RuleSet::from_texts(
             &[(
-                "x.toml",
-                "schema_version = 1\n[filters.m]\nmatch = [{ program = \"m\" }]\nstrip_lines_matching = ['^noise']\nmatch_output = [{ pattern = 'done', message = 'all good' }]\n",
+                "x.json",
+                r#"{"schema_version":1,"filters":{"m":{"match":[{"program":"m"}],"strip_lines_matching":["^noise"],"match_output":[{"pattern":"done","message":"all good"}]}}}"#,
             )],
             None,
         );

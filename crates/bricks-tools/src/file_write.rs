@@ -99,6 +99,7 @@ impl Tool for FileWriteTool {
         }
         match pfs::write_atomic(&target, input.content.as_bytes()).await {
             Ok(()) => {
+                crate::read_state::ReadFileState::invalidate_in_ctx(ctx, &target);
                 ToolResult::success(format!("File created successfully at: {}", input.file_path))
             }
             Err(e) => ToolResult::error(format!("Failed to write file: {}", e)),
@@ -205,5 +206,35 @@ mod tests {
         let r = FileWriteTool.execute(input, &approved).await;
         assert!(crate::preview::is_stale_approval(&r), "{}", r.content);
         assert_eq!(std::fs::read(&path).unwrap(), [0xff, 0xfe, b'z']);
+    }
+
+    #[tokio::test]
+    async fn write_invalidates_read_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("doc.txt");
+        std::fs::write(&path, "v1\n").unwrap();
+
+        let state = Arc::new(crate::read_state::ReadFileState::default());
+        let ctx = ctx_in(tmp.path());
+        ctx.extensions.insert(Arc::clone(&state));
+
+        let r1 = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "doc.txt" }), &ctx)
+            .await;
+        assert!(r1.content.contains("1 | v1"), "{}", r1.content);
+
+        let w = FileWriteTool
+            .execute(
+                serde_json::json!({ "file_path": "doc.txt", "content": "v2\n" }),
+                &ctx,
+            )
+            .await;
+        assert!(!w.is_error, "{}", w.content);
+
+        let r2 = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "doc.txt" }), &ctx)
+            .await;
+        assert!(r2.content.contains("1 | v2"), "{}", r2.content);
+        assert!(!r2.content.starts_with("[file_unchanged]"));
     }
 }

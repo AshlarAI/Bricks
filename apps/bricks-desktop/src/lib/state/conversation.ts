@@ -5,7 +5,7 @@
 import { useRef, useSyncExternalStore } from 'react'
 import { t } from '$lib/i18n/i18n'
 import type { HistoryMessage, OpenedSession, RunLabel, RunRecord, SessionItem } from '$lib/ipc/client'
-import { sessionAttachmentPaths, sessionRunUserIndex } from '$lib/ipc/client'
+import { sessionAttachmentPaths, sessionCommand, sessionRunUserIndex } from '$lib/ipc/client'
 import type {
   ChangeKind,
   InstanceRecord,
@@ -52,6 +52,8 @@ export interface UserItem {
   at?: number
   /** The command as typed, for a message sent by a typed command (e.g. `/skill debug`). */
   commandLabel?: string
+  /** Mid-run steering message injected while a run was active. */
+  steered?: boolean
 }
 
 export interface AssistantItem {
@@ -139,6 +141,7 @@ export interface NoticeItem {
   runId?: string
   level: 'info' | 'warning' | 'error'
   message: string
+  separator?: boolean
 }
 
 export interface RunEndItem {
@@ -690,11 +693,18 @@ export class Conversation extends ObservableStore {
     this.emit()
   }
 
+  /** Queues a mid-run user steering message into the active run. */
+  async inject(text: string): Promise<void> {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    await sessionCommand(this.sessionId, { type: 'inject', text: trimmed })
+  }
+
   /** Where a user message is in the active history, for a `revise`; `null` when unknown. */
   async userIndexOf(item: UserItem): Promise<number | null> {
     const known = this.userIndexes.get(item.id)
     if (known !== undefined) return known
-    if (!item.runId) return null
+    if (item.steered || !item.runId) return null
     return sessionRunUserIndex(this.sessionId, item.runId)
   }
 
@@ -857,7 +867,7 @@ export class Conversation extends ObservableStore {
   applyRunLabel(label: RunLabel) {
     if (this.runLabels.get(label.run_id) === label.label) return
     this.runLabels.set(label.run_id, label.label)
-    const idx = this.items.findIndex((i) => i.kind === 'user' && i.runId === label.run_id)
+    const idx = this.items.findIndex((i) => i.kind === 'user' && i.runId === label.run_id && !i.steered)
     if (idx >= 0) {
       const item = this.items[idx]
       if (item.kind === 'user') {
@@ -894,7 +904,9 @@ export class Conversation extends ObservableStore {
       if (item?.kind === 'user' && !item.commandLabel) item.commandLabel = label.label
     }
     // Old labels: unlabelled stored messages, oldest first, each takes at most one.
-    const free = this.items.filter((i): i is UserItem => i.kind === 'user' && !i.runId && !i.commandLabel)
+    const free = this.items.filter(
+      (i): i is UserItem => i.kind === 'user' && !i.runId && !i.commandLabel && !i.steered,
+    )
     for (const label of byText) {
       this.runLabels.set(label.run_id, label.label)
       const at = free.findIndex((i) => i.text === label.prompt)
@@ -1078,6 +1090,7 @@ export class Conversation extends ObservableStore {
         case 'tool_started':
         case 'tool_progress':
         case 'tool_finished':
+        case 'message_injected':
         case 'notice':
           this.lastSeq = Math.max(this.lastSeq, env.seq)
           if (env.type === 'tool_finished') this.recordCommand(env)
@@ -1279,6 +1292,7 @@ export class Conversation extends ObservableStore {
           'info',
           t('app.compaction', { reason: env.reason, outcome: env.outcome }),
           runId,
+          true,
         )
         itemsMutated = true
         break
@@ -1290,7 +1304,7 @@ export class Conversation extends ObservableStore {
       case 'context_cleared':
         this.lastClear = { at: env.at, messagesRemoved: env.messages_removed }
         this.contextStale = true
-        this.notice('info', t('app.contextClearedCount', { count: env.messages_removed }), runId)
+        this.notice('info', t('app.contextClearedCount', { count: env.messages_removed }), runId, true)
         itemsMutated = true
         break
       case 'model_changed':
@@ -1302,6 +1316,20 @@ export class Conversation extends ObservableStore {
       case 'reasoning_changed':
         this.reasoning = env.requested ?? null
         this.effectiveReasoning = env.effective ?? null
+        break
+      case 'message_injected':
+        this.closeAssistant()
+        if (this.lastRejection?.command === 'inject') this.lastRejection = null
+        this.items.push({
+          kind: 'user',
+          id: localId('u'),
+          runId: runId ?? this.runningRunId ?? undefined,
+          text: env.text,
+          attachments: [],
+          at: env.at,
+          steered: true,
+        })
+        itemsMutated = true
         break
       case 'notice':
         this.notice('info', env.message, runId)
@@ -1925,9 +1953,16 @@ export class Conversation extends ObservableStore {
     return idx >= 0 ? (this.items[idx] as ToolItem) : undefined
   }
 
-  private notice(level: NoticeItem['level'], message: string, runId?: string) {
+  private notice(level: NoticeItem['level'], message: string, runId?: string, separator = false) {
     this.closeAssistant()
-    this.items.push({ kind: 'notice', id: localId('n'), runId, level, message })
+    this.items.push({
+      kind: 'notice',
+      id: localId('n'),
+      runId,
+      level,
+      message,
+      ...(separator ? { separator: true } : {}),
+    })
   }
 }
 

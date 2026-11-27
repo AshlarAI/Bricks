@@ -38,7 +38,7 @@ impl ModelRef {
 }
 
 impl ProviderRegistry {
-    /// Load from `explicit`, or from `~/.bricks/providers.toml` when `None`.
+    /// Load from `explicit`, or from `~/.bricks/config.json` when `None`.
     /// The two are never merged. A missing or invalid file is an error: there
     /// is no fallback catalogue.
     pub fn load(explicit: Option<&Path>) -> Result<Self, ConfigError> {
@@ -62,11 +62,11 @@ impl ProviderRegistry {
         })
     }
 
-    /// Parse TOML text (tests, embedded configurations).
-    pub fn from_toml_str(text: &str, origin: &str) -> Result<Self, ConfigError> {
+    /// Parse JSON text (tests, embedded configurations).
+    pub fn from_json_str(text: &str, origin: &str) -> Result<Self, ConfigError> {
         Ok(Self {
             origin: origin.to_string(),
-            config: Arc::new(ProvidersConfig::from_toml_str(text, origin)?),
+            config: Arc::new(ProvidersConfig::from_json_str(text, origin)?),
         })
     }
 
@@ -329,13 +329,21 @@ mod tests {
     use crate::config::tests_support::BASIC;
 
     fn reg() -> ProviderRegistry {
-        ProviderRegistry::from_toml_str(BASIC, "test.toml").unwrap()
+        ProviderRegistry::from_json_str(BASIC, "test.json").unwrap()
+    }
+
+    fn mutate(f: impl FnOnce(&mut Value)) -> String {
+        let mut v: Value = serde_json::from_str(BASIC).unwrap();
+        f(&mut v);
+        serde_json::to_string(&v).unwrap()
     }
 
     #[test]
     fn a_disabled_model_is_not_listed_but_still_resolves() {
-        let text = BASIC.replacen("id = \"flash\"", "id = \"flash\"\nenabled = false", 1);
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["models"][0]["enabled"] = false.into();
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         assert!(r.models().iter().all(|m| m.model_id != "flash"));
         assert!(r.models().iter().any(|m| m.model_id == "expert"));
         assert!(r.resolve("custom/flash").is_ok());
@@ -368,8 +376,10 @@ mod tests {
 
     #[test]
     fn model_ids_may_contain_slashes() {
-        let text = BASIC.replace("id = \"flash\"", "id = \"org/flash:7b\"");
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["models"][0]["id"] = "org/flash:7b".into();
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         assert_eq!(
             r.resolve("custom/org/flash:7b").unwrap().model_id,
             "org/flash:7b"
@@ -378,29 +388,49 @@ mod tests {
 
     #[test]
     fn no_cap_on_providers_or_models() {
-        let mut text = String::from("schema_version = 1\n");
+        let mut providers = Vec::new();
         for p in 0..40 {
-            text.push_str(&format!(
-                "[[providers]]\nid = \"p{p}\"\nname = \"P\"\nendpoint = \"http://localhost:{}\"\nprotocol = \"chat_completions\"\nauth = \"none\"\n",
-                8000 + p
-            ));
-            for m in 0..60 {
-                text.push_str(&format!(
-                    "[[providers.models]]\nid = \"m{m}\"\nname = \"M\"\napi_model = \"a{m}\"\n[providers.models.limits]\nmax_input_tokens = 10\nmax_output_tokens = 10\n"
-                ));
-            }
+            let models: Vec<Value> = (0..60)
+                .map(|m| {
+                    serde_json::json!({
+                        "id": format!("m{m}"),
+                        "name": "M",
+                        "api_model": format!("a{m}"),
+                        "limits": { "max_input_tokens": 10, "max_output_tokens": 10 }
+                    })
+                })
+                .collect();
+            providers.push(serde_json::json!({
+                "id": format!("p{p}"),
+                "name": "P",
+                "endpoint": format!("http://localhost:{}", 8000 + p),
+                "protocol": "chat_completions",
+                "auth": "none",
+                "models": models
+            }));
         }
-        let r = ProviderRegistry::from_toml_str(&text, "big.toml").unwrap();
+        let text = serde_json::json!({ "schema_version": 1, "providers": providers }).to_string();
+        let r = ProviderRegistry::from_json_str(&text, "big.json").unwrap();
         assert_eq!(r.models().len(), 2400);
         assert_eq!(r.resolve("p39/m59").unwrap().api_model, "a59");
     }
 
     #[test]
     fn protocol_override_gets_its_own_path_auth_and_headers() {
-        let text = BASIC
-            .replace("[[providers.models]]\nid = \"expert\"", "[[providers.models]]\nid = \"claude\"\nprotocol = \"anthropic_messages\"\nname = \"C\"\napi_model = \"vc\"\ninput_modalities = [\"text\"]\noutput_modalities = [\"text\"]\n[providers.models.limits]\nmax_input_tokens = 10\nmax_output_tokens = 10\n[[providers.models]]\nid = \"expert\"")
-            .replace("path = \"x\"", "");
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["models"].as_array_mut().unwrap().push(
+                serde_json::json!({
+                    "id": "claude",
+                    "protocol": "anthropic_messages",
+                    "name": "C",
+                    "api_model": "vc",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                    "limits": { "max_input_tokens": 10, "max_output_tokens": 10 }
+                }),
+            );
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         let c = r.resolve("custom/claude").unwrap();
         assert_eq!(
             c.url.as_str(),
@@ -417,16 +447,11 @@ mod tests {
 
     #[test]
     fn path_and_endpoint_overrides_apply_to_the_right_models() {
-        let text = BASIC
-            .replace(
-                "auth = \"bearer\"\n",
-                "auth = \"bearer\"\npath = \"custom/chat\"\n",
-            )
-            .replace(
-                "api_model = \"vendor-expert\"\n",
-                "api_model = \"vendor-expert\"\nendpoint = \"https://other.example.com/gw\"\n",
-            );
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["path"] = "custom/chat".into();
+            v["providers"][0]["models"][1]["endpoint"] = "https://other.example.com/gw".into();
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         // Provider-level path applies to the provider's default protocol only.
         assert_eq!(
             r.resolve("custom/flash").unwrap().url.as_str(),
@@ -441,11 +466,14 @@ mod tests {
 
     #[test]
     fn headers_merge_by_name_case_insensitively() {
-        let text = BASIC
-            .replace("[[providers.models]]\nid = \"expert\"", "[[providers.models]]\nid = \"expert\"\nprotocol = \"anthropic_messages\"")
-            .replace("protocol = \"responses\"\n", "")
-            .replace("auth = \"bearer\"\n", "auth = \"bearer\"\nheaders = { \"Anthropic-Version\" = \"2099-01-01\", \"x-team\" = \"a\" }\n");
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["models"][1]["protocol"] = "anthropic_messages".into();
+            v["providers"][0]["headers"] = serde_json::json!({
+                "Anthropic-Version": "2099-01-01",
+                "x-team": "a"
+            });
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         let m = r.resolve("custom/expert").unwrap();
         assert_eq!(m.headers.len(), 2);
         assert_eq!(
@@ -461,16 +489,11 @@ mod tests {
 
     #[test]
     fn debug_never_shows_keys_or_header_values() {
-        let text = BASIC
-            .replace(
-                "api_key_env = \"BRICKS_CUSTOM_API_KEY\"",
-                "api_key = \"sk-visible-never\"",
-            )
-            .replace(
-                "auth = \"bearer\"\n",
-                "auth = \"bearer\"\nheaders = { \"x-t\" = \"hv-secret\" }\n",
-            );
-        let r = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+        let text = mutate(|v| {
+            v["providers"][0]["api_key"] = "sk-visible-never".into();
+            v["providers"][0]["headers"] = serde_json::json!({ "x-t": "hv-secret" });
+        });
+        let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         let m = r.resolve("custom/flash").unwrap();
         let shown = format!("{m:?} {r:?}");
         assert!(
@@ -483,14 +506,12 @@ mod tests {
     /// documentation says it means.
     #[test]
     fn the_shipped_example_loads_resolves_and_holds_no_secret() {
-        let text = include_str!("../../../docs/providers.example.toml");
+        let text = include_str!("../../../docs/providers.example.json");
         assert!(
-            !text
-                .lines()
-                .any(|l| l.trim_start().starts_with("api_key =")),
+            !text.contains("\"api_key\""),
             "the example holds no key"
         );
-        let reg = ProviderRegistry::from_toml_str(text, "providers.example.toml").unwrap();
+        let reg = ProviderRegistry::from_json_str(text, "providers.example.json").unwrap();
 
         // Every model resolves and builds once its key reference is satisfied.
         for m in reg.models() {
@@ -583,40 +604,43 @@ mod tests {
         assert_eq!(m.limits.max_input_tokens, 96000);
     }
 
-    fn counting_config(protocol: &str, table: &str) -> String {
-        format!(
-            r#"
-schema_version = 1
-[[providers]]
-id = "p"
-name = "P"
-endpoint = "https://gw.example.com/team/v1?x=1"
-protocol = "{protocol}"
-auth = "none"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "m"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-{table}
-"#
-        )
+    fn counting_config(protocol: &str, token_counting: Option<Value>) -> String {
+        let mut model = serde_json::json!({
+            "id": "m",
+            "name": "M",
+            "api_model": "m",
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        });
+        if let Some(tc) = token_counting {
+            model["token_counting"] = tc;
+        }
+        serde_json::json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "p",
+                "name": "P",
+                "endpoint": "https://gw.example.com/team/v1?x=1",
+                "protocol": protocol,
+                "auth": "none",
+                "models": [model]
+            }]
+        })
+        .to_string()
     }
 
     #[test]
     fn token_counting_is_opt_in_and_uses_the_documented_route() {
-        let reg =
-            |p: &str, t: &str| ProviderRegistry::from_toml_str(&counting_config(p, t), "c.toml");
+        let reg = |p: &str, tc: Option<Value>| {
+            ProviderRegistry::from_json_str(&counting_config(p, tc), "c.json")
+        };
         // Absent: no counting URL, whatever the protocol.
-        let m = reg("anthropic_messages", "")
+        let m = reg("anthropic_messages", None)
             .unwrap()
             .resolve("p/m")
             .unwrap();
         assert!(m.count_url.is_none());
-        let on = "[providers.models.token_counting]";
-        let m = reg("anthropic_messages", on)
+        let on = Some(serde_json::json!({}));
+        let m = reg("anthropic_messages", on.clone())
             .unwrap()
             .resolve("p/m")
             .unwrap();
@@ -629,7 +653,7 @@ max_output_tokens = 100
             m.count_url.unwrap().as_str(),
             "https://gw.example.com/team/v1/responses/input_tokens?x=1"
         );
-        let m = reg("responses", &format!("{on}\npath = \"custom/count\""))
+        let m = reg("responses", Some(serde_json::json!({ "path": "custom/count" })))
             .unwrap()
             .resolve("p/m")
             .unwrap();
@@ -641,18 +665,20 @@ max_output_tokens = 100
 
     #[test]
     fn token_counting_is_refused_where_no_route_is_documented() {
-        let on = "[providers.models.token_counting]";
-        for table in [on.to_string(), format!("{on}\npath = \"tokenize\"")] {
-            let e = ProviderRegistry::from_toml_str(
-                &counting_config("chat_completions", &table),
-                "c.toml",
+        for tc in [
+            serde_json::json!({}),
+            serde_json::json!({ "path": "tokenize" }),
+        ] {
+            let e = ProviderRegistry::from_json_str(
+                &counting_config("chat_completions", Some(tc)),
+                "c.json",
             )
             .unwrap_err();
             assert!(e.field.starts_with("token_counting"), "{e}");
         }
-        let e = ProviderRegistry::from_toml_str(
-            &counting_config("responses", &format!("{on}\nurl = \"x\"")),
-            "c.toml",
+        let e = ProviderRegistry::from_json_str(
+            &counting_config("responses", Some(serde_json::json!({ "url": "x" }))),
+            "c.json",
         )
         .unwrap_err();
         assert!(e.to_string().contains("url"), "{e}");

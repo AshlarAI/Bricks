@@ -571,7 +571,7 @@ mod tests {
         assert!(explore.allows_tool("Read"));
         assert!(explore.allows_tool("Grep"));
         assert!(explore.allows_tool("Glob"));
-        assert!(explore.allows_tool("CodeScout"));
+        assert!(explore.allows_tool("CodeStats"));
         assert!(explore.allows_tool("memory_read"));
         // Mutating and delegation tools MUST be denied in explore.
         for denied in [

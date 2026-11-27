@@ -94,7 +94,6 @@ async fn open_with(
     });
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     tweak(&mut bricks);
     let mut cfg = EngineConfig::new(
         dir.path(),
@@ -341,7 +340,7 @@ async fn a_profile_runs_in_parallel_with_a_fresh_context_and_a_compact_result() 
     // The profile's instructions and the parent's tools.
     assert!(c.system.as_deref().unwrap().contains("Profile `general`"));
     let names: Vec<&str> = c.tools.iter().map(|t| t.name.as_str()).collect();
-    assert!(names.contains(&"CodeScout") && names.contains(&"Bash"));
+    assert!(names.contains(&"Grep") && names.contains(&"Bash"));
     // With max_depth = 2, depth-1 `general` child gets delegation tools.
     assert!(names.contains(&"Agent") && names.contains(&"Managent"));
     assert!(names.contains(&"Messagent"));
@@ -517,7 +516,7 @@ async fn a_sub_agent_runs_its_commands_while_the_session_still_asks() {
             Reply::tool("c1", "Agent", json!({"task": "run a command"})),
             Reply::tool("b1", "Bash", json!({"command": "echo child"})),
             Reply::text("ran"),
-            Reply::tool("b2", "Bash", json!({"command": "echo parent"})),
+            Reply::tool("b2", "Bash", json!({"command": "touch parent_ran"})),
             Reply::text("done"),
         ],
         allow(&["Agent"]),
@@ -838,7 +837,7 @@ async fn compaction_keeps_the_tool_the_profile_catalogue_and_the_policy() {
     assert!(
         names.contains(&"Agent")
             && names.contains(&"Managent")
-            && names.contains(&"CodeScout")
+            && names.contains(&"Grep")
             && !names.contains(&"AgentProfiles")
     );
     {

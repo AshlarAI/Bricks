@@ -36,9 +36,9 @@ describe('settings format helpers', () => {
 		expect(platformLabel('freebsd')).toBe('freebsd');
 	});
 
-	it('builds the providers file path from the Bricks home, with its separator', () => {
-		expect(providersFilePath('/Users/a/.bricks')).toBe('/Users/a/.bricks/providers.toml');
-		expect(providersFilePath('/Users/a/.bricks/')).toBe('/Users/a/.bricks/providers.toml');
-		expect(providersFilePath('C:\\Users\\a\\.bricks')).toBe('C:\\Users\\a\\.bricks\\providers.toml');
+	it('builds the config file path from the Bricks home, with its separator', () => {
+		expect(providersFilePath('/Users/a/.bricks')).toBe('/Users/a/.bricks/config.json');
+		expect(providersFilePath('/Users/a/.bricks/')).toBe('/Users/a/.bricks/config.json');
+		expect(providersFilePath('C:\\Users\\a\\.bricks')).toBe('C:\\Users\\a\\.bricks\\config.json');
 	});
 });

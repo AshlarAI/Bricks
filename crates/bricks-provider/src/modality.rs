@@ -30,7 +30,7 @@ pub fn protocol_support(protocol: Protocol) -> ProtocolSupport {
     use Modality::*;
     match protocol {
         Protocol::ChatCompletions => ProtocolSupport {
-            inputs: &[Text, Image, Audio, Document],
+            inputs: &[Text, Image, Audio, Video, Document],
             outputs: &[Text],
             tool_result_media: &[],
         },
@@ -75,7 +75,7 @@ pub fn supports_source(protocol: Protocol, modality: Modality, kind: SourceKind)
     matches!(
         (protocol, modality, kind),
         (_, Text, _)
-            | (Protocol::ChatCompletions, Image, Data | Url)
+            | (Protocol::ChatCompletions, Image | Video, Data | Url)
             | (Protocol::ChatCompletions, Audio, Data)
             | (Protocol::ChatCompletions, Document, Data | FileId)
             | (Protocol::Responses, Image | Document, _)
@@ -265,9 +265,17 @@ fn check_media_block(
             }
         }
     }
-    if matches!(modality, Modality::Audio) && kind == SourceKind::Data && src.media_type.is_none() {
+    if matches!(modality, Modality::Audio | Modality::Video)
+        && kind == SourceKind::Data
+        && src.media_type.is_none()
+    {
         return Err(format!(
-            "{place}: inline audio needs a media_type (for example audio/wav)"
+            "{place}: inline {modality} needs a media_type (for example {})",
+            if modality == Modality::Audio {
+                "audio/wav"
+            } else {
+                "video/mp4"
+            }
         ));
     }
     Ok(())
@@ -384,7 +392,10 @@ mod tests {
             &["application/pdf"],
         );
         let eff = c.effective(Protocol::ChatCompletions);
-        assert_eq!(eff.input, BTreeSet::from([Text, Image, Audio, Document]));
+        assert_eq!(
+            eff.input,
+            BTreeSet::from([Text, Image, Audio, Video, Document])
+        );
         assert_eq!(eff.output, BTreeSet::from([Text]));
         let eff = c.effective(Protocol::Responses);
         assert_eq!(eff.input, BTreeSet::from([Text, Image, Document]));
@@ -410,11 +421,8 @@ mod tests {
     fn declared_but_untransportable_media_is_refused() {
         let c = caps(&[Text, Video, Audio], &[Text], &[]);
         let video = user(vec![ContentBlock::video_url("https://x/v.mp4")]);
-        for p in [
-            Protocol::ChatCompletions,
-            Protocol::Responses,
-            Protocol::AnthropicMessages,
-        ] {
+        assert!(validate_messages(&video, &[], &c, Protocol::ChatCompletions).is_ok());
+        for p in [Protocol::Responses, Protocol::AnthropicMessages] {
             let err = validate_messages(&video, &[], &c, p).unwrap_err();
             assert!(err.contains("video"), "{p}: {err}");
         }
@@ -558,7 +566,7 @@ mod tests {
         // Locks the table printed in docs/providers.md.
         assert_eq!(
             protocol_support(Protocol::ChatCompletions).inputs,
-            &[Text, Image, Audio, Document]
+            &[Text, Image, Audio, Video, Document]
         );
         assert_eq!(
             protocol_support(Protocol::Responses).inputs,
@@ -568,17 +576,15 @@ mod tests {
             protocol_support(Protocol::AnthropicMessages).inputs,
             &[Text, Image, Document]
         );
-        for p in [
-            Protocol::ChatCompletions,
-            Protocol::Responses,
-            Protocol::AnthropicMessages,
-        ] {
+        assert!(protocol_support(Protocol::ChatCompletions).inputs.contains(&Video));
+        for p in [Protocol::Responses, Protocol::AnthropicMessages] {
             assert_eq!(protocol_support(p).outputs, &[Text]);
             assert!(
                 !protocol_support(p).inputs.contains(&Video),
-                "no protocol here carries video"
+                "{p} does not carry video"
             );
         }
+        assert_eq!(protocol_support(Protocol::ChatCompletions).outputs, &[Text]);
         assert_eq!(
             protocol_support(Protocol::AnthropicMessages).tool_result_media,
             &[Image, Document]

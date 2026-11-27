@@ -45,7 +45,7 @@ const SHUTDOWN_BUDGET: Duration = Duration::from_secs(5);
 /// Shared application state, managed by Tauri.
 pub struct AppState {
     /// The model catalog every session reads: the provider registry, swapped
-    /// when `providers.toml` changes.
+    /// when `config.json` changes.
     pub(crate) catalog: Arc<DesktopCatalog>,
     /// The providers file the registry is read from.
     pub(crate) providers_path: PathBuf,
@@ -93,9 +93,9 @@ impl AppState {
     pub fn load() -> Self {
         // What loading reports (a damaged projects file) speaks the saved language.
         let home = bricks_config::bricks_home();
-        let prefs = PrefsStore::at(home.join("desktop").join("preferences.json"));
-        crate::i18n::set_language(prefs.get().language);
         let providers_path = providers_file();
+        let prefs = PrefsStore::at(home.join("config.json"));
+        crate::i18n::set_language(prefs.get().language);
         // Former key variables and default levels go before the first read.
         crate::services::provider_keys::migrate(&providers_path);
         let registry = bricks_config::load_registry(Some(&providers_path)).map(Arc::new);
@@ -103,14 +103,13 @@ impl AppState {
     }
 
     /// The state for a given home and registry (tests, other roots). The
-    /// providers file is the one under `home`.
+    /// providers file is `config.json` under `home`.
     pub fn assemble(home: PathBuf, registry: Result<Arc<ProviderRegistry>, String>) -> Self {
-        let providers_path = home.join("providers.toml");
+        let providers_path = home.join("config.json");
         Self::assemble_at(home, registry, providers_path)
     }
 
-    /// The state for a home, a registry and the providers file it was read
-    /// from.
+    /// The state for a home, a registry and the config file it was read from.
     pub fn assemble_at(
         home: PathBuf,
         registry: Result<Arc<ProviderRegistry>, String>,
@@ -119,7 +118,7 @@ impl AppState {
         let desktop = home.join("desktop");
         crate::services::usage_ledger::init(desktop.join("usage.jsonl"));
         let projects = ProjectStore::load(desktop.join("projects.json"));
-        let prefs = Arc::new(PrefsStore::at(desktop.join("preferences.json")));
+        let prefs = Arc::new(PrefsStore::at(home.join("config.json")));
         let journal = Arc::new(ChangeJournal::at(desktop.join("changes")));
         let catalog = DesktopCatalog::new(registry);
         let memory = Arc::new(bricks_config::MemoryService::in_home(&home));
@@ -253,12 +252,12 @@ impl AppState {
     }
 }
 
-/// The providers file the registry reads: `$BRICKS_HOME/providers.toml`, or
-/// the default `~/.bricks/providers.toml` (the same choice as the registry).
+/// The user config file the registry reads: `$BRICKS_HOME/config.json`, or
+/// the default `~/.bricks/config.json` (the same choice as the registry).
 pub fn providers_file() -> PathBuf {
     bricks_config::providers_file_from_env()
         .or_else(bricks_provider::config::default_config_path)
-        .unwrap_or_else(|| bricks_config::bricks_home().join("providers.toml"))
+        .unwrap_or_else(bricks_config::user_config_file)
 }
 
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

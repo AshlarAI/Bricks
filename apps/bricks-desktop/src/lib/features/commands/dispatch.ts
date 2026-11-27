@@ -280,6 +280,8 @@ async function runEngine(command: Command, host: SlashHost, line: string): Promi
       return refused(t('commands.aMessageIsEditedFromThe'))
     case 'answer_question':
       return refused(t('commands.aQuestionIsAnsweredFromIts'))
+    case 'inject':
+      return refused(t('commands.invalidCommand'))
     default: {
       const unknown: never = command
       return refused(t('commands.unknownCommand', { unknown: JSON.stringify(unknown) }))

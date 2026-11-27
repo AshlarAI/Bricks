@@ -18,12 +18,15 @@ mod skills;
 mod stream;
 mod tools;
 
+/// Maximum number of concurrent-safe tool calls run in flight together.
+pub(super) const MAX_CONCURRENT_TOOL_CALLS: usize = 8;
+
 #[cfg(test)]
 use context::MIN_TOOL_RESULT_BUDGET;
 pub use context::{apply_tool_result_budget, apply_tool_result_budget_with};
 use context::{
-    apply_tool_result_budget_protected, ensure_budget, model_view, raw_tool_result, run_compaction,
-    tool_definitions, tool_result_budget,
+    MediaWeights, apply_tool_result_budget_protected, ensure_budget, model_view, raw_tool_result,
+    run_compaction, tool_definitions, tool_result_budget,
 };
 pub(crate) use context::{compact_now, context_status};
 pub(crate) use history::{clear_context, load_session_history, revise_context, save_session};
@@ -33,10 +36,36 @@ use skills::{activate_user_skills, commit_skill_activation, is_skill_proposal};
 use tools::MAX_TOOL_ERRORS_PER_TOOL;
 use tools::{
     CallSlot, FinishedCall, UNPLACED, call_future, error_budget_note, interrupted_text,
-    keep_interrupted_answer, publish_call, tool_result_block, tool_result_with_images,
+    keep_interrupted_answer, publish_call, tool_result_block, tool_result_with_media,
 };
 
 // ─── Retry jitter ────────────────────────────────────────────────────────────
+
+/// Append a per-turn context note (`<project_instructions>`, `<git_status_delta>`)
+/// onto the latest user message so the system prompt prefix keeps its KV cache
+/// and `Message::get_text()` keeps returning the user's primary text block.
+fn append_user_context_note(agent: &Agent, note: String, reason: &'static str) {
+    {
+        let mut msgs = agent.messages.lock();
+        if let Some(last) = msgs.last_mut().filter(|m| m.role == Role::User) {
+            match &mut last.content {
+                MessageContent::Text(existing) => {
+                    let first = std::mem::take(existing);
+                    last.content = MessageContent::Blocks(vec![
+                        ContentBlock::Text { text: first },
+                        ContentBlock::Text { text: note },
+                    ]);
+                }
+                MessageContent::Blocks(blocks) => {
+                    blocks.push(ContentBlock::Text { text: note });
+                }
+            }
+        } else {
+            msgs.push(Message::user(note));
+        }
+    }
+    agent.context.lock().invalidate(reason);
+}
 
 /// Simple pseudo-random jitter for retry delays (no external crate needed).
 fn rand_jitter() -> u64 {
@@ -781,7 +810,11 @@ async fn run_loop(
     // So are code-understanding queries.
     agent
         .extensions
-        .insert(bricks_tools::code_scout::RunCancel(cancel.clone()));
+        .insert(bricks_tools::RunCancel(cancel.clone()));
+    agent.extensions.insert(bricks_tools::VideoSupport(
+        agent.provider().video_transport() != bricks_provider::VideoTransport::None,
+    ));
+    agent.extensions.insert(Arc::clone(&agent.read_file_state));
     let tool_ctx = ToolContext {
         working_dir: agent.working_dir.clone(),
         // One shell session per agent (not per run): state persists across
@@ -823,6 +856,7 @@ async fn run_loop(
         // results name their saved original, and the measurement of the old
         // history no longer applies.
         let tool_result_chars = tool_result_budget(agent.tool_result_budget, &model_view(agent));
+        let media_weights = MediaWeights::from_policy(agent.context.lock().policy());
         let removed = {
             let mut msgs = agent.messages.lock();
             let refs = agent.raw_refs.lock();
@@ -831,6 +865,7 @@ async fn run_loop(
             apply_tool_result_budget_protected(
                 &mut msgs,
                 tool_result_chars,
+                media_weights,
                 &protected,
                 |id, len| {
                     let saved = refs.get(id).cloned().or_else(|| {
@@ -855,6 +890,7 @@ async fn run_loop(
             )
         };
         if removed {
+            agent.read_file_state.clear();
             agent
                 .context
                 .lock()
@@ -863,6 +899,35 @@ async fn run_loop(
 
         // Inject only between complete rounds, never between tool uses and results.
         inject_pending(agent, controls);
+
+        if turn == 1 {
+            agent.request_started();
+        }
+        let has_prompt_options = agent.prompt_options.is_some();
+        let custom_replace = agent
+            .prompt_options
+            .as_ref()
+            .is_some_and(|o| o.replace_system_prompt && o.custom_system_prompt.is_some());
+        if !custom_replace {
+            if agent.instruction_files.lock().is_dirty() {
+                match agent.instruction_files.lock().collect(&agent.working_dir) {
+                    crate::instruction_files::InstructionUpdate::Full(text)
+                    | crate::instruction_files::InstructionUpdate::Delta(text) => {
+                        append_user_context_note(
+                            agent,
+                            text,
+                            "project instruction files updated",
+                        );
+                    }
+                    crate::instruction_files::InstructionUpdate::Unchanged => {}
+                }
+            }
+            if has_prompt_options
+                && let Some(git_delta) = agent.request_env.git_delta(&agent.working_dir).await
+            {
+                append_user_context_note(agent, git_delta, "git status changed");
+            }
+        }
 
         // Build completion request
         let messages = agent.messages.lock().clone();
@@ -889,9 +954,6 @@ async fn run_loop(
         // its own date, environment, git state, model and plan (the plan's
         // complete state replaces any reminder), built before the budget
         // measures it.
-        if turn == 1 {
-            agent.request_started();
-        }
         let announced: Vec<String> = tool_defs.iter().map(|d| d.name.clone()).collect();
         let system_with_nudge = agent.request_system(&announced, &selection, &options).await;
 
@@ -1384,10 +1446,12 @@ async fn run_loop(
                 });
             }
 
-            // Phase 2: Execute all tools in parallel. Each call is published
-            // (edit applied, tool end) as soon as it finishes, without
-            // waiting for slower siblings; the conversation is assembled
-            // afterwards in the order of the calls.
+            // Phase 2: Partition remaining tool calls dynamically into
+            // concurrent-safe parallel waves and serialized single-call waves
+            // (e.g. mutative Bash/PowerShell calls). Re-checking
+            // `is_concurrent_safe_ctx` between waves ensures a `Serial` shell
+            // call that defines an alias/function serializes later calls that
+            // invoke it.
             let msg_count = agent.messages.lock().len();
             // Built once, outside the per-call closure: this is the same
             // `agent.tools` the lookup below uses (so MCP-injected tools
@@ -1399,51 +1463,16 @@ async fn run_loop(
                 .map(|t| t.name().to_string())
                 .collect();
 
-            // The calls started while the answer streamed go on; the others
-            // start now. Those already finished are placed first, so a
-            // cancellation never loses their results.
-            let mut pending = std::mem::take(&mut early);
-            let mut finished_early = std::mem::take(&mut early_done).into_iter();
-            let cumulative_cost = cumulative.cost_usd.unwrap_or(0.0);
-            for (index, (tool_id, tool_name, tool_input)) in tool_use_blocks.iter().enumerate() {
-                if early_ids.contains(tool_id) {
-                    continue;
-                }
-                pending.push(call_future(
-                    agent,
-                    &tool_ctx,
-                    &permissions,
-                    &registered_tool_names,
-                    index,
-                    (tool_id.clone(), tool_name.clone(), tool_input.clone()),
-                    turn,
-                    cumulative_cost,
-                    msg_count,
-                ));
-            }
-
             // One slot per call, in the order of the calls.
             let mut slots: Vec<Option<CallSlot>> =
                 (0..tool_use_blocks.len()).map(|_| None).collect();
             let mut cancelled = false;
-            loop {
-                // Cancelling the turn drops the running tool futures: a
-                // shell command is then interrupted by its own guard instead
-                // of running to its timeout. No call starts after it.
-                let next = match finished_early.next() {
-                    Some(call) => Some(call),
-                    None => tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => {
-                            cancelled = true;
-                            break;
-                        }
-                        n = futures::StreamExt::next(&mut pending) => n,
-                    },
-                };
-                let Some(mut call) = next else { break };
+            let cumulative_cost = cumulative.cost_usd.unwrap_or(0.0);
+
+            // Publish calls already finished during streaming first so a
+            // cancellation never loses their results.
+            for mut call in std::mem::take(&mut early_done) {
                 if call.index == UNPLACED {
-                    // Every call started early is in the complete answer.
                     let Some(at) = tool_use_blocks.iter().position(|(id, _, _)| *id == call.id)
                     else {
                         continue;
@@ -1451,9 +1480,6 @@ async fn run_loop(
                     call.index = at;
                 }
                 let index = call.index;
-                // A skill activation proposed by this agent's own `Skill`
-                // tool is announced only once committed (it may need a
-                // compaction): that happens below, in the order of the calls.
                 slots[index] = Some(if is_skill_proposal(agent, &call) {
                     CallSlot::Deferred(call)
                 } else {
@@ -1462,8 +1488,152 @@ async fn run_loop(
                     )
                 });
             }
-            // The calls still running stop here (their guards end shells).
-            drop(pending);
+
+            let is_safe = |idx: usize| -> bool {
+                let (_, ref tool_name, ref tool_input) = tool_use_blocks[idx];
+                agent
+                    .tool_by_name(tool_name)
+                    .is_none_or(|t| t.is_concurrent_safe_ctx(tool_input, &tool_ctx))
+            };
+
+            let mut remaining_early = Some(std::mem::take(&mut early));
+            let mut cursor = 0usize;
+            while cursor < tool_use_blocks.len() {
+                if is_safe(cursor) {
+                    let start = cursor;
+                    while cursor < tool_use_blocks.len() && is_safe(cursor) {
+                        cursor += 1;
+                    }
+                    let mut pending = remaining_early.take().unwrap_or_default();
+                    let mut queued: std::collections::VecDeque<usize> = (start..cursor)
+                        .filter(|&i| !early_ids.contains(&tool_use_blocks[i].0))
+                        .collect();
+                    loop {
+                        while pending.len() < MAX_CONCURRENT_TOOL_CALLS {
+                            let Some(index) = queued.pop_front() else {
+                                break;
+                            };
+                            let (ref tool_id, ref tool_name, ref tool_input) =
+                                tool_use_blocks[index];
+                            pending.push(call_future(
+                                agent,
+                                &tool_ctx,
+                                &permissions,
+                                &registered_tool_names,
+                                index,
+                                (tool_id.clone(), tool_name.clone(), tool_input.clone()),
+                                turn,
+                                cumulative_cost,
+                                msg_count,
+                            ));
+                        }
+                        if pending.is_empty() {
+                            break;
+                        }
+                        let next = tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => {
+                                cancelled = true;
+                                break;
+                            }
+                            n = futures::StreamExt::next(&mut pending) => n,
+                        };
+                        let Some(mut call) = next else { break };
+                        if call.index == UNPLACED {
+                            let Some(at) =
+                                tool_use_blocks.iter().position(|(id, _, _)| *id == call.id)
+                            else {
+                                continue;
+                            };
+                            call.index = at;
+                        }
+                        let index = call.index;
+                        slots[index] = Some(if is_skill_proposal(agent, &call) {
+                            CallSlot::Deferred(call)
+                        } else {
+                            CallSlot::Published(
+                                publish_call(agent, &event_tx, &tool_ctx, call, false).await,
+                            )
+                        });
+                    }
+                    drop(pending);
+                    if cancelled {
+                        break;
+                    }
+                } else {
+                    let index = cursor;
+                    cursor += 1;
+                    if let Some(mut leftover) = remaining_early.take() {
+                        while !leftover.is_empty() {
+                            let next = tokio::select! {
+                                biased;
+                                _ = cancel.cancelled() => {
+                                    cancelled = true;
+                                    break;
+                                }
+                                n = futures::StreamExt::next(&mut leftover) => n,
+                            };
+                            let Some(mut call) = next else { break };
+                            if call.index == UNPLACED {
+                                let Some(at) =
+                                    tool_use_blocks.iter().position(|(id, _, _)| *id == call.id)
+                                else {
+                                    continue;
+                                };
+                                call.index = at;
+                            }
+                            let idx = call.index;
+                            slots[idx] = Some(if is_skill_proposal(agent, &call) {
+                                CallSlot::Deferred(call)
+                            } else {
+                                CallSlot::Published(
+                                    publish_call(agent, &event_tx, &tool_ctx, call, false).await,
+                                )
+                            });
+                        }
+                        drop(leftover);
+                        if cancelled {
+                            break;
+                        }
+                    }
+
+                    if early_ids.contains(&tool_use_blocks[index].0) {
+                        continue;
+                    }
+                    let (ref tool_id, ref tool_name, ref tool_input) = tool_use_blocks[index];
+                    let fut = call_future(
+                        agent,
+                        &tool_ctx,
+                        &permissions,
+                        &registered_tool_names,
+                        index,
+                        (tool_id.clone(), tool_name.clone(), tool_input.clone()),
+                        turn,
+                        cumulative_cost,
+                        msg_count,
+                    );
+                    tokio::pin!(fut);
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => {
+                            cancelled = true;
+                        }
+                        call = &mut fut => {
+                            slots[index] = Some(if is_skill_proposal(agent, &call) {
+                                CallSlot::Deferred(call)
+                            } else {
+                                CallSlot::Published(
+                                    publish_call(agent, &event_tx, &tool_ctx, call, false).await,
+                                )
+                            });
+                        }
+                    }
+                    if cancelled {
+                        break;
+                    }
+                }
+            }
+            drop(remaining_early);
 
             if cancelled {
                 // Results already finished are kept, with the effects they
@@ -1523,10 +1693,11 @@ async fn run_loop(
             // progress check.
             let mut round: Vec<(String, String, bool, String)> = Vec::new();
             let mut raw_blocks: Vec<ContentBlock> = Vec::new();
-            // Images the calls showed, when they travel after the results.
-            let mut image_blocks: Vec<ContentBlock> = Vec::new();
-            let mut raw_image_blocks: Vec<ContentBlock> = Vec::new();
-            let transport = agent.provider().image_transport();
+            // Images/videos the calls showed, when they travel after the results.
+            let mut media_blocks: Vec<ContentBlock> = Vec::new();
+            let mut raw_media_blocks: Vec<ContentBlock> = Vec::new();
+            let img_transport = agent.provider().image_transport();
+            let vid_transport = agent.provider().video_transport();
 
             for slot in slots.into_iter().flatten() {
                 let mut p = match slot {
@@ -1552,15 +1723,18 @@ async fn run_loop(
 
                 let (capped_content, full_text) = p.render();
                 let images = std::mem::take(&mut p.result.images);
-                let (raw_block, raw_extra) = tool_result_with_images(
-                    transport,
+                let videos = std::mem::take(&mut p.result.videos);
+                let (raw_block, raw_extra) = tool_result_with_media(
+                    img_transport,
+                    vid_transport,
                     &p.id,
                     full_text.clone(),
                     p.result.is_error,
                     &images,
+                    &videos,
                 );
                 raw_blocks.push(raw_block);
-                raw_image_blocks.extend(raw_extra);
+                raw_media_blocks.extend(raw_extra);
                 round.push((
                     p.name.clone(),
                     p.input.to_string(),
@@ -1580,20 +1754,22 @@ async fn run_loop(
                     is_error: p.result.is_error,
                     duration: p.duration,
                 });
-                let (block, extra) = tool_result_with_images(
-                    transport,
+                let (block, extra) = tool_result_with_media(
+                    img_transport,
+                    vid_transport,
                     &p.id,
                     capped_content,
                     p.result.is_error,
                     &images,
+                    &videos,
                 );
                 result_blocks.push(block);
-                image_blocks.extend(extra);
+                media_blocks.extend(extra);
             }
-            // Images after every result: a protocol that puts results in their
+            // Images/videos after every result: a protocol that puts results in their
             // own messages needs them to follow the calls' turn directly.
-            result_blocks.extend(image_blocks);
-            raw_blocks.extend(raw_image_blocks);
+            result_blocks.extend(media_blocks);
+            raw_blocks.extend(raw_media_blocks);
 
             // Add tool results as user message: reduced in the active
             // history, unreduced in the raw history.
@@ -2103,6 +2279,135 @@ mod dispatch_tests {
         assert_eq!(tool_result_budget(None, &model(0)), MIN_TOOL_RESULT_BUDGET);
         assert_eq!(tool_result_budget(Some(20_000), &model(1_000_000)), 20_000);
     }
+
+    #[test]
+    fn load_tools_results_are_protected_from_budget_eviction() {
+        let mut msgs = vec![
+            Message::assistant_blocks(vec![ContentBlock::ToolUse {
+                id: "load1".into(),
+                name: crate::deferred::LOAD_TOOLS.into(),
+                input: json!({"names": ["WebFetch"]}),
+            }]),
+            Message::user_blocks(vec![ContentBlock::ToolResult {
+                tool_use_id: "load1".into(),
+                content: ToolResultContent::Text("schema ".repeat(2_000)),
+                is_error: Some(false),
+            }]),
+        ];
+        // Even with a tiny budget, `LoadTools` alone is neither counted nor evicted
+        // once followed by 6 recent messages.
+        for i in 0..8 {
+            msgs.push(Message::assistant_blocks(vec![ContentBlock::ToolUse {
+                id: format!("r{i}"),
+                name: "Read".into(),
+                input: json!({}),
+            }]));
+            msgs.push(Message::user_blocks(vec![ContentBlock::ToolResult {
+                tool_use_id: format!("r{i}"),
+                content: ToolResultContent::Text("y".repeat(600)),
+                is_error: Some(false),
+            }]));
+        }
+        let changed = apply_tool_result_budget_protected(
+            &mut msgs,
+            2_500,
+            MediaWeights::default(),
+            &[],
+            |id, len| format!("[removed {id} ({len})]"),
+        );
+        assert!(changed);
+        assert!(
+            matches!(
+                &msgs[1].content,
+                MessageContent::Blocks(b)
+                    if matches!(
+                        &b[0],
+                        ContentBlock::ToolResult { content: ToolResultContent::Text(t), .. }
+                            if t.starts_with("schema ") && !t.contains("[removed")
+                    )
+            ),
+            "LoadTools output must never be evicted"
+        );
+    }
+
+    #[test]
+    fn media_blocks_are_weighted_and_evicted_with_readable_stub() {
+        let weights = MediaWeights {
+            image_chars: 4_000,
+            video_chars: 12_000,
+            document_chars: 8_000,
+        };
+        let mut msgs = vec![
+            Message::assistant_blocks(vec![ContentBlock::ToolUse {
+                id: "m1".into(),
+                name: "Read".into(),
+                input: json!({"file_path": "img.png"}),
+            }]),
+            Message::user_blocks(vec![ContentBlock::ToolResult {
+                tool_use_id: "m1".into(),
+                content: ToolResultContent::Blocks(vec![
+                    ContentBlock::Text {
+                        text: "Image img.png: png".into(),
+                    },
+                    ContentBlock::image_base64("image/png", "AAAA"),
+                ]),
+                is_error: Some(false),
+            }]),
+            Message::assistant_blocks(vec![ContentBlock::ToolUse {
+                id: "m2".into(),
+                name: "Read".into(),
+                input: json!({"file_path": "clip.mp4"}),
+            }]),
+            Message::user_blocks(vec![
+                ContentBlock::ToolResult {
+                    tool_use_id: "m2".into(),
+                    content: ToolResultContent::Text("Video clip.mp4: video/mp4".into()),
+                    is_error: Some(false),
+                },
+                ContentBlock::Text {
+                    text: "[video from tool call m2] clip.mp4, 123 bytes".into(),
+                },
+                ContentBlock::video_base64("video/mp4", "BBBB"),
+            ]),
+        ];
+        // Push 6 recent messages so m1 & m2 fall inside truncatable_end.
+        for i in 0..6 {
+            msgs.push(Message::user(format!("recent {i}")));
+        }
+
+        let changed = apply_tool_result_budget_protected(
+            &mut msgs,
+            1_000,
+            weights,
+            &[],
+            |id, len| format!("[removed {id} ({len})]"),
+        );
+        assert!(changed);
+        assert!(
+            matches!(
+                &msgs[1].content,
+                MessageContent::Blocks(b)
+                    if matches!(
+                        &b[0],
+                        ContentBlock::ToolResult { content: ToolResultContent::Text(t), .. }
+                            if t.contains("[media removed from active context") && t.contains("img.png")
+                    )
+            ),
+            "ToolResult media should be evicted with readable path stub: {:?}",
+            msgs[1].content
+        );
+        match &msgs[3].content {
+            MessageContent::Blocks(b) => {
+                assert_eq!(b.len(), 2, "video block should be removed alongside marker");
+                assert!(matches!(
+                    &b[1],
+                    ContentBlock::Text { text }
+                        if text.contains("[media removed from active context") && text.contains("clip.mp4")
+                ));
+            }
+            other => panic!("expected blocks, got {other:?}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2359,5 +2664,149 @@ mod compaction_cancel_tests {
             Some(AgentEvent::MemoryRecalled { items: 1, .. }) => {}
             other => panic!("expected MemoryRecalled(items: 1), got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod wave_b_integration_tests {
+    use super::*;
+    use crate::control::scripted::{Reply, Script, ScriptedProvider};
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn read_file_state_memoizes_repeats_and_clears_on_clear_context() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("sample.txt");
+        std::fs::write(&file, "hello wave b\n").unwrap();
+
+        let script = Script::new(vec![
+            Reply::tool("r1", "Read", json!({"file_path": "sample.txt"})),
+            Reply::tool("r2", "Read", json!({"file_path": "sample.txt"})),
+            Reply::text("read both"),
+            Reply::tool("r3", "Read", json!({"file_path": "sample.txt"})),
+            Reply::text("read again"),
+        ]);
+        let agent = Agent::builder()
+            .provider(ScriptedProvider::new("test/a", script.clone()))
+            .model("test/a")
+            .tools(bricks_tools::filesystem())
+            .working_dir(dir.path())
+            .build()
+            .unwrap();
+
+        agent.run("read twice").await.unwrap();
+        let msgs = agent.messages();
+        let tool_texts: Vec<String> = msgs
+            .iter()
+            .flat_map(|m| match &m.content {
+                MessageContent::Blocks(bs) => bs
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::ToolResult {
+                            content: ToolResultContent::Text(t),
+                            ..
+                        } => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .collect();
+        assert!(tool_texts[0].contains("hello wave b"), "{tool_texts:?}");
+        assert!(tool_texts[1].contains("[file_unchanged]"), "{tool_texts:?}");
+
+        clear_context(&agent).await.unwrap();
+        agent.run("read after clear").await.unwrap();
+        let after = agent.messages();
+        let post_clear_read = after
+            .iter()
+            .flat_map(|m| match &m.content {
+                MessageContent::Blocks(bs) => bs
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::ToolResult {
+                            content: ToolResultContent::Text(t),
+                            ..
+                        } => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .next()
+            .unwrap();
+        assert!(
+            post_clear_read.contains("hello wave b") && !post_clear_read.contains("[file_unchanged]"),
+            "{post_clear_read}"
+        );
+    }
+
+    #[tokio::test]
+    async fn agents_md_emits_full_unchanged_delta_and_refreshes_after_clear() {
+        let dir = tempdir().unwrap();
+        let agents_md = dir.path().join("AGENTS.md");
+        std::fs::write(&agents_md, "Rule v1").unwrap();
+
+        let script = Script::new(vec![
+            Reply::text("ok 1"),
+            Reply::text("ok 2"),
+            Reply::text("ok 3"),
+            Reply::text("ok 4"),
+        ]);
+        let agent = Agent::builder()
+            .provider(ScriptedProvider::new("test/a", script.clone()))
+            .model("test/a")
+            .working_dir(dir.path())
+            .build()
+            .unwrap();
+
+        agent.run("turn 1").await.unwrap();
+        agent.run("turn 2").await.unwrap();
+        std::fs::write(&agents_md, "Rule v2").unwrap();
+        agent.run("turn 3").await.unwrap();
+        clear_context(&agent).await.unwrap();
+        agent.run("turn 4").await.unwrap();
+
+        let reqs = script.requests();
+        assert_eq!(reqs.len(), 4);
+
+        let user_texts = |req_idx: usize| -> Vec<String> {
+            reqs[req_idx]
+                .1
+                .messages
+                .iter()
+                .filter(|m| m.role == Role::User)
+                .map(|m| m.get_all_text())
+                .collect()
+        };
+
+        let t1 = user_texts(0);
+        assert!(t1[0].contains("<project_instructions>") && t1[0].contains("Rule v1"));
+        assert!(!t1[0].contains("delta=\"true\""));
+
+        let t2 = user_texts(1);
+        assert!(
+            !t2[1].contains("<project_instructions>"),
+            "unchanged AGENTS.md must not re-inject on turn 2: {:?}",
+            t2[1]
+        );
+
+        let t3 = user_texts(2);
+        assert!(
+            t3[2].contains("delta=\"true\"") && t3[2].contains("Rule v2"),
+            "modified AGENTS.md must emit delta on turn 3: {:?}",
+            t3[2]
+        );
+
+        let t4 = user_texts(3);
+        assert_eq!(t4.len(), 1);
+        assert!(
+            t4[0].contains("<project_instructions>")
+                && !t4[0].contains("delta=\"true\"")
+                && t4[0].contains("Rule v2"),
+            "after clear_context, full AGENTS.md must re-inject cleanly: {:?}",
+            t4[0]
+        );
     }
 }

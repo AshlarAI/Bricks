@@ -23,15 +23,21 @@ impl Home {
         }
     }
 
-    /// A project folder under the root, with its own bricks.toml.
-    fn project(&self, name: &str, toml: &str) -> PathBuf {
+    /// A project folder under the root, with its own `.bricks/config.json`.
+    fn project(&self, name: &str, extra_json: &str) -> PathBuf {
         let d = self.root.path().join(name);
-        std::fs::create_dir_all(&d).unwrap();
-        std::fs::write(
-            d.join("bricks.toml"),
-            format!("[agent]\nmodel = \"local/m\"\n\n{toml}"),
-        )
-        .unwrap();
+        let cfg_path = d.join(".bricks").join("config.json");
+        std::fs::create_dir_all(cfg_path.parent().unwrap()).unwrap();
+        let mut doc = json!({ "agent": { "model": "local/m" } });
+        if !extra_json.trim().is_empty() {
+            let extra: Value = serde_json::from_str(extra_json).unwrap();
+            if let (Some(dst), Some(src)) = (doc.as_object_mut(), extra.as_object()) {
+                for (k, v) in src {
+                    dst.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        std::fs::write(&cfg_path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
         d.canonicalize().unwrap()
     }
 
@@ -100,7 +106,7 @@ fn the_workspace_option_opens_a_project_from_anywhere() {
     // A missing folder or a file: refused before anything, nothing stored.
     let before = std::fs::read_dir(h.sessions_dir()).unwrap().count();
     let calls = m.seen.lock().unwrap().len();
-    for bad in ["absent", "Mon projet/bricks.toml"] {
+    for bad in ["absent", "Mon projet/.bricks/config.json"] {
         let o = h.run(h.root.path(), &["--workspace", bad, "run", "--json", "x"]);
         assert_eq!(o.status.code(), Some(2), "{bad}");
         assert!(o.stdout.is_empty(), "no event for {bad}");
@@ -137,7 +143,7 @@ fn a_resumed_session_works_with_its_own_project() {
     // A's long-term memory section is broken: a new session of A cannot open.
     // B's first session is EXECUTE (its policy is kept with the session);
     // A's new sessions start with no policy chosen (asked).
-    let a = h.project("A", "[memory]\nenabled = \"oui\"\n");
+    let a = h.project("A", r#"{"memory":{"enabled":"oui"}}"#);
     let b = h.project("B", "");
 
     let o = h.run(
@@ -170,9 +176,13 @@ fn a_resumed_session_works_with_its_own_project() {
     // A new session of A: A's (broken) project is the one read.
     let o = h.run(&a, &["run", "--json", "--non-interactive", "écris"]);
     assert_eq!(o.status.code(), Some(2));
-    assert!(err(&o).contains("bricks.toml"), "{}", err(&o));
+    assert!(err(&o).contains("config.json"), "{}", err(&o));
     // Fixed, A's new session asks the write, and nobody answers: refused.
-    std::fs::write(a.join("bricks.toml"), "[agent]\nmodel = \"local/m\"\n").unwrap();
+    std::fs::write(
+        a.join(".bricks").join("config.json"),
+        r#"{"agent":{"model":"local/m"}}"#,
+    )
+    .unwrap();
     let o = h.run(&a, &["run", "--json", "--non-interactive", "écris"]);
     assert_eq!(o.status.code(), Some(3), "{}", err(&o));
     assert!(!a.join("créé.txt").exists());
@@ -216,7 +226,7 @@ fn the_history_is_the_projects_unless_all_is_asked() {
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     };
     git(&["init", "-q", "-b", "main"]);
-    git(&["add", "bricks.toml"]);
+    git(&["add", ".bricks/config.json"]);
     git(&["commit", "-q", "-m", "init"]);
     let wt = h.root.path().join("atlas-wt");
     git(&["worktree", "add", "-q", wt.to_str().unwrap()]);
@@ -291,7 +301,7 @@ fn the_history_is_the_projects_unless_all_is_asked() {
     assert!(text.contains("no folder recorded"), "{text}");
 
     // Without any provider configured: listing still works.
-    std::fs::remove_file(h.base.home.path().join("providers.toml")).unwrap();
+    std::fs::remove_file(h.base.home.path().join("config.json")).unwrap();
     assert_eq!(
         session_ids(&list(&atlas, &["sessions", "--json"])),
         vec![s_atlas.clone()]

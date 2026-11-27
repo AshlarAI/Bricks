@@ -2,7 +2,7 @@
 //! system, the shell, the git state, the model and the plan. Read for each
 //! request (the git state when it may have changed), bounded, never fatal.
 
-use crate::system_prompt::{GitSnapshot, ModelIdentity, RequestContext};
+use crate::system_prompt::{GitSnapshot, ModelIdentity, RequestContext, escape_data};
 use bricks_types::process::NoWindowExt;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -34,9 +34,13 @@ type SearchedDir = (PathBuf, Option<SystemTime>);
 pub(crate) struct RequestEnv {
     started_at: chrono::DateTime<chrono::FixedOffset>,
     git: parking_lot::Mutex<Option<GitSnapshot>>,
+    initial_git: parking_lot::Mutex<Option<GitSnapshot>>,
+    last_reported_git: parking_lot::Mutex<Option<GitSnapshot>>,
     /// The git state must be read again before the next request.
     git_stale: AtomicBool,
     git_read: AtomicBool,
+    /// Whether `initial_git` has been captured for the current window.
+    initial_captured: AtomicBool,
     /// The programs found, and the directories they were looked up in.
     executables: parking_lot::Mutex<Option<(Vec<SearchedDir>, Vec<String>)>>,
 }
@@ -46,8 +50,11 @@ impl Default for RequestEnv {
         Self {
             started_at: chrono::Local::now().fixed_offset(),
             git: parking_lot::Mutex::new(None),
+            initial_git: parking_lot::Mutex::new(None),
+            last_reported_git: parking_lot::Mutex::new(None),
             git_stale: AtomicBool::new(false),
             git_read: AtomicBool::new(false),
+            initial_captured: AtomicBool::new(false),
             executables: parking_lot::Mutex::new(None),
         }
     }
@@ -60,14 +67,68 @@ impl RequestEnv {
         self.git_stale.store(true, Ordering::SeqCst);
     }
 
+    /// Reset the initial git baseline so the next request emits a fresh full
+    /// `<git_status>` snapshot (for example after compaction).
+    pub(crate) fn mark_full_git(&self) {
+        self.initial_captured.store(false, Ordering::SeqCst);
+        self.git_read.store(false, Ordering::SeqCst);
+        self.git_stale.store(true, Ordering::SeqCst);
+        *self.initial_git.lock() = None;
+        *self.last_reported_git.lock() = None;
+    }
+
+    /// The stable initial git snapshot for the system prompt (captured once on
+    /// first request or after [`Self::mark_full_git`], never mutated by later
+    /// turns so the prompt prefix remains cacheable).
+    pub(crate) async fn initial_git(&self, dir: &Path) -> Option<GitSnapshot> {
+        if !self.initial_captured.swap(true, Ordering::SeqCst) {
+            let snap = read_git(dir).await;
+            self.git_read.store(true, Ordering::SeqCst);
+            self.git_stale.store(false, Ordering::SeqCst);
+            *self.git.lock() = snap.clone();
+            *self.initial_git.lock() = snap.clone();
+            *self.last_reported_git.lock() = snap;
+        }
+        self.initial_git.lock().clone()
+    }
+
     /// The git state, read again when stale (or never read).
+    #[cfg(test)]
     pub(crate) async fn git(&self, dir: &Path) -> Option<GitSnapshot> {
         let first = !self.git_read.swap(true, Ordering::SeqCst);
         if first || self.git_stale.swap(false, Ordering::SeqCst) {
             let snap = read_git(dir).await;
-            *self.git.lock() = snap;
+            *self.git.lock() = snap.clone();
+            if !self.initial_captured.swap(true, Ordering::SeqCst) {
+                *self.initial_git.lock() = snap.clone();
+                *self.last_reported_git.lock() = snap;
+            }
         }
         self.git.lock().clone()
+    }
+
+    /// Refresh git when `git_stale` is set and return a compact
+    /// `<git_status_delta>` block only if branch, HEAD, or dirty status changed
+    /// since the last reported snapshot (`None` when unchanged or not stale).
+    pub(crate) async fn git_delta(&self, dir: &Path) -> Option<String> {
+        if !self.initial_captured.swap(true, Ordering::SeqCst) {
+            let snap = read_git(dir).await;
+            self.git_read.store(true, Ordering::SeqCst);
+            self.git_stale.store(false, Ordering::SeqCst);
+            *self.git.lock() = snap.clone();
+            *self.initial_git.lock() = snap.clone();
+            *self.last_reported_git.lock() = snap;
+            return None;
+        }
+        if !self.git_stale.swap(false, Ordering::SeqCst) {
+            return None;
+        }
+        let current = read_git(dir).await;
+        *self.git.lock() = current.clone();
+        let mut last = self.last_reported_git.lock();
+        let delta = render_git_delta(last.as_ref(), current.as_ref())?;
+        *last = current;
+        Some(delta)
     }
 
     /// The programs found on `path` from `cwd`. Each call costs one `stat`
@@ -238,6 +299,70 @@ async fn read_git(dir: &Path) -> Option<GitSnapshot> {
         user: None,
         taken_at: Some(chrono::Local::now().fixed_offset()),
     })
+}
+
+/// Render a compact delta when branch, HEAD commit, or working-tree status
+/// changed relative to `prev`. Returns `None` when nothing meaningful changed.
+fn render_git_delta(prev: Option<&GitSnapshot>, curr: Option<&GitSnapshot>) -> Option<String> {
+    match (prev, curr) {
+        (None, None) => None,
+        (Some(_), None) => {
+            Some("<git_status_delta>\nRepository no longer detected.\n</git_status_delta>".into())
+        }
+        (None, Some(c)) => {
+            let mut lines = vec![format!("Branch: {}", escape_data(&c.branch))];
+            if let Some(head) = c.recent_commits.first() {
+                lines.push(format!("HEAD: {}", escape_data(head)));
+            }
+            append_status_lines(&mut lines, &c.status_lines);
+            Some(format!(
+                "<git_status_delta>\n{}\n</git_status_delta>",
+                lines.join("\n")
+            ))
+        }
+        (Some(p), Some(c)) => {
+            let branch_changed = p.branch != c.branch;
+            let head_changed = p.recent_commits.first() != c.recent_commits.first();
+            let status_changed = p.status_lines != c.status_lines;
+            if !branch_changed && !head_changed && !status_changed {
+                return None;
+            }
+            let mut lines = Vec::new();
+            if branch_changed {
+                lines.push(format!(
+                    "Branch: {} -> {}",
+                    escape_data(&p.branch),
+                    escape_data(&c.branch)
+                ));
+            }
+            if head_changed {
+                let head = c
+                    .recent_commits
+                    .first()
+                    .map(|s| escape_data(s))
+                    .unwrap_or_else(|| "(none)".to_string());
+                lines.push(format!("HEAD: {head}"));
+            }
+            if status_changed {
+                append_status_lines(&mut lines, &c.status_lines);
+            }
+            Some(format!(
+                "<git_status_delta>\n{}\n</git_status_delta>",
+                lines.join("\n")
+            ))
+        }
+    }
+}
+
+fn append_status_lines(lines: &mut Vec<String>, status_lines: &[String]) {
+    if status_lines.is_empty() {
+        lines.push("Status: clean".to_string());
+    } else {
+        lines.push("Status:".to_string());
+        for line in status_lines {
+            lines.push(format!("  {}", escape_data(line)));
+        }
+    }
 }
 
 /// The branch of a `status --branch` header (`## main...origin/main [ahead 1]`,
@@ -513,5 +638,72 @@ mod tests {
             None,
         );
         assert_eq!(first.now, second.now);
+    }
+
+    #[tokio::test]
+    async fn initial_git_stays_stable_and_git_delta_emits_only_on_changes() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        run(&["init", "-q", "-b", "main"]);
+        run(&["config", "user.email", "test@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-q", "-m", "init"]);
+
+        let env = RequestEnv::default();
+        let init = env.initial_git(dir.path()).await.unwrap();
+        assert_eq!(init.branch, "main");
+        assert!(init.status_lines.is_empty());
+
+        // Not stale -> no delta.
+        assert!(env.git_delta(dir.path()).await.is_none());
+
+        // Stale without changes -> still no delta.
+        env.mark_git_stale();
+        assert!(env.git_delta(dir.path()).await.is_none());
+
+        // Create an untracked file and mark stale -> delta emitted, initial_git unchanged.
+        std::fs::write(dir.path().join("b.txt"), "world").unwrap();
+        env.mark_git_stale();
+        let delta = env.git_delta(dir.path()).await.unwrap();
+        assert!(delta.contains("<git_status_delta>"));
+        assert!(delta.contains("?? b.txt"));
+        assert!(env.initial_git(dir.path()).await.unwrap().status_lines.is_empty());
+
+        // Stale again without new changes -> no delta.
+        env.mark_git_stale();
+        assert!(env.git_delta(dir.path()).await.is_none());
+
+        // Switch branch and commit -> delta reflects branch and HEAD change.
+        run(&["checkout", "-q", "-b", "feat"]);
+        run(&["add", "b.txt"]);
+        run(&["commit", "-q", "-m", "second"]);
+        env.mark_git_stale();
+        let branch_delta = env.git_delta(dir.path()).await.unwrap();
+        assert!(branch_delta.contains("Branch: main -> feat"));
+        assert!(branch_delta.contains("HEAD:"));
+        assert!(branch_delta.contains("Status: clean"));
+
+        // mark_full_git refreshes initial_git baseline on next request.
+        env.mark_full_git();
+        let refreshed = env.initial_git(dir.path()).await.unwrap();
+        assert_eq!(refreshed.branch, "feat");
+        assert!(refreshed.status_lines.is_empty());
     }
 }

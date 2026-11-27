@@ -13,104 +13,90 @@ use serde_json::{Value, json};
 
 const KEY: &str = "sk-test-key-123456";
 
-const EXTRA: &str = r#"
-[[providers.models]]
-id = "chat_ns"
-name = "Chat non-streaming"
-api_model = "vendor-chat-ns"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "resp_ns"
-name = "Resp non-streaming"
-api_model = "vendor-resp-ns"
-protocol = "responses"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "anth_ns"
-name = "Anth non-streaming"
-api_model = "vendor-anth-ns"
-protocol = "anthropic_messages"
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers.models]]
-id = "think"
-name = "Think"
-api_model = "vendor-think"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-[providers.models.parameters]
-temperature = 0.5
-reasoning = { summary = "auto", effort = "model-default" }
-[providers.models.reasoning]
-default = "deep"
-[[providers.models.reasoning.profiles]]
-id = "fast"
-label = "Rapide"
-parameters = { reasoning = { effort = "low" } }
-[[providers.models.reasoning.profiles]]
-id = "deep"
-parameters = { reasoning = { effort = "high" } }
-[[providers.models.reasoning.profiles]]
-id = "off"
-label = "Aucun"
-remove = ["/reasoning", "/temperature"]
-parameters = { thinking = { type = "disabled" } }
-[[providers.models.reasoning.profiles]]
-id = "ultra"
-parameters = { reasoning = { effort = "high" }, extra_budget = 99999 }
-
-[[providers.models]]
-id = "plain"
-name = "No profiles"
-api_model = "vendor-plain"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-[providers.models.reasoning]
-profiles = []
-
-[[providers.models]]
-id = "videomodel"
-name = "Declares video"
-api_model = "vendor-video"
-streaming = true
-input_modalities = ["text", "video"]
-output_modalities = ["text", "audio"]
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-
-[[providers]]
-id = "local"
-name = "Local server"
-endpoint = "ENDPOINT/openai"
-protocol = "chat_completions"
-auth = "none"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "local-m"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 1000
-max_output_tokens = 100
-"#;
+fn extra_models() -> Vec<Value> {
+    vec![
+        json!({
+            "id": "chat_ns",
+            "name": "Chat non-streaming",
+            "api_model": "vendor-chat-ns",
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }),
+        json!({
+            "id": "resp_ns",
+            "name": "Resp non-streaming",
+            "api_model": "vendor-resp-ns",
+            "protocol": "responses",
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }),
+        json!({
+            "id": "anth_ns",
+            "name": "Anth non-streaming",
+            "api_model": "vendor-anth-ns",
+            "protocol": "anthropic_messages",
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }),
+        json!({
+            "id": "think",
+            "name": "Think",
+            "api_model": "vendor-think",
+            "streaming": true,
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 },
+            "parameters": {
+                "temperature": 0.5,
+                "reasoning": { "summary": "auto", "effort": "model-default" }
+            },
+            "reasoning": {
+                "default": "deep",
+                "profiles": [
+                    { "id": "fast", "label": "Rapide", "parameters": { "reasoning": { "effort": "low" } } },
+                    { "id": "deep", "parameters": { "reasoning": { "effort": "high" } } },
+                    {
+                        "id": "off",
+                        "label": "Aucun",
+                        "remove": ["/reasoning", "/temperature"],
+                        "parameters": { "thinking": { "type": "disabled" } }
+                    },
+                    { "id": "ultra", "parameters": { "reasoning": { "effort": "high" }, "extra_budget": 99999 } }
+                ]
+            }
+        }),
+        json!({
+            "id": "plain",
+            "name": "No profiles",
+            "api_model": "vendor-plain",
+            "streaming": true,
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 },
+            "reasoning": { "profiles": [] }
+        }),
+        json!({
+            "id": "videomodel",
+            "name": "Declares video",
+            "api_model": "vendor-video",
+            "streaming": true,
+            "input_modalities": ["text", "video"],
+            "output_modalities": ["text", "audio"],
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }),
+    ]
+}
 
 fn setup(replies: Vec<Reply>) -> (Mock, ProviderRegistry) {
     let mock = serve(replies);
-    let extra = EXTRA.replace("ENDPOINT", &mock.base);
-    let reg = registry_for(&mock.base, &extra);
+    let local_provider = json!({
+        "id": "local",
+        "name": "Local server",
+        "endpoint": format!("{}/openai", mock.base),
+        "protocol": "chat_completions",
+        "auth": "none",
+        "models": [{
+            "id": "m",
+            "name": "M",
+            "api_model": "local-m",
+            "streaming": true,
+            "limits": { "max_input_tokens": 1000, "max_output_tokens": 100 }
+        }]
+    });
+    let reg = registry_for(&mock.base, extra_models(), vec![local_provider]);
     (mock, reg)
 }
 
@@ -623,7 +609,7 @@ async fn connection_refused_is_a_retryable_transport_error_without_the_url() {
         .local_addr()
         .unwrap()
         .port();
-    let reg = registry_for(&format!("http://127.0.0.1:{port}"), "");
+    let reg = registry_for(&format!("http://127.0.0.1:{port}"), Vec::new(), Vec::new());
     let e = error_of(&reg, "mock/chat").await;
     assert!(matches!(e, BricksError::Http(_)), "{e:?}");
     assert!(e.is_retryable());
@@ -708,29 +694,27 @@ async fn auth_modes_and_custom_headers() {
     }
 
     // api_key_header with a custom header name and an extra static header.
-    let text = format!(
-        r#"
-schema_version = 1
-[[providers]]
-id = "p"
-name = "P"
-endpoint = "{base}/gw"
-protocol = "chat_completions"
-auth = "api_key_header"
-auth_header = "api-key"
-headers = {{ "x-team" = "blue" }}
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "am"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 10
-max_output_tokens = 10
-"#,
-        base = mock.base
-    );
-    let reg2 = ProviderRegistry::from_toml_str(&text, "t").unwrap();
+    let text = json!({
+        "schema_version": 1,
+        "providers": [{
+            "id": "p",
+            "name": "P",
+            "endpoint": format!("{}/gw", mock.base),
+            "protocol": "chat_completions",
+            "auth": "api_key_header",
+            "auth_header": "api-key",
+            "headers": { "x-team": "blue" },
+            "models": [{
+                "id": "m",
+                "name": "M",
+                "api_model": "am",
+                "streaming": true,
+                "limits": { "max_input_tokens": 10, "max_output_tokens": 10 }
+            }]
+        }]
+    })
+    .to_string();
+    let reg2 = ProviderRegistry::from_json_str(&text, "t").unwrap();
     run(
         &provider(&reg2, "p/m"),
         first_request(vec![Message::user("hi")], false),
@@ -745,43 +729,40 @@ max_output_tokens = 10
 
 #[test]
 fn the_key_is_the_one_written_in_the_file() {
-    let text = r#"
-schema_version = 1
-[[providers]]
-id = "p"
-name = "P"
-endpoint = "http://127.0.0.1:1"
-protocol = "chat_completions"
-auth = "bearer"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "am"
-[providers.models.limits]
-max_input_tokens = 10
-max_output_tokens = 10
-"#;
+    let make = |extra: Value| -> String {
+        let mut p = json!({
+            "id": "p",
+            "name": "P",
+            "endpoint": "http://127.0.0.1:1",
+            "protocol": "chat_completions",
+            "auth": "bearer",
+            "models": [{
+                "id": "m",
+                "name": "M",
+                "api_model": "am",
+                "limits": { "max_input_tokens": 10, "max_output_tokens": 10 }
+            }]
+        });
+        if let (Some(dst), Some(src)) = (p.as_object_mut(), extra.as_object()) {
+            for (k, v) in src {
+                dst.insert(k.clone(), v.clone());
+            }
+        }
+        json!({ "schema_version": 1, "providers": [p] }).to_string()
+    };
     // No key, or a blank one -> an actionable error, never a value.
-    for line in ["", "api_key = \"   \"\n"] {
-        let t = text.replace("auth = \"bearer\"\n", &format!("auth = \"bearer\"\n{line}"));
-        let reg = ProviderRegistry::from_toml_str(&t, "t").unwrap();
+    for extra in [json!({}), json!({ "api_key": "   " })] {
+        let reg = ProviderRegistry::from_json_str(&make(extra), "t").unwrap();
         let e = reg.resolve("p/m").unwrap().provider().build().unwrap_err();
         assert!(matches!(e, BricksError::Auth(_)));
         assert!(e.to_string().contains("Bricks settings"), "{e}");
     }
     // A variable is never read.
-    let t = text.replace(
-        "auth = \"bearer\"\n",
-        "auth = \"bearer\"\napi_key_env = \"PATH\"\n",
-    );
-    let reg = ProviderRegistry::from_toml_str(&t, "t").unwrap();
+    let reg = ProviderRegistry::from_json_str(&make(json!({ "api_key_env": "PATH" })), "t").unwrap();
     assert!(reg.resolve("p/m").unwrap().provider().build().is_err());
     // The key written in the file.
-    let t = text.replace(
-        "auth = \"bearer\"\n",
-        "auth = \"bearer\"\napi_key = \" sk-file-1111 \"\n",
-    );
-    let reg = ProviderRegistry::from_toml_str(&t, "t").unwrap();
+    let reg =
+        ProviderRegistry::from_json_str(&make(json!({ "api_key": " sk-file-1111 " })), "t").unwrap();
     let p = reg.resolve("p/m").unwrap().provider().build().unwrap();
     assert!(!format!("{p:?}").contains("sk-file-1111"));
 }
@@ -899,9 +880,9 @@ async fn untransportable_or_undeclared_input_is_refused_before_sending() {
             "video block cannot be sent",
         ),
         (
-            "mock/videomodel",
+            "mock/resp",
             ContentBlock::video_url("https://x/v.mp4"),
-            "declared, but the `chat_completions` adapter cannot transport it",
+            "video block cannot be sent",
         ),
         (
             "mock/chat",

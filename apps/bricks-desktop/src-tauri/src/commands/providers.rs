@@ -8,7 +8,7 @@ use crate::engine::catalog::DesktopCatalog;
 use crate::services::join_error;
 use crate::services::provider_catalog;
 use crate::services::providers::{self, view};
-use crate::services::providers_toml::Edit;
+use crate::services::providers_json::Edit;
 use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;

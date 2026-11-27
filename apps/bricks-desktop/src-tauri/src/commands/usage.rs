@@ -29,7 +29,7 @@ pub async fn usage_go_quota(
     let path = state.providers_path.clone();
     let key = tokio::task::spawn_blocking(move || {
         let text = std::fs::read_to_string(&path).ok()?;
-        let config = ProvidersConfig::from_toml_str(&text, "providers.toml").ok()?;
+        let config = ProvidersConfig::from_json_str(&text, "config.json").ok()?;
         let provider = config.providers.into_iter().find(|p| p.id == provider_id)?;
         usage_ledger::is_opencode_go(&provider.endpoint)
             .then(|| provider.key().map(str::to_string))

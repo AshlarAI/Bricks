@@ -355,26 +355,26 @@ async fn a_connection_error_has_no_status_in_its_notice() {
         .local_addr()
         .unwrap()
         .port();
-    let provider = bricks_provider::ProviderRegistry::from_toml_str(
-        &format!(
-            r#"schema_version = 1
-[[providers]]
-id = "t"
-name = "T"
-endpoint = "http://127.0.0.1:{port}/v1"
-protocol = "chat_completions"
-auth = "none"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "m"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 1000
-"#
-        ),
-        "t.toml",
+    let provider = bricks_provider::ProviderRegistry::from_json_str(
+        &serde_json::json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "t",
+                "name": "T",
+                "endpoint": format!("http://127.0.0.1:{port}/v1"),
+                "protocol": "chat_completions",
+                "auth": "none",
+                "models": [{
+                    "id": "m",
+                    "name": "M",
+                    "api_model": "m",
+                    "streaming": true,
+                    "limits": { "max_input_tokens": 100000, "max_output_tokens": 1000 }
+                }]
+            }]
+        })
+        .to_string(),
+        "t.json",
     )
     .unwrap()
     .resolve("t/m")

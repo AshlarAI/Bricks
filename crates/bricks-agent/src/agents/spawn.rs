@@ -828,10 +828,6 @@ fn parent_ctx(ctx: &ToolContext, depth: u32) -> ParentCtx {
         working_dir: ctx.working_dir.clone(),
         permissions: Arc::clone(&ctx.permissions),
         mcp_manager: ctx.mcp_manager.clone(),
-        semantic: ctx
-            .extensions
-            .get::<bricks_tools::code_scout::SemanticHandle>()
-            .map(|h| (*h).clone()),
         web: ctx
             .extensions
             .get::<bricks_tools::web_runtime::WebRuntime>()
@@ -868,7 +864,6 @@ struct ParentCtx {
     working_dir: PathBuf,
     permissions: Arc<dyn PermissionPolicy>,
     mcp_manager: Option<Arc<bricks_mcp::McpManager>>,
-    semantic: Option<bricks_tools::code_scout::SemanticHandle>,
     web: Option<bricks_tools::web_runtime::WebRuntime>,
     depth: u32,
     sink: Option<SubAgentSink>,
@@ -2081,7 +2076,7 @@ impl AgentSpawner {
         provider: Box<dyn bricks_provider::Provider>,
         pc: &ParentCtx,
         cwd: &Path,
-        iso: Isolation,
+        _iso: Isolation,
         cancel: &CancellationToken,
         lease: Arc<super::runtime::ActivityLease>,
         history: Option<Vec<bricks_types::Message>>,
@@ -2093,13 +2088,7 @@ impl AgentSpawner {
             self.build_child_tools(profile, child_depth, pc.long_term_memory.as_ref());
         let names: Vec<String> = tools.iter().map(|t| t.name().to_string()).collect();
         let ext = subagent::child_extensions(pc.depth);
-        // Services: the code engine only within the same workspace (a
-        // worktree gets its own), the web context. The shell is the child's.
-        if iso == Isolation::Shared
-            && let Some(h) = &pc.semantic
-        {
-            ext.insert(h.clone());
-        }
+        // Services: the web context. The shell is the child's.
         if let Some(w) = &pc.web {
             ext.insert(w.clone());
         }

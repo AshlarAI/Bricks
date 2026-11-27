@@ -15,7 +15,8 @@ pub struct SearchMatch {
     pub file: PathBuf,
     pub line_number: usize,
     pub line_content: String,
-    /// A line around a match (see [`GrepOptions::context`]), not a match.
+    /// A line around a match (see [`GrepOptions::context`],
+    /// [`GrepOptions::before_context`], [`GrepOptions::after_context`]), not a match.
     pub is_context: bool,
 }
 
@@ -50,9 +51,15 @@ pub struct FileMatches {
 pub struct GrepOptions {
     /// Whitelist glob applied to file paths (e.g. `*.rs`). `None` searches all files.
     pub glob_filter: Option<String>,
+    /// Language/file type filter using ripgrep's built-in type definitions
+    /// (e.g. `rust`, `py`, `ts`). `None` searches all file types.
+    pub file_type: Option<String>,
     /// Cap on the number of matches returned. `None` is unlimited; `Some(0)`
-    /// checks the pattern and the path, then searches nothing.
+    /// checks the pattern, type, and path, then searches nothing.
     pub max_results: Option<usize>,
+    /// Number of leading matches (or files in `Files`/`Count` modes) to skip
+    /// before applying `max_results`.
+    pub offset: usize,
     /// Case-insensitive matching.
     pub case_insensitive: bool,
     /// When `true`, ignore `.gitignore`/`.ignore`/hidden filtering (search everything).
@@ -61,6 +68,8 @@ pub struct GrepOptions {
     pub hidden: bool,
     /// When `true`, the pattern is exact text, not a regex.
     pub literal: bool,
+    /// Enable multi-line regex matching so patterns can match across `\n`.
+    pub multiline: bool,
     /// What is collected per file. In [`GrepMode::Files`] and
     /// [`GrepMode::Count`], `max_results` counts files.
     pub mode: GrepMode,
@@ -69,6 +78,15 @@ pub struct GrepOptions {
     /// stops at its last match within the limit, so that match may come
     /// without its trailing context.
     pub context: usize,
+    /// Lines of context before each match ([`GrepMode::Lines`] only).
+    /// Falls back to [`GrepOptions::context`] when `None`.
+    pub before_context: Option<usize>,
+    /// Lines of context after each match ([`GrepMode::Lines`] only).
+    /// Falls back to [`GrepOptions::context`] when `None`.
+    pub after_context: Option<usize>,
+    /// In [`GrepMode::Lines`], emit only the matched substring(s) instead of
+    /// full lines.
+    pub only_matching: bool,
 }
 
 /// What a grep found.
@@ -158,11 +176,14 @@ pub async fn grep_search(
 /// modes. A NUL byte marks the file binary and stops its reading.
 struct FileSink<'a> {
     file: &'a Path,
+    matcher: &'a grep::regex::RegexMatcher,
     out: Vec<SearchMatch>,
     room: usize,
     binary: bool,
     mode: GrepMode,
-    /// Matching lines seen.
+    multiline: bool,
+    only_matching: bool,
+    /// Matching items seen (lines, substrings when `only_matching`, or matches).
     matched: usize,
 }
 
@@ -174,6 +195,45 @@ impl grep::searcher::Sink for FileSink<'_> {
         _searcher: &grep::searcher::Searcher,
         mat: &grep::searcher::SinkMatch<'_>,
     ) -> Result<bool, std::io::Error> {
+        use grep::matcher::Matcher;
+
+        if self.mode == GrepMode::Lines && self.only_matching {
+            let haystack = if self.multiline {
+                mat.bytes()
+            } else {
+                let b = mat.bytes().strip_suffix(b"\n").unwrap_or(mat.bytes());
+                b.strip_suffix(b"\r").unwrap_or(b)
+            };
+            let base_line = mat.line_number().unwrap_or(0) as usize;
+            let mut find_err: Option<std::io::Error> = None;
+            let res = self.matcher.find_iter(haystack, |m| {
+                let extra_lines = if self.multiline {
+                    haystack[..m.start()].iter().filter(|&&b| b == b'\n').count()
+                } else {
+                    0
+                };
+                let matched_text = String::from_utf8_lossy(&haystack[m.start()..m.end()])
+                    .trim_end_matches(['\n', '\r'])
+                    .to_string();
+                self.matched += 1;
+                self.out.push(SearchMatch {
+                    file: self.file.to_path_buf(),
+                    line_number: base_line + extra_lines,
+                    line_content: matched_text,
+                    is_context: false,
+                });
+                self.room -= 1;
+                self.room > 0
+            });
+            if let Err(err) = res {
+                find_err = Some(std::io::Error::other(err.to_string()));
+            }
+            if let Some(err) = find_err {
+                return Err(err);
+            }
+            return Ok(self.room > 0);
+        }
+
         // A line that is not valid UTF-8 is shown with U+FFFD: a file in
         // another encoding still gives its matches.
         let line = String::from_utf8_lossy(mat.bytes());
@@ -219,35 +279,143 @@ impl grep::searcher::Sink for FileSink<'_> {
     }
 }
 
+/// Build a regex or literal matcher, supporting both single-line and multi-line matching.
+fn build_search_matcher(
+    pattern: &str,
+    mode: crate::tool_primitives::lexical::MatchMode,
+    case_insensitive: bool,
+    multiline: bool,
+) -> Result<grep::regex::RegexMatcher, String> {
+    if !multiline {
+        return crate::tool_primitives::lexical::build_matcher(pattern, mode, case_insensitive);
+    }
+    grep::regex::RegexMatcherBuilder::new()
+        .case_insensitive(case_insensitive)
+        .fixed_strings(mode == crate::tool_primitives::lexical::MatchMode::Literal)
+        .multi_line(true)
+        .line_terminator(None)
+        .build(pattern)
+        .map_err(|e| e.to_string())
+}
+
+/// Searches a single directory entry and records its matches/file entry,
+/// returning [`WalkState::Quit`] once `wanted` items are reached.
+#[allow(clippy::too_many_arguments)]
+fn search_entry(
+    entry: Result<ignore::DirEntry, ignore::Error>,
+    matcher: &grep::regex::RegexMatcher,
+    built_types: Option<&ignore::types::Types>,
+    searcher: &mut grep::searcher::Searcher,
+    mode: GrepMode,
+    multiline: bool,
+    only_matching: bool,
+    wanted: usize,
+    found: &std::sync::atomic::AtomicUsize,
+    results: &Mutex<Vec<SearchMatch>>,
+    files: &Mutex<Vec<FileMatches>>,
+) -> ignore::WalkState {
+    use ignore::WalkState;
+
+    let entry = match entry {
+        Ok(e) => e,
+        Err(_) => return WalkState::Continue,
+    };
+    // Only search regular files.
+    if !entry.file_type().is_some_and(|t| t.is_file()) {
+        return WalkState::Continue;
+    }
+    // `ignore` skips `should_skip_entry` at depth 0 (when `path` itself
+    // is a single file), so enforce `types` on depth-0 files explicitly.
+    if entry.depth() == 0
+        && let Some(types) = built_types
+        && types.matched(entry.path(), false).is_ignore()
+    {
+        return WalkState::Continue;
+    }
+    let room = wanted.saturating_sub(found.load(Ordering::SeqCst));
+    if room == 0 {
+        return WalkState::Quit;
+    }
+
+    let mut sink = FileSink {
+        file: entry.path(),
+        matcher,
+        out: Vec::new(),
+        room,
+        binary: false,
+        mode,
+        multiline,
+        only_matching,
+        matched: 0,
+    };
+    let search_result = searcher.search_path(matcher, entry.path(), &mut sink);
+    // Ignore per-file read/decoding errors (e.g. permission denied) and
+    // keep walking, mirroring ripgrep's resilience. A binary file
+    // gives nothing, not even the lines read before its NUL byte.
+    if search_result.is_err() || sink.binary || sink.matched == 0 {
+        return WalkState::Continue;
+    }
+
+    // Matches in Lines mode, files otherwise.
+    let n = if mode == GrepMode::Lines {
+        let n = sink.matched;
+        results.lock().unwrap().extend(sink.out);
+        n
+    } else {
+        files.lock().unwrap().push(FileMatches {
+            file: entry.path().to_path_buf(),
+            count: sink.matched,
+        });
+        1
+    };
+    if found.fetch_add(n, Ordering::SeqCst) + n >= wanted {
+        return WalkState::Quit;
+    }
+    WalkState::Continue
+}
+
 /// Synchronous core of [`grep_search`], intended to run on a blocking thread.
 fn grep_blocking(
     pattern: &str,
     path: &Path,
     opts: GrepOptions,
 ) -> Result<GrepOutcome, SearchError> {
-    use bricks_semantic::MatchMode;
+    use crate::tool_primitives::lexical::{MatchMode, WalkFilters, walk_builder};
     use grep::searcher::{BinaryDetection, SearcherBuilder};
     use ignore::WalkState;
+    use ignore::types::TypesBuilder;
     use std::sync::atomic::AtomicUsize;
 
-    let mode = if opts.literal {
+    let match_mode = if opts.literal {
         MatchMode::Literal
     } else {
         MatchMode::Regex
     };
-    let matcher = bricks_semantic::lexical::build_matcher(pattern, mode, opts.case_insensitive)
+    let matcher = build_search_matcher(pattern, match_mode, opts.case_insensitive, opts.multiline)
         .map_err(SearchError::InvalidPattern)?;
 
-    // The walker shared with the code understanding engine: same ignore
-    // rules, same hidden-file default.
-    let filters = bricks_semantic::lexical::WalkFilters {
+    let built_types = if let Some(ref file_type) = opts.file_type {
+        let mut tb = TypesBuilder::new();
+        tb.add_defaults();
+        tb.select(file_type);
+        Some(tb.build().map_err(|e| {
+            SearchError::InvalidPattern(format!("invalid file type `{file_type}`: {e}"))
+        })?)
+    } else {
+        None
+    };
+
+    // Shared gitignore-aware walker with consistent hidden-file defaults.
+    let filters = WalkFilters {
         include: opts.glob_filter.iter().cloned().collect(),
         no_ignore: opts.no_ignore,
         hidden: opts.hidden,
         ..Default::default()
     };
-    let mut builder = bricks_semantic::lexical::walk_builder(path, &filters)
-        .map_err(SearchError::InvalidPattern)?;
+    let mut builder = walk_builder(path, &filters).map_err(SearchError::InvalidPattern)?;
+    if let Some(ref types) = built_types {
+        builder.types(types.clone());
+    }
     // The walker reports a missing root as an entry error, which would
     // otherwise read as "no matches".
     if !path.exists() {
@@ -259,83 +427,89 @@ fn grep_blocking(
     if opts.max_results == Some(0) {
         return Ok(GrepOutcome::default());
     }
-    let threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    builder.threads(threads);
 
-    // One match (or file) past the limit proves that more exist.
-    let wanted = opts.max_results.map_or(usize::MAX, |m| m.saturating_add(1));
+    // One match (or file) past `offset + limit` proves that more exist.
+    let wanted = opts
+        .max_results
+        .map_or(usize::MAX, |m| opts.offset.saturating_add(m).saturating_add(1));
     let mode = opts.mode;
-    let context = if mode == GrepMode::Lines {
-        opts.context
+    let multiline = opts.multiline;
+    let only_matching = opts.only_matching;
+    let (before_context, after_context) = if mode == GrepMode::Lines {
+        (
+            opts.before_context.unwrap_or(opts.context),
+            opts.after_context.unwrap_or(opts.context),
+        )
     } else {
-        0
+        (0, 0)
     };
     let results: Arc<Mutex<Vec<SearchMatch>>> = Arc::new(Mutex::new(Vec::new()));
     let files: Arc<Mutex<Vec<FileMatches>>> = Arc::new(Mutex::new(Vec::new()));
     let found = Arc::new(AtomicUsize::new(0));
 
-    builder.build_parallel().run(|| {
-        let matcher = matcher.clone();
-        let results = Arc::clone(&results);
-        let files = Arc::clone(&files);
-        let found = Arc::clone(&found);
-        let mut searcher = SearcherBuilder::new()
+    let make_searcher = || {
+        SearcherBuilder::new()
             .line_number(true)
             .binary_detection(BinaryDetection::quit(b'\x00'))
-            .before_context(context)
-            .after_context(context)
-            .build();
+            .multi_line(multiline)
+            .before_context(before_context)
+            .after_context(after_context)
+            .build()
+    };
 
-        Box::new(move |entry| {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => return WalkState::Continue,
-            };
-            // Only search regular files.
-            if !entry.file_type().is_some_and(|t| t.is_file()) {
-                return WalkState::Continue;
-            }
-            let room = wanted.saturating_sub(found.load(Ordering::SeqCst));
-            if room == 0 {
-                return WalkState::Quit;
-            }
-
-            let mut sink = FileSink {
-                file: entry.path(),
-                out: Vec::new(),
-                room,
-                binary: false,
+    if opts.offset > 0 {
+        // Paginated queries walk in sorted path order so `offset` skips a
+        // deterministic prefix across files rather than racing worker threads.
+        builder.sort_by_file_name(|a, b| a.cmp(b));
+        let mut searcher = make_searcher();
+        for entry in builder.build() {
+            if search_entry(
+                entry,
+                &matcher,
+                built_types.as_ref(),
+                &mut searcher,
                 mode,
-                matched: 0,
-            };
-            let search_result = searcher.search_path(&matcher, entry.path(), &mut sink);
-            // Ignore per-file read/decoding errors (e.g. permission denied) and
-            // keep walking, mirroring ripgrep's resilience. A binary file
-            // gives nothing, not even the lines read before its NUL byte.
-            if search_result.is_err() || sink.binary || sink.matched == 0 {
-                return WalkState::Continue;
+                multiline,
+                only_matching,
+                wanted,
+                &found,
+                &results,
+                &files,
+            ) == WalkState::Quit
+            {
+                break;
             }
+        }
+    } else {
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        builder.threads(threads);
+        builder.build_parallel().run(|| {
+            let matcher = matcher.clone();
+            let built_types = built_types.clone();
+            let results = Arc::clone(&results);
+            let files = Arc::clone(&files);
+            let found = Arc::clone(&found);
+            let mut searcher = make_searcher();
 
-            // Matches in Lines mode, files otherwise.
-            let n = if mode == GrepMode::Lines {
-                let n = sink.matched;
-                results.lock().unwrap().extend(sink.out);
-                n
-            } else {
-                files.lock().unwrap().push(FileMatches {
-                    file: entry.path().to_path_buf(),
-                    count: sink.matched,
-                });
-                1
-            };
-            if found.fetch_add(n, Ordering::SeqCst) + n >= wanted {
-                return WalkState::Quit;
-            }
-            WalkState::Continue
-        })
-    });
+            Box::new(move |entry| {
+                search_entry(
+                    entry,
+                    &matcher,
+                    built_types.as_ref(),
+                    &mut searcher,
+                    mode,
+                    multiline,
+                    only_matching,
+                    wanted,
+                    &found,
+                    &results,
+                    &files,
+                )
+            })
+        });
+    }
 
     let mut matches = Arc::try_unwrap(results)
         .map(|m| m.into_inner().unwrap())
@@ -348,14 +522,27 @@ fn grep_blocking(
     matches.sort_by(|a, b| a.file.cmp(&b.file).then(a.line_number.cmp(&b.line_number)));
     files.sort_by(|a, b| a.file.cmp(&b.file));
     let mut more = false;
-    if let Some(max) = opts.max_results {
-        if files.len() > max {
-            files.truncate(max);
-            more = true;
+    if opts.offset > 0 {
+        if opts.offset >= files.len() {
+            files.clear();
+        } else {
+            files.drain(..opts.offset);
         }
-        if truncate_lines(&mut matches, max, context) {
-            more = true;
-        }
+    }
+    if let Some(max) = opts.max_results
+        && files.len() > max
+    {
+        files.truncate(max);
+        more = true;
+    }
+    if paginate_lines(
+        &mut matches,
+        opts.offset,
+        opts.max_results,
+        before_context,
+        after_context,
+    ) {
+        more = true;
     }
 
     Ok(GrepOutcome {
@@ -365,10 +552,67 @@ fn grep_blocking(
     })
 }
 
-/// Keeps the first `max` matches of `lines` (sorted) and the context that
-/// belongs to them: what follows the last kept match within `context`
-/// lines of it, in its file. Whether any match was dropped.
-fn truncate_lines(lines: &mut Vec<SearchMatch>, max: usize, context: usize) -> bool {
+/// Applies `offset` and `max_results` over sorted `lines` (keeping leading
+/// `before_context` for the first kept match and trailing `after_context` for
+/// the last kept match). Returns whether any match exists after `offset + max`.
+fn paginate_lines(
+    lines: &mut Vec<SearchMatch>,
+    offset: usize,
+    max_results: Option<usize>,
+    before_context: usize,
+    after_context: usize,
+) -> bool {
+    if offset > 0 {
+        let Some(first_match_idx) = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| !l.is_context)
+            .nth(offset)
+            .map(|(i, _)| i)
+        else {
+            lines.clear();
+            return false;
+        };
+        let first_file = lines[first_match_idx].file.clone();
+        let first_line = lines[first_match_idx].line_number;
+        let min_ctx_line = first_line.saturating_sub(before_context);
+        let mut keep_ctx_from = first_match_idx;
+        let mut drop_indices = Vec::new();
+        for i in (0..first_match_idx).rev() {
+            let l = &lines[i];
+            if l.file != first_file {
+                break;
+            }
+            if !l.is_context {
+                if l.line_number == first_line {
+                    // Earlier match on the same line (e.g. `only_matching`) is
+                    // skipped, but leading context for `first_line` can still precede it.
+                    drop_indices.push(i);
+                    continue;
+                }
+                break;
+            }
+            if l.line_number < min_ctx_line {
+                break;
+            }
+            keep_ctx_from = i;
+        }
+        // Keep only the leading context lines in `keep_ctx_from..first_match_idx`
+        // (excluding any skipped same-line matches) plus `first_match_idx..`.
+        let mut kept = Vec::with_capacity(lines.len() - keep_ctx_from);
+        for (idx, item) in std::mem::take(lines).into_iter().enumerate() {
+            if idx >= first_match_idx
+                || (idx >= keep_ctx_from && !drop_indices.contains(&idx))
+            {
+                kept.push(item);
+            }
+        }
+        *lines = kept;
+    }
+
+    let Some(max) = max_results else {
+        return false;
+    };
     let Some(cut) = lines
         .iter()
         .enumerate()
@@ -379,15 +623,14 @@ fn truncate_lines(lines: &mut Vec<SearchMatch>, max: usize, context: usize) -> b
         return false;
     };
     lines.truncate(cut);
-    let last = lines
-        .iter()
-        .rev()
-        .find(|l| !l.is_context)
-        .map(|l| (l.file.clone(), l.line_number));
+    let last = lines.iter().rev().find(|l| !l.is_context).map(|l| {
+        let extra_lines = l.line_content.bytes().filter(|&b| b == b'\n').count();
+        (l.file.clone(), l.line_number.saturating_add(extra_lines))
+    });
     while let Some(tail) = lines.last() {
         let belongs = tail.is_context
-            && last.as_ref().is_some_and(|(file, n)| {
-                *file == tail.file && tail.line_number <= n.saturating_add(context)
+            && last.as_ref().is_some_and(|(file, end_line)| {
+                *file == tail.file && tail.line_number <= end_line.saturating_add(after_context)
             });
         if !tail.is_context || belongs {
             break;
@@ -535,11 +778,11 @@ pub(crate) fn glob_walk_blocking(
         let t = c.as_os_str().to_string_lossy();
         t.starts_with('.') && t != "." && t != ".."
     });
-    let filters = bricks_semantic::lexical::WalkFilters {
+    let filters = crate::tool_primitives::lexical::WalkFilters {
         hidden,
         ..Default::default()
     };
-    let mut builder = bricks_semantic::lexical::walk_builder(&root, &filters)
+    let mut builder = crate::tool_primitives::lexical::walk_builder(&root, &filters)
         .map_err(SearchError::InvalidPattern)?;
     builder
         .follow_links(false)
@@ -973,6 +1216,242 @@ mod tests {
         assert!(
             matches!(&r, Err(SearchError::IoError(e)) if e.kind() == std::io::ErrorKind::NotFound),
             "got: {r:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_search_type_filter_handles_dirs_single_files_and_invalid_type() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rs_file = tmp.path().join("lib.rs");
+        let py_file = tmp.path().join("app.py");
+        fs::write(&rs_file, "TOKEN\n").unwrap();
+        fs::write(&py_file, "TOKEN\n").unwrap();
+
+        let rust_opts = GrepOptions {
+            file_type: Some("rust".to_string()),
+            ..Default::default()
+        };
+        let dir_out = grep_search("TOKEN", tmp.path(), rust_opts.clone())
+            .await
+            .unwrap();
+        assert_eq!(dir_out.matches.len(), 1);
+        assert!(dir_out.matches[0].file.ends_with("lib.rs"));
+
+        // Single-file `path` also respects `file_type`.
+        let single_match = grep_search("TOKEN", &rs_file, rust_opts.clone())
+            .await
+            .unwrap();
+        assert_eq!(single_match.matches.len(), 1);
+        let single_miss = grep_search("TOKEN", &py_file, rust_opts).await.unwrap();
+        assert!(single_miss.matches.is_empty());
+
+        let bad_type = grep_search(
+            "TOKEN",
+            tmp.path(),
+            GrepOptions {
+                file_type: Some("not_a_real_type".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(
+            matches!(&bad_type, Err(SearchError::InvalidPattern(msg)) if msg.contains("not_a_real_type")),
+            "got: {bad_type:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_search_multiline_matches_across_newlines_with_context() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), "before\nalpha\nbeta\nafter\n").unwrap();
+
+        // `\s` is valid in single-line mode but cannot cross line breaks until `multiline: true`.
+        let single_ws = grep_search(r"alpha\s+beta", tmp.path(), GrepOptions::default())
+            .await
+            .unwrap();
+        assert!(single_ws.matches.is_empty());
+
+        // Explicit `\n` is rejected in single-line mode.
+        let single_nl = grep_search(r"alpha\nbeta", tmp.path(), GrepOptions::default()).await;
+        assert!(matches!(single_nl, Err(SearchError::InvalidPattern(_))));
+
+        let multi = grep_search(
+            r"alpha\nbeta",
+            tmp.path(),
+            GrepOptions {
+                multiline: true,
+                before_context: Some(1),
+                after_context: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(multi.matches.len(), 3, "got: {:?}", multi.matches);
+        assert!(multi.matches[0].is_context && multi.matches[0].line_number == 1);
+        assert!(!multi.matches[1].is_context && multi.matches[1].line_number == 2);
+        assert_eq!(multi.matches[1].line_content, "alpha\nbeta");
+        assert!(multi.matches[2].is_context && multi.matches[2].line_number == 4);
+    }
+
+    #[tokio::test]
+    async fn grep_search_offset_and_limit_across_all_modes() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), "HIT 1\nHIT 2\nHIT 3\n").unwrap();
+        fs::write(tmp.path().join("b.txt"), "HIT 4\n").unwrap();
+        fs::write(tmp.path().join("c.txt"), "HIT 5\n").unwrap();
+
+        // Lines mode: 5 matches total; offset 2 + limit 2 -> HIT 3, HIT 4, more = true.
+        let lines_page = grep_search(
+            "HIT",
+            tmp.path(),
+            GrepOptions {
+                offset: 2,
+                max_results: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(lines_page.matches.len(), 2);
+        assert_eq!(lines_page.matches[0].line_content, "HIT 3");
+        assert_eq!(lines_page.matches[1].line_content, "HIT 4");
+        assert!(lines_page.more);
+
+        // Exact end: offset 3 + limit 2 -> HIT 4, HIT 5, more = false.
+        let lines_end = grep_search(
+            "HIT",
+            tmp.path(),
+            GrepOptions {
+                offset: 3,
+                max_results: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(lines_end.matches.len(), 2);
+        assert!(!lines_end.more);
+
+        // Files mode: 3 files total; offset 1 + limit 1 -> b.txt, more = true.
+        let files_page = grep_search(
+            "HIT",
+            tmp.path(),
+            GrepOptions {
+                mode: GrepMode::Files,
+                offset: 1,
+                max_results: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(files_page.files.len(), 1);
+        assert!(files_page.files[0].file.ends_with("b.txt"));
+        assert!(files_page.more);
+
+        // Count mode: offset 1 + limit 2 -> b.txt (1), c.txt (1), more = false.
+        let count_page = grep_search(
+            "HIT",
+            tmp.path(),
+            GrepOptions {
+                mode: GrepMode::Count,
+                offset: 1,
+                max_results: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count_page.files.len(), 2);
+        assert!(count_page.files[0].file.ends_with("b.txt"));
+        assert_eq!(count_page.files[0].count, 1);
+        assert!(count_page.files[1].file.ends_with("c.txt"));
+        assert!(!count_page.more);
+    }
+
+    #[tokio::test]
+    async fn grep_search_asymmetric_context_and_offset_suppression() {
+        let tmp = tempfile::tempdir().unwrap();
+        let body: String = (1..=20)
+            .map(|i| {
+                if i == 5 || i == 12 || i == 18 {
+                    format!("HIT {i}\n")
+                } else {
+                    format!("l{i}\n")
+                }
+            })
+            .collect();
+        fs::write(tmp.path().join("a.txt"), body).unwrap();
+
+        // Skip line 5 (HIT 5), keep line 12 (HIT 12) with 2 before + 1 after, drop line 18.
+        let out = grep_search(
+            "HIT",
+            tmp.path(),
+            GrepOptions {
+                offset: 1,
+                max_results: Some(1),
+                context: 3,
+                before_context: Some(2),
+                after_context: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(out.more);
+        let summary: Vec<(usize, bool)> = out
+            .matches
+            .iter()
+            .map(|m| (m.line_number, m.is_context))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![(10, true), (11, true), (12, false), (13, true)],
+            "got: {:?}",
+            out.matches
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_search_only_matching_emits_substrings_and_handles_non_utf8() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), b"pre\nfoo1 mid foo2\npost\n").unwrap();
+        fs::write(tmp.path().join("bin.txt"), b"x\xfffoo3\xfe\n").unwrap();
+
+        let out = grep_search(
+            r"foo\d",
+            tmp.path(),
+            GrepOptions {
+                only_matching: true,
+                before_context: Some(1),
+                after_context: Some(1),
+                offset: 1,
+                max_results: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!out.more);
+        let texts: Vec<(usize, bool, &str)> = out
+            .matches
+            .iter()
+            .map(|m| (m.line_number, m.is_context, m.line_content.as_str()))
+            .collect();
+        // Offset=1 skipped `foo1`, kept `foo2` (preserving before_context `pre` and after_context `post`),
+        // and kept `foo3` from `bin.txt`.
+        assert_eq!(
+            texts,
+            vec![
+                (1, true, "pre"),
+                (2, false, "foo2"),
+                (3, true, "post"),
+                (1, false, "foo3"),
+            ],
+            "got: {:?}",
+            out.matches
         );
     }
 }

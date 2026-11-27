@@ -1,17 +1,15 @@
 //! Tree-sitter based bash command safety analysis.
 //!
-//! An SDK primitive: it parses a command into an AST and reports a risk level,
-//! the commands seen and the paths read or written. It runs nothing and is
-//! **not** wired into the production `Bash` tool, whose approval goes through
-//! the permission policy (`PermissionLevel::Execute`); a caller that wants to
-//! use this analysis decides what to do with its result.
+//! Parses a bash command into an AST and reports a risk level, the commands
+//! seen, and the paths read or written. Wired into [`crate::bash::BashTool`]
+//! to classify calls as `ReadOnly`, `Execute`, or `Forbidden`.
 //!
 //! The analysis is conservative: a parse error, a dynamic command name or
 //! target, an interpreter, or a program it does not know is never reported as
 //! `Safe`. Every command of a list, pipeline, substitution or redirection is
 //! analysed and the highest risk wins. It is a heuristic over the syntax, not
-//! a sandbox: aliases, functions defined elsewhere, `PATH` and the contents of
-//! scripts are invisible to it.
+//! a sandbox: aliases and functions defined in the session are checked
+//! separately against `ShellState`.
 
 use tree_sitter::{Node, Parser, Tree};
 

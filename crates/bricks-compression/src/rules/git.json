@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "filters": {
+    "git-exact": {
+      "description": "Diffs, file contents and plumbing output are values: never filtered, only capped.",
+      "mode": "exact",
+      "match": [
+        {
+          "program": "git",
+          "subcommands": [
+            "diff",
+            "show",
+            "blame",
+            "cat-file",
+            "ls-files",
+            "ls-tree",
+            "rev-parse",
+            "config",
+            "rev-list",
+            "grep",
+            "format-patch",
+            "describe",
+            "tag",
+            "branch",
+            "remote",
+            "stash list"
+          ]
+        }
+      ],
+      "options_with_value": [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace"
+      ]
+    },
+    "git-log": {
+      "description": "`git log`: blank lines removed, entries kept as written.",
+      "match": [
+        {
+          "program": "git",
+          "subcommands": [
+            "log",
+            "reflog",
+            "shortlog"
+          ]
+        }
+      ],
+      "options_with_value": [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree"
+      ],
+      "strip_lines_matching": [
+        "^\\s*$"
+      ],
+      "head_lines": 200,
+      "tail_lines": 20,
+      "max_lines": 220
+    },
+    "git-status": {
+      "description": "`git status`: the `(use \"git add\" ...)` help lines removed.",
+      "match": [
+        {
+          "program": "git",
+          "subcommands": [
+            "status"
+          ]
+        }
+      ],
+      "options_with_value": [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree"
+      ],
+      "strip_lines_matching": [
+        "^\\s*\\(use \"git ",
+        "^\\s*\\(commit or discard",
+        "^\\s*\\(create/copy files",
+        "^\\s*$"
+      ]
+    },
+    "git-transfer": {
+      "description": "`git clone/fetch/pull/push`: transfer progress removed.",
+      "match": [
+        {
+          "program": "git",
+          "subcommands": [
+            "clone",
+            "fetch",
+            "pull",
+            "push",
+            "submodule"
+          ]
+        }
+      ],
+      "options_with_value": [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree"
+      ],
+      "strip_lines_matching": [
+        "^(remote: )?(Enumerating|Counting|Compressing|Receiving|Resolving|Writing|Total|Unpacking) ",
+        "^remote: ?$",
+        "^\\s*$"
+      ]
+    },
+    "git": {
+      "description": "Other git sub-commands: hints removed.",
+      "match": [
+        {
+          "program": "git"
+        }
+      ],
+      "options_with_value": [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree"
+      ],
+      "strip_lines_matching": [
+        "^hint:",
+        "^\\s*$"
+      ],
+      "max_lines": 200
+    }
+  }
+}

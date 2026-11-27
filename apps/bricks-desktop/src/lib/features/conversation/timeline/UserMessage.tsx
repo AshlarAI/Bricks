@@ -232,8 +232,8 @@ export function UserMessage({ item, conversation = null }: UserMessageProps) {
               {/* Present at rest (no shift when they show), visible on hover, focus or touch. */}
               <TooltipProvider delayDuration={400}>
                 <Message.Footer className="gap-0.5 px-0 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
-                  {/* A message sent by a typed command (`/skill …`) is sent again by typing it. */}
-                  {conversation && !readOnly && !item.commandLabel && (
+                  {/* A message sent by a typed command (`/skill …`) or mid-run steering cannot be revised live. */}
+                  {conversation && !readOnly && !item.commandLabel && !item.steered && (
                     <MessageAction
                       ref={editButtonRef}
                       label={t('conversation.editTheMessage')}

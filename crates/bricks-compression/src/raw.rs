@@ -6,6 +6,7 @@
 //! `Read` tool. Nothing is promised beyond what was actually saved: when no
 //! store is available the header says so.
 
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -37,9 +38,11 @@ pub struct RawStore {
 
 impl RawStore {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
+        let dir = dir.into();
+        let max_seq = scan_max_seq(&dir);
         Self {
-            dir: dir.into(),
-            seq: AtomicU64::new(0),
+            dir,
+            seq: AtomicU64::new(max_seq),
         }
     }
 
@@ -71,27 +74,55 @@ impl RawStore {
     /// Save `content`; the file name carries a sequence number and `label`.
     pub fn put(&self, label: &str, content: &str) -> std::io::Result<RawRef> {
         std::fs::create_dir_all(&self.dir)?;
-        // A store reopened on an existing directory (a restored session)
-        // continues the numbering: files already referenced are never
-        // overwritten.
         let label = sanitize(label, 60);
-        let path = loop {
+        loop {
             let n = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
-            let prefix = format!("{n:05}-");
-            let taken = std::fs::read_dir(&self.dir)?
-                .filter_map(|e| e.ok())
-                .any(|e| e.file_name().to_string_lossy().starts_with(&prefix));
-            if !taken {
-                break self.dir.join(format!("{prefix}{label}.txt"));
+            let path = self.dir.join(format!("{n:05}-{label}.txt"));
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(content.as_bytes()) {
+                        drop(f);
+                        let _ = std::fs::remove_file(&path);
+                        return Err(e);
+                    }
+                    return Ok(RawRef {
+                        path,
+                        lines: content.lines().count(),
+                        bytes: content.len(),
+                    });
+                }
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
             }
-        };
-        std::fs::write(&path, content)?;
-        Ok(RawRef {
-            path,
-            lines: content.lines().count(),
-            bytes: content.len(),
-        })
+        }
     }
+}
+
+fn scan_max_seq(dir: &Path) -> u64 {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == ErrorKind::NotFound => return 0,
+        Err(_) => return 0,
+    };
+    let mut max_seq = 0u64;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some((prefix, _)) = name.split_once('-') else {
+            continue;
+        };
+        if prefix.len() >= 5
+            && prefix.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(n) = prefix.parse::<u64>()
+        {
+            max_seq = max_seq.max(n);
+        }
+    }
+    max_seq
 }
 
 fn sanitize(s: &str, max: usize) -> String {
@@ -144,5 +175,95 @@ mod tests {
                 .starts_with("00002-")
         );
         assert_eq!(std::fs::read_to_string(&r.path).unwrap(), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn new_scans_highest_existing_prefix_and_does_not_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw_dir = dir.path().join("raw");
+        std::fs::create_dir_all(raw_dir.join("web")).unwrap();
+        std::fs::write(raw_dir.join("00001-first.txt"), "one").unwrap();
+        std::fs::write(raw_dir.join("00007-seventh.txt"), "seven").unwrap();
+        std::fs::write(raw_dir.join("notes.txt"), "ignore").unwrap();
+        std::fs::write(raw_dir.join("abcde-other.txt"), "ignore").unwrap();
+
+        let store = RawStore::new(&raw_dir);
+        let r = store.put("Bash", "eight").unwrap();
+        assert!(
+            r.path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("00008-Bash"),
+            "{}",
+            r.path.display()
+        );
+        assert_eq!(
+            std::fs::read_to_string(raw_dir.join("00001-first.txt")).unwrap(),
+            "one"
+        );
+        assert_eq!(
+            std::fs::read_to_string(raw_dir.join("00007-seventh.txt")).unwrap(),
+            "seven"
+        );
+        assert_eq!(std::fs::read_to_string(&r.path).unwrap(), "eight");
+    }
+
+    #[test]
+    fn put_falls_back_on_already_exists_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw_dir = dir.path().join("raw");
+        let store = RawStore::new(&raw_dir);
+        std::fs::create_dir_all(&raw_dir).unwrap();
+        // Simulate an external writer creating 00001-Bash.txt after RawStore::new.
+        let colliding = raw_dir.join("00001-Bash.txt");
+        std::fs::write(&colliding, "preexisting").unwrap();
+
+        let r = store.put("Bash", "fresh").unwrap();
+        assert_eq!(
+            r.path.file_name().unwrap().to_str().unwrap(),
+            "00002-Bash.txt"
+        );
+        assert_eq!(std::fs::read_to_string(&colliding).unwrap(), "preexisting");
+        assert_eq!(std::fs::read_to_string(&r.path).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn concurrent_puts_produce_unique_sequential_files() {
+        use std::collections::BTreeSet;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = RawStore::new(dir.path().join("raw"));
+        let results: Vec<Vec<RawRef>> = std::thread::scope(|s| {
+            let mut handles = Vec::new();
+            for t in 0..8 {
+                let store = &store;
+                handles.push(s.spawn(move || {
+                    (0..25)
+                        .map(|i| {
+                            let body = format!("thread-{t}-item-{i}");
+                            store.put("worker", &body).unwrap()
+                        })
+                        .collect::<Vec<_>>()
+                }));
+            }
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        let mut names = BTreeSet::new();
+        for (t, batch) in results.into_iter().enumerate() {
+            for (i, r) in batch.into_iter().enumerate() {
+                let name = r.path.file_name().unwrap().to_str().unwrap().to_string();
+                assert!(names.insert(name.clone()), "duplicate filename {name}");
+                assert_eq!(
+                    std::fs::read_to_string(&r.path).unwrap(),
+                    format!("thread-{t}-item-{i}")
+                );
+            }
+        }
+        assert_eq!(names.len(), 200);
+        assert!(names.contains("00001-worker.txt"));
+        assert!(names.contains("00200-worker.txt"));
     }
 }

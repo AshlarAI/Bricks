@@ -1,11 +1,14 @@
 // Context occupation (`/context`, `/ctx`): the same line as the context card
 // (contextView.ts), and explicit compaction and clearing.
 import { useState } from 'react'
+import { CircleAlertIcon, InfoIcon } from 'lucide-react'
 import { t, useLanguage } from '$lib/i18n/i18n'
 import { useUi, type InspectorState } from '$lib/state/ui'
 import { app, useApp } from '$lib/state/app'
 import { useConversation } from '$lib/state/conversation'
 import { Button } from '$lib/components/ui/button'
+import { Marker, MarkerContent, MarkerIcon } from '$lib/components/ui/marker'
+import { Spinner } from '$lib/components/ui/spinner'
 import { contextLine } from '$lib/features/context/contextView'
 
 export function ContextView({ args: _args }: { args: InspectorState['args'] }) {
@@ -70,23 +73,41 @@ export function ContextView({ args: _args }: { args: InspectorState['args'] }) {
 
       <div className="flex flex-col gap-2 text-sm" role="status" aria-live="polite">
         {compactPending ? (
-          <p className="text-muted-foreground">{t('inspect.compactionWaitingForTheEnginesAnswer')}</p>
+          <Marker>
+            <MarkerIcon>
+              <Spinner aria-hidden="true" />
+            </MarkerIcon>
+            <MarkerContent className="shimmer motion-reduce:shimmer-none">
+              {t('inspect.compactionWaitingForTheEnginesAnswer')}
+            </MarkerContent>
+          </Marker>
         ) : compactRefused !== null ? (
-          <p role="alert" className="text-destructive">
-            {t('inspect.compactionRefused', { compactRefused })}
-          </p>
+          <Marker tone="error" role="alert">
+            <MarkerIcon>
+              <CircleAlertIcon aria-hidden="true" />
+            </MarkerIcon>
+            <MarkerContent>{t('inspect.compactionRefused', { compactRefused })}</MarkerContent>
+          </Marker>
         ) : compactDone ? (
-          <p>
-            {compactDone.compacted ? t('inspect.contextCompacted') : t('inspect.contextNotCompacted')}{' '}
-            <span className="text-muted-foreground">
-              {t('inspect.engineResult', { outcome: compactDone.outcome })}
-            </span>
-          </p>
+          <Marker>
+            <MarkerIcon>
+              <InfoIcon aria-hidden="true" />
+            </MarkerIcon>
+            <MarkerContent>
+              <span className="text-foreground">
+                {compactDone.compacted ? t('inspect.contextCompacted') : t('inspect.contextNotCompacted')}
+              </span>{' '}
+              <span>{t('inspect.engineResult', { outcome: compactDone.outcome })}</span>
+            </MarkerContent>
+          </Marker>
         ) : null}
         {actionError && (
-          <p role="alert" className="text-destructive">
-            {actionError}
-          </p>
+          <Marker tone="error" role="alert">
+            <MarkerIcon>
+              <CircleAlertIcon aria-hidden="true" />
+            </MarkerIcon>
+            <MarkerContent>{actionError}</MarkerContent>
+          </Marker>
         )}
       </div>
     </div>

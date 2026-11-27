@@ -116,6 +116,10 @@ impl Tool for SkillTool {
         }
     }
 
+    fn is_concurrent_safe(&self, input: &Value) -> bool {
+        self.permission_level_for(input) != PermissionLevel::Write
+    }
+
     fn category(&self) -> ToolCategory {
         ToolCategory::Custom
     }

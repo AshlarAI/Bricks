@@ -28,9 +28,9 @@ pub use controller::{
 };
 pub use protocol::{
     AttachmentInfo, Command, Envelope, Event, FailureKind, MAX_PATCH_BYTES,
-    MAX_SUBAGENT_OUTPUT_BYTES, MaintenanceOutcome, Prompt, PromptBlock, RunOutcome, SCHEMA_VERSION,
-    SearchHit, SkillListing, SkillSourceInfo, SkillsListing, WrittenFile, cap_text,
-    tool_status_name,
+    MAX_SUBAGENT_OUTPUT_BYTES, MAX_TOOL_OUTPUT_BYTES, MaintenanceOutcome, Prompt, PromptBlock,
+    RunOutcome, SCHEMA_VERSION, SearchHit, SkillListing, SkillSourceInfo, SkillsListing,
+    WrittenFile, cap_text, tool_status_name,
 };
 pub use session::{SessionMeta, SessionScope, SessionSummary, same_workspace};
 pub use settings::AgentSettings;

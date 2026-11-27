@@ -5,20 +5,22 @@ use bricks_agent::BricksConfig;
 use bricks_agent::control::{ProjectContext, ProjectLoader};
 use bricks_agent::system_prompt::{SystemPromptOptions, build_system_prompt};
 use bricks_provider::ProviderRegistry;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Reads a project with the existing loaders: `BricksConfig::load`, the
-/// long-term memory of its `bricks.toml`, the system prompt for its folder.
+/// long-term memory of its `.bricks/config.json`, the system prompt for its folder.
 pub struct Projects {
     #[allow(dead_code)]
     registry: Arc<ProviderRegistry>,
     /// Whether a person can answer: decides the non-interactive prompt
     /// wording of the system prompt.
     interactive: bool,
-    /// Whether the `[memory]` section of `bricks.toml` gives the project a
+    /// Whether the `memory` section of `.bricks/config.json` gives the project a
     /// memory (false for the desktop, whose memory is its own setting).
     project_memory: bool,
+    /// Optional Bricks home override (tests).
+    home: Option<PathBuf>,
 }
 
 impl Projects {
@@ -27,13 +29,20 @@ impl Projects {
             registry,
             interactive,
             project_memory: true,
+            home: None,
         }
     }
 
-    /// Projects whose `[memory]` section is not read (left to whoever
+    /// Projects whose `memory` section is not read (left to whoever
     /// resolves the memory of each run).
     pub fn without_project_memory(mut self) -> Self {
         self.project_memory = false;
+        self
+    }
+
+    /// Override the Bricks home directory (tests).
+    pub fn with_home(mut self, home: PathBuf) -> Self {
+        self.home = Some(home);
         self
     }
 }
@@ -57,7 +66,11 @@ pub fn announced_tools(bricks: &BricksConfig) -> Vec<String> {
 
 impl ProjectLoader for Projects {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
-        let bricks = BricksConfig::load(wd);
+        let home = self
+            .home
+            .clone()
+            .unwrap_or_else(crate::paths::bricks_home);
+        let bricks = BricksConfig::load_in_home(&home, wd);
         let memory = if self.project_memory {
             long_term_memory(wd)?
         } else {
@@ -93,7 +106,7 @@ impl ProjectLoader for Projects {
             memory_space,
             // The person's servers, and the project's once approved.
             mcp_servers: {
-                let selection = crate::mcp::select(&crate::paths::bricks_home(), Some(wd));
+                let selection = crate::mcp::select(&home, Some(wd));
                 for error in &selection.errors {
                     tracing::warn!("MCP configuration: {error}");
                 }
@@ -112,7 +125,7 @@ mod tests {
     fn announced_tools_follow_the_session_agent() {
         let mut b = BricksConfig::default();
         let names = announced_tools(&b);
-        for t in ["CodeScout", "Agent", "Managent", "Messagent"] {
+        for t in ["Grep", "CodeStats", "Agent", "Managent", "Messagent"] {
             assert!(names.iter().any(|n| n == t), "{t}");
         }
         b.agents.enabled = false;

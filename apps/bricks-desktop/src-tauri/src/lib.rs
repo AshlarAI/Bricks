@@ -23,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(external_links::init())
         .setup(|app| {
+            bricks_tools::shell::init_snapshot::warm_login_shell_env();
             engine::setup(app)?;
             pty::setup(app)?;
             app.manage(services::keep_awake::KeepAwake::default());

@@ -1,24 +1,76 @@
-//! The providers file (`providers.toml`): the view the desktop shows of it,
-//! and the checked, atomic writes that change it. Nothing here returns a
-//! secret value: views carry names and flags, and errors carry messages
-//! that name a field, never the value of a key or header.
+//! The providers section of `~/.bricks/config.json`: the view the desktop shows
+//! of it, and the checked, atomic writes that change it. Nothing here returns a
+//! secret value: views carry names and flags, and errors carry messages that
+//! name a field, never the value of a key or header.
 
-use super::providers_toml::{self, Edit};
+use super::providers_json::{self, Edit};
 use super::{error, io_error};
 use crate::contract::{
     IpcErrorCode, IpcResult, ModelProfileView, ModelView, PricingView, ProviderView, ProvidersFile,
 };
 use crate::i18n::{msg, tr};
-use bricks_provider::config::{AuthMode, ProviderConfig, ProvidersConfig};
+use bricks_provider::config::{AuthMode, ProviderConfig, ProvidersConfig, SCHEMA_VERSION};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::Path;
 
-/// Content hash of a file's bytes: the revision every write must present.
-/// An absent file has the revision of empty content.
+/// Content hash of the providers slice of `config.json`: the revision every
+/// provider write must present. Absent files and valid JSON objects without a
+/// `providers` array (e.g. created by saving `preferences` or `mcp` first)
+/// normalize to the same empty providers slice so sibling writes never trigger
+/// spurious conflicts.
 pub fn revision_of(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
+    let payload: Vec<u8> = if bytes.is_empty() {
+        canonical_json(&json!({
+            "schema_version": SCHEMA_VERSION,
+            "providers": [],
+        }))
+        .into_bytes()
+    } else if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(bytes) {
+        let schema_version = map
+            .get("schema_version")
+            .cloned()
+            .unwrap_or_else(|| Value::from(SCHEMA_VERSION));
+        let providers = match map.get("providers") {
+            None | Some(Value::Null) => Value::Array(Vec::new()),
+            Some(v) => v.clone(),
+        };
+        let slice = json!({
+            "schema_version": schema_version,
+            "providers": providers,
+        });
+        canonical_json(&slice).into_bytes()
+    } else {
+        bytes.to_vec()
+    };
+    let digest = Sha256::digest(&payload);
     digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn canonical_json(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let fields: Vec<String> = keys
+                .into_iter()
+                .map(|k| format!("{}:{}", Value::String(k.clone()), canonical_json(&map[k])))
+                .collect();
+            format!("{{{}}}", fields.join(","))
+        }
+        Value::Array(items) => {
+            format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(canonical_json)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        other => other.to_string(),
+    }
 }
 
 /// The file's bytes, or `None` when it does not exist.
@@ -56,9 +108,9 @@ pub fn view(path: &Path) -> ProvidersFile {
         };
     };
     let parsed = std::str::from_utf8(&bytes)
-        .map_err(|_| tr!(msg::THE_PROVIDERS_TOML_FILE_ISNT_UTF).to_string())
+        .map_err(|_| tr!(msg::THE_PROVIDERS_FILE_ISNT_UTF).to_string())
         .and_then(|text| {
-            ProvidersConfig::from_toml_str(text, &path_text).map_err(|e| e.to_string())
+            ProvidersConfig::from_json_str(text, &path_text).map_err(|e| e.to_string())
         });
     match parsed {
         Ok(config) => ProvidersFile {
@@ -133,8 +185,9 @@ fn provider_view(p: &ProviderConfig) -> ProviderView {
 /// validated before anything is written, and written atomically with the
 /// file's permissions kept. Errors leave the file as it was. An absent file
 /// (revision of empty content, as [`view`] gives it) is created, with its
-/// folder, from an empty providers file.
+/// folder, from an empty JSON config document.
 pub fn commit(path: &Path, revision: &str, edit: &Edit) -> IpcResult<()> {
+    let _cfg_guard = bricks_config::user_config_lock().lock();
     let origin = path.display().to_string();
     let existing = read_file(path)?;
     if revision_of(existing.as_deref().unwrap_or(&[])) != revision {
@@ -145,20 +198,13 @@ pub fn commit(path: &Path, revision: &str, edit: &Edit) -> IpcResult<()> {
     }
     let next = match &existing {
         Some(bytes) => {
-            let text = std::str::from_utf8(bytes).map_err(|_| {
-                error(
-                    IpcErrorCode::Config,
-                    tr!(msg::THE_PROVIDERS_TOML_FILE_ISNT_UTF),
-                )
-            })?;
-            providers_toml::apply(text, edit, &origin)?
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| error(IpcErrorCode::Config, tr!(msg::THE_PROVIDERS_FILE_ISNT_UTF)))?;
+            providers_json::apply(text, edit, &origin)?
         }
         None => {
-            let empty = format!(
-                "schema_version = {}\n",
-                bricks_provider::config::SCHEMA_VERSION
-            );
-            let next = providers_toml::apply(&empty, edit, &origin)?;
+            let empty = format!("{{\"schema_version\":{SCHEMA_VERSION},\"providers\":[]}}");
+            let next = providers_json::apply(&empty, edit, &origin)?;
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)
                     .map_err(|e| io_error(&format!("fournisseurs ({origin})"), e))?;
@@ -171,35 +217,44 @@ pub fn commit(path: &Path, revision: &str, edit: &Edit) -> IpcResult<()> {
 }
 
 /// Replaces `path` with `bytes`: a temporary file in the same folder, with
-/// the same permissions less any access by others, synced, then renamed over the target. A reader sees
-/// the old or the new content, never a partial one.
-fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// the same permissions less any access by others, synced, then renamed over
+/// the target. A reader sees the old or the new content, never a partial one.
+pub(crate) fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| std::io::Error::other("no parent folder"))?;
+    std::fs::create_dir_all(dir)?;
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("providers.toml");
+        .unwrap_or("config.json");
     let tmp = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4().simple()));
     let permissions = std::fs::metadata(path).map(|m| m.permissions()).ok();
     let written = (|| {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        // Create the temp file with owner-only permissions from the start so
+        // API keys are never written to a world-readable file.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut file = opts.open(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         if let Some(p) = permissions {
-            std::fs::set_permissions(&tmp, p)?;
-        }
-        // The file holds the API keys: only its owner reads it.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&tmp)?.permissions().mode();
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(mode & 0o700))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let masked = p.mode() & 0o700;
+                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(masked))?;
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::set_permissions(&tmp, p)?;
+            }
         }
         std::fs::rename(&tmp, path)
     })();
@@ -220,16 +275,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn revisions_are_content_hashes() {
+    fn revisions_are_content_hashes_and_ignore_sibling_sections() {
         assert_eq!(revision_of(b"a"), revision_of(b"a"));
         assert_ne!(revision_of(b"a"), revision_of(b"b"));
         assert_eq!(revision_of(b"").len(), 64);
+
+        let a = br#"{"schema_version":1,"providers":[],"preferences":{"theme":"light"}}"#;
+        let b = br#"{"schema_version":1,"providers":[],"preferences":{"theme":"dark"}}"#;
+        let prefs_only = br#"{"schema_version":1,"preferences":{"theme":"dark"}}"#;
+        assert_eq!(revision_of(b""), revision_of(prefs_only));
+        assert_eq!(revision_of(b""), revision_of(a));
+        assert_eq!(revision_of(a), revision_of(b));
+
+        let c = br#"{"schema_version":1,"providers":[{"id":"p"}],"preferences":{"theme":"dark"}}"#;
+        assert_ne!(revision_of(b), revision_of(c));
     }
 
     #[test]
     fn a_replacement_keeps_the_permissions_and_leaves_no_temporary() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("providers.toml");
+        let file = dir.path().join("config.json");
         std::fs::write(&file, "one").unwrap();
         #[cfg(unix)]
         {
@@ -248,6 +313,6 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(names, vec!["providers.toml".to_string()]);
+        assert_eq!(names, vec!["config.json".to_string()]);
     }
 }

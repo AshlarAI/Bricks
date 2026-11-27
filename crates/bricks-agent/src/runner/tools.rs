@@ -112,51 +112,82 @@ pub(super) fn interrupted_text(why: &str) -> String {
     )
 }
 
-/// The result of a call that shows images, as the model can receive them:
-/// inside the result, after the round's results in the same user turn (the
-/// returned blocks), or not at all, with a note saying so.
-pub(super) fn tool_result_with_images(
-    transport: bricks_provider::ImageTransport,
+/// The result of a call that shows images and/or videos, as the model can
+/// receive them: inside the result, after the round's results in the same user
+/// turn (the returned blocks), or not at all, with a note saying so.
+pub(super) fn tool_result_with_media(
+    image_transport: bricks_provider::ImageTransport,
+    video_transport: bricks_provider::VideoTransport,
     id: &str,
-    text: String,
+    mut text: String,
     is_error: bool,
     images: &[bricks_tools::ToolImage],
+    videos: &[bricks_tools::ToolVideo],
 ) -> (ContentBlock, Vec<ContentBlock>) {
-    use bricks_provider::ImageTransport;
-    if images.is_empty() {
+    use bricks_provider::{ImageTransport, VideoTransport};
+    if images.is_empty() && videos.is_empty() {
         return (tool_result_block(id, text, is_error), Vec::new());
     }
     let image_block =
         |i: &bricks_tools::ToolImage| ContentBlock::image_base64(&i.media_type, &i.data_base64);
-    match transport {
-        ImageTransport::ToolResult => {
-            let mut blocks = vec![ContentBlock::Text { text }];
-            blocks.extend(images.iter().map(image_block));
-            let block = ContentBlock::ToolResult {
-                tool_use_id: id.to_string(),
-                content: ToolResultContent::Blocks(blocks),
-                is_error: Some(is_error),
-            };
-            (block, Vec::new())
-        }
-        ImageTransport::UserTurn => {
-            let mut extra = Vec::new();
-            for image in images {
-                extra.push(ContentBlock::Text {
-                    text: bricks_tools::tool_image_label(id, image),
-                });
-                extra.push(image_block(image));
+    let video_block =
+        |v: &bricks_tools::ToolVideo| ContentBlock::video_base64(&v.media_type, &v.data_base64);
+
+    let mut result_media: Vec<ContentBlock> = Vec::new();
+    let mut extra: Vec<ContentBlock> = Vec::new();
+
+    if !images.is_empty() {
+        match image_transport {
+            ImageTransport::ToolResult => {
+                result_media.extend(images.iter().map(image_block));
             }
-            (tool_result_block(id, text, is_error), extra)
-        }
-        ImageTransport::None => {
-            let note = "[the image was not shown: the current model does not accept images]";
-            (
-                tool_result_block(id, format!("{text}\n{note}"), is_error),
-                Vec::new(),
-            )
+            ImageTransport::UserTurn => {
+                for image in images {
+                    extra.push(ContentBlock::Text {
+                        text: bricks_tools::tool_image_label(id, image),
+                    });
+                    extra.push(image_block(image));
+                }
+            }
+            ImageTransport::None => {
+                text.push_str("\n[the image was not shown: the current model does not accept images]");
+            }
         }
     }
+
+    if !videos.is_empty() {
+        match video_transport {
+            VideoTransport::ToolResult => {
+                result_media.extend(videos.iter().map(video_block));
+            }
+            VideoTransport::UserTurn => {
+                for video in videos {
+                    extra.push(ContentBlock::Text {
+                        text: bricks_tools::tool_video_label(id, video),
+                    });
+                    extra.push(video_block(video));
+                }
+            }
+            VideoTransport::None => {
+                text.push_str(
+                    "\n[the video was not shown: the current model does not accept video input]",
+                );
+            }
+        }
+    }
+
+    let block = if result_media.is_empty() {
+        tool_result_block(id, text, is_error)
+    } else {
+        let mut blocks = vec![ContentBlock::Text { text }];
+        blocks.extend(result_media);
+        ContentBlock::ToolResult {
+            tool_use_id: id.to_string(),
+            content: ToolResultContent::Blocks(blocks),
+            is_error: Some(is_error),
+        }
+    };
+    (block, extra)
 }
 
 pub(super) fn tool_result_block(id: &str, text: String, is_error: bool) -> ContentBlock {
@@ -285,7 +316,7 @@ pub(super) enum CallSlot {
 pub(super) async fn publish_call(
     agent: &Agent,
     event_tx: &mpsc::Sender<AgentEvent>,
-    tool_ctx: &ToolContext,
+    _tool_ctx: &ToolContext,
     call: FinishedCall,
     verified_skill: bool,
 ) -> PublishedCall {
@@ -299,23 +330,13 @@ pub(super) async fn publish_call(
         executed,
         ..
     } = call;
-    // Anything but a read may have changed files: cached code-understanding
-    // answers are dropped. A call refused or denied before running changed
-    // nothing.
-    if executed
-        && agent.tools.iter().any(|t| {
-            t.name() == name && t.permission_level() != bricks_tools::PermissionLevel::ReadOnly
-        })
-    {
-        bricks_tools::code_scout::notify_workspace_changed(tool_ctx);
-    }
-    // The same, for the git state of the next request (a plan update
-    // changes no file).
+    // Mark the git state stale for the next request when a mutative tool ran
+    // (a plan update or read-only call changes no file).
     if executed
         && agent.tool_list().iter().any(|t| {
             t.name() == name
                 && !matches!(
-                    t.permission_level(),
+                    t.permission_level_for_ctx(&input, _tool_ctx),
                     bricks_tools::PermissionLevel::ReadOnly | bricks_tools::PermissionLevel::None
                 )
         })

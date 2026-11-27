@@ -114,6 +114,9 @@ pub(crate) async fn clear_context(agent: &Agent) -> Result<usize> {
     agent.compaction_state.lock().applied = number;
     // The instructions of active skills left with the context.
     agent.clear_skills();
+    agent.read_file_state.clear();
+    agent.instruction_files.lock().mark_compacted();
+    agent.request_env.mark_full_git();
     agent
         .context
         .lock()
@@ -155,6 +158,11 @@ pub(crate) async fn revise_context(agent: &Agent, position: usize) -> Result<usi
         messages.clone()
     };
     agent.forget_skills_absent_from(&kept);
+    agent.read_file_state.clear();
+    if position == 0 {
+        agent.instruction_files.lock().mark_compacted();
+        agent.request_env.mark_full_git();
+    }
     agent
         .context
         .lock()

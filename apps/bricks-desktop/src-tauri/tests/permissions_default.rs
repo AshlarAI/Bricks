@@ -14,7 +14,7 @@ use bricks_desktop_lib::contract::{Preferences, Theme};
 use bricks_desktop_lib::services::prefs::PrefsStore;
 
 fn prefs_file(home: &std::path::Path) -> std::path::PathBuf {
-    home.join("desktop").join("preferences.json")
+    home.join("config.json")
 }
 
 #[test]
@@ -108,7 +108,9 @@ fn an_old_file_with_the_former_setting_keeps_its_values_and_never_chooses_a_poli
     ] {
         std::fs::write(
             &file,
-            format!("{{\"theme\": \"dark\", \"left_width\": 300, \"tool_approval\": {former}}}"),
+            format!(
+                "{{\"schema_version\":1,\"preferences\":{{\"theme\":\"dark\",\"left_width\":300,\"tool_approval\":{former}}}}}"
+            ),
         )
         .unwrap();
         let prefs = PrefsStore::at(file.clone()).get();
@@ -135,7 +137,7 @@ fn a_save_drops_the_former_setting_and_keeps_the_other_values() {
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(
         &file,
-        r#"{"theme": "dark", "left_width": 300, "tool_approval": "no_confirmation"}"#,
+        r#"{"schema_version":1,"preferences":{"theme":"dark","left_width":300,"tool_approval":"no_confirmation"}}"#,
     )
     .unwrap();
     let store = PrefsStore::at(file.clone());
@@ -144,9 +146,9 @@ fn a_save_drops_the_former_setting_and_keeps_the_other_values() {
 
     let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert!(
-        saved.get("tool_approval").is_none(),
+        saved["preferences"].get("tool_approval").is_none(),
         "the key is not written back"
     );
-    assert_eq!(saved["theme"], "dark");
-    assert_eq!(saved["left_width"], 300);
+    assert_eq!(saved["preferences"]["theme"], "dark");
+    assert_eq!(saved["preferences"]["left_width"], 300);
 }

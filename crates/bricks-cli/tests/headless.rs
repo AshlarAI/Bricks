@@ -68,7 +68,7 @@ fn json_output_is_complete_versioned_and_alone_on_stdout() {
 fn a_run_without_a_final_answer_is_incomplete() {
     let same = || tool("c1", "Read", json!({"file_path": "absent.txt"}));
     let m = model((0..8).map(|_| same()).collect());
-    let p = Project::new(&m.url, "max_turns = 1\n");
+    let p = Project::new(&m.url, r#"{"agent":{"max_turns":1}}"#);
     let out = p.run(&["run", "--json", "--non-interactive", "Lis"], None);
     assert_eq!(
         out.status.code(),
@@ -81,7 +81,7 @@ fn a_run_without_a_final_answer_is_incomplete() {
     assert!(
         opened["warnings"]
             .to_string()
-            .contains("unknown key ignored: [agent] max_turns"),
+            .contains("unknown key ignored: agent.max_turns"),
         "{opened}"
     );
     let fin: Vec<_> = evs.iter().filter(|e| e["type"] == "run_finished").collect();
@@ -197,7 +197,7 @@ fn an_obsolete_permissions_section_is_not_applied() {
     // not as a denial).
     let p = Project::new(
         &m.url,
-        "[permissions]\nwrite = \"deny\"\nexecute = \"allow\"\n",
+        r#"{"permissions":{"write":"deny","execute":"allow"}}"#,
     );
     let out = p.run(
         &["run", "--json", "--non-interactive", "Écris le fichier"],
@@ -215,7 +215,7 @@ fn an_obsolete_permissions_section_is_not_applied() {
     assert!(!target.exists());
     // The section is reported on stderr, stdout stays JSON lines.
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("[permissions] is no longer read"), "{err}");
+    assert!(err.contains("permissions is no longer read"), "{err}");
 }
 
 #[test]
@@ -237,11 +237,11 @@ fn configuration_errors_are_reported_with_code_2() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("turbo"));
     // Missing providers file.
     let out = p.run(
-        &["--providers", "/nonexistent/providers.toml", "run", "x"],
+        &["--providers", "/nonexistent/config.json", "run", "x"],
         None,
     );
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("providers"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("config.json"));
     // No prompt at all (stdin empty).
     let out = p.run(&["run"], Some(""));
     assert_eq!(out.status.code(), Some(2));
@@ -480,7 +480,7 @@ fn a_background_child_still_running_at_the_end_is_cancelled_at_once() {
         ],
         HANG.into(),
     );
-    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 0\n");
+    let p = Project::new(&m.url, r#"{"agents":{"background_drain_ms":0}}"#);
     p.allow_tools_by_default(&["Agent"]);
     let started = Instant::now();
     let out = p.run(
@@ -513,7 +513,7 @@ fn a_background_child_that_finishes_in_the_drain_completes_the_run() {
         ],
         text("Fait."),
     );
-    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 10000\n");
+    let p = Project::new(&m.url, r#"{"agents":{"background_drain_ms":10000}}"#);
     p.allow_tools_by_default(&["Agent"]);
     let out = p.run(
         &["run", "--non-interactive", "Lance un travail rapide"],
@@ -539,7 +539,7 @@ fn drain_zero_cancels_at_once_and_still_reports_the_final_usage() {
         ],
         HANG.into(),
     );
-    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 0\n");
+    let p = Project::new(&m.url, r#"{"agents":{"background_drain_ms":0}}"#);
     p.allow_tools_by_default(&["Agent"]);
     let started = Instant::now();
     let out = p.run(
@@ -649,7 +649,7 @@ fn an_explicit_drain_is_the_wait_the_run_announces() {
         ],
         HANG.into(),
     );
-    let p = Project::new(&m.url, "[agents]\nbackground_drain_ms = 600000\n");
+    let p = Project::new(&m.url, r#"{"agents":{"background_drain_ms":600000}}"#);
     p.allow_tools_by_default(&["Agent"]);
     let mut c = p.command(&["run", "--non-interactive", "Lance un travail de fond"]);
     c.stdin(std::process::Stdio::null())

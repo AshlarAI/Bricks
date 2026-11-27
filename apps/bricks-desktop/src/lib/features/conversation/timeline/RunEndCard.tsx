@@ -3,10 +3,11 @@
 // file opens its changes in the reader, or shows itself in the Finder. The time
 // worked is in the bar of its steps (WorkBlock.tsx).
 import { useState } from 'react'
-import { ChevronRightIcon, ExternalLinkIcon, EyeIcon } from 'lucide-react'
+import { ChevronRightIcon, CircleAlertIcon, ExternalLinkIcon, EyeIcon, TriangleAlertIcon } from 'lucide-react'
 import { localeTag, t, useLanguage } from '$lib/i18n/i18n'
 import { Button } from '$lib/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '$lib/components/ui/collapsible'
+import { Marker, MarkerContent, MarkerIcon } from '$lib/components/ui/marker'
 import FileIcon from '$lib/features/file-icons/FileIcon'
 import DiffStat from '$lib/layout/DiffStat'
 import { readerFileReveal } from '$lib/ipc/reader'
@@ -18,6 +19,7 @@ import {
   type RunInfo,
 } from '$lib/state/conversation'
 import { reader } from '$lib/state/reader'
+import { resolveChatError } from '../chat-error'
 import { runEndSummary } from '../runend'
 
 export interface RunEndCardProps {
@@ -62,6 +64,7 @@ export function RunEndCard({ item, conversation }: RunEndCardProps) {
         )
   const unsatisfied = run?.approvalsUnsatisfied.length ?? 0
   const reason = summary.outcome === 'incomplete' ? summary.reason : null
+  const errorMessage = summary.error ? resolveChatError(summary.error).message : null
 
   const [open, setOpen] = useState(true)
   /** Error of the last « Afficher dans le Finder »; cleared by the next one. */
@@ -94,15 +97,33 @@ export function RunEndCard({ item, conversation }: RunEndCardProps) {
     }
   }
 
-  if (!reason && unsatisfied === 0 && files.length === 0) return null
+  if (!errorMessage && !reason && unsatisfied === 0 && files.length === 0) return null
 
   return (
     <div className="flex flex-col gap-2">
-      {reason && <p className="text-xs break-words text-warning">{t('conversation.reason', { reason })}</p>}
+      {errorMessage && (
+        <Marker tone="error" role="alert">
+          <MarkerIcon>
+            <CircleAlertIcon aria-hidden="true" />
+          </MarkerIcon>
+          <MarkerContent>{errorMessage}</MarkerContent>
+        </Marker>
+      )}
+      {reason && (
+        <Marker tone="warning">
+          <MarkerIcon>
+            <TriangleAlertIcon aria-hidden="true" />
+          </MarkerIcon>
+          <MarkerContent>{t('conversation.reason', { reason })}</MarkerContent>
+        </Marker>
+      )}
       {unsatisfied > 0 && (
-        <p className="text-xs text-warning">
-          {t('conversation.approvalsNotGranted', { count: unsatisfied })}
-        </p>
+        <Marker tone="warning">
+          <MarkerIcon>
+            <TriangleAlertIcon aria-hidden="true" />
+          </MarkerIcon>
+          <MarkerContent>{t('conversation.approvalsNotGranted', { count: unsatisfied })}</MarkerContent>
+        </Marker>
       )}
 
       {files.length > 0 && (
@@ -170,9 +191,12 @@ export function RunEndCard({ item, conversation }: RunEndCardProps) {
             </CollapsibleContent>
           </Collapsible>
           {revealError && (
-            <p role="alert" className="border-t border-border px-3 py-1.5 text-xs break-words text-destructive">
-              {revealError}
-            </p>
+            <Marker tone="error" role="alert" className="border-t border-border px-3 py-1.5">
+              <MarkerIcon>
+                <CircleAlertIcon aria-hidden="true" />
+              </MarkerIcon>
+              <MarkerContent>{revealError}</MarkerContent>
+            </Marker>
           )}
         </section>
       )}

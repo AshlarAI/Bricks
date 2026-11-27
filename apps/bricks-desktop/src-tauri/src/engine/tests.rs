@@ -405,11 +405,11 @@ async fn the_bridge_keeps_the_last_run_and_its_sequence_number() {
 async fn a_run_after_its_model_was_removed_is_refused_with_the_reason() {
     use crate::commands::providers::{apply_edit, current_file};
     use crate::engine::catalog::DesktopCatalog;
-    use crate::services::providers_toml::{Edit, fixtures::PROVIDERS};
+    use crate::services::providers_json::{Edit, fixtures::PROVIDERS};
     use bricks_agent::control::{Activity, ModelCatalog, Prompt};
 
     let dir = tempfile::tempdir().unwrap();
-    let providers = dir.path().join("providers.toml");
+    let providers = dir.path().join("config.json");
     std::fs::write(&providers, PROVIDERS).unwrap();
     let wd = dir.path().join("projet");
     std::fs::create_dir_all(&wd).unwrap();
@@ -1587,10 +1587,10 @@ async fn a_message_to_a_stored_conversation_that_is_not_open_opens_it_and_is_del
     // The real registry (the local provider of the fixtures, refusing its
     // connections at once), so opening the conversation goes through the
     // same path as the application's: no scripted catalog.
-    let providers = home.path().join("providers.toml");
+    let providers = home.path().join("config.json");
     std::fs::write(
         &providers,
-        crate::services::providers_toml::fixtures::PROVIDERS,
+        crate::services::providers_json::fixtures::PROVIDERS,
     )
     .unwrap();
     let registry = bricks_config::load_registry(Some(&providers)).map(Arc::new);

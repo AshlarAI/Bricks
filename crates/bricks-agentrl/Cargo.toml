@@ -14,7 +14,6 @@ bricks-provider = { workspace = true }
 bricks-tools = { workspace = true }
 bricks-agent = { workspace = true }
 bricks-memory = { workspace = true }
-bricks-embeddings = { workspace = true }
 bricks-vms = { workspace = true }
 bricks-compression = { workspace = true }
 bricks-agentlang = { workspace = true }

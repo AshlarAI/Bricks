@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 
 /// Version of the event and command schema. Incremented on any change a
 /// consumer could notice; documented in `docs/cli.md`.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// Largest patch an edit event carries for one file. A longer one is cut and
 /// marked (`patch_truncated`).
@@ -37,6 +37,11 @@ pub const MAX_PATCH_BYTES: usize = 512 * 1024;
 /// Largest output a sub-agent's tool event carries (`output_truncated` says
 /// when it was cut).
 pub const MAX_SUBAGENT_OUTPUT_BYTES: usize = 96 * 1024;
+
+/// Largest output a top-level `ToolFinished` event carries over the
+/// controller/bridge (`output_truncated` says when it was cut; the engine's
+/// own history and `RawStore` keep the full text).
+pub const MAX_TOOL_OUTPUT_BYTES: usize = 256 * 1024;
 
 /// The wire name of a tool call's status (`status` of the tool events).
 pub fn tool_status_name(status: ToolStatus) -> &'static str {
@@ -224,6 +229,8 @@ pub enum Event {
         is_error: bool,
         duration_ms: u64,
         output: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        output_truncated: bool,
         /// `false` when the call never ran (refused, denied, blocked by a
         /// hook). Absent: it ran.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -342,6 +349,10 @@ pub enum Event {
     /// `revision` orders it against the snapshot's and other updates.
     PlanUpdated {
         plan: bricks_tools::todo_write::PlanState,
+    },
+    /// User steering message queued into the active run.
+    MessageInjected {
+        text: String,
     },
     /// Something worth showing that is not an error (retries, configuration
     /// diagnostics, nudges).
@@ -582,6 +593,7 @@ impl Event {
             Event::SessionSaved => "session_saved",
             Event::TitleChanged { .. } => "title_changed",
             Event::PlanUpdated { .. } => "plan_updated",
+            Event::MessageInjected { .. } => "message_injected",
             Event::Notice { .. } => "notice",
             Event::RunFinished { .. } => "run_finished",
             Event::MemoryMaintenanceStarted => "memory_maintenance_started",
@@ -725,6 +737,10 @@ pub enum Command {
     /// Start a run. Refused while a run is active (never queued silently),
     /// or when one of the prompt's `skills` cannot be used.
     Submit { prompt: Prompt },
+    /// Queue a user steering message into the active run for the next round.
+    /// Accepted only while a run is active; rejected otherwise or when the
+    /// message is empty, too large, or the queue is full.
+    Inject { text: String },
     /// Replace a past user message and run again from it: the active
     /// context is cut before that message (the context as it was is kept
     /// as a snapshot, and stays in the raw history), then `prompt` is
@@ -835,6 +851,7 @@ impl Command {
     pub fn name(&self) -> &'static str {
         match self {
             Command::Submit { .. } => "submit",
+            Command::Inject { .. } => "inject",
             Command::Revise { .. } => "revise",
             Command::Cancel => "cancel",
             Command::SetModel { .. } => "set_model",
@@ -908,8 +925,8 @@ mod tests {
     }
 
     #[test]
-    fn the_schema_is_seven_and_the_new_fields_are_only_written_when_set() {
-        assert_eq!(SCHEMA_VERSION, 9);
+    fn the_schema_is_up_to_date_and_the_new_fields_are_only_written_when_set() {
+        assert_eq!(SCHEMA_VERSION, 10);
         let mut w = written(false);
         let v = serde_json::to_value(&w).unwrap();
         assert!(
@@ -981,12 +998,14 @@ mod tests {
             is_error: true,
             duration_ms: 0,
             output: "refusé".into(),
+            output_truncated: false,
             executed: Some(false),
             status: Some(tool_status_name(ToolStatus::Failure).into()),
         };
         let v = serde_json::to_value(&event).unwrap();
         assert_eq!(v["executed"], false);
         assert_eq!(v["status"], "failure");
+        assert!(v.get("output_truncated").is_none());
     }
 
     #[test]

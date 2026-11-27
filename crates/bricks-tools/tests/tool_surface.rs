@@ -25,8 +25,9 @@ fn every_tool_has_a_substantive_description() {
 }
 
 /// The native tools removed so far: fifteen in 14.8.1, the three
-/// background-task tools when `Job` took over, and four unused system tools.
-const REMOVED: [&str; 22] = [
+/// background-task tools when `Job` took over, four unused system tools,
+/// and CodeScout/CodeSearch replaced by enriched Grep.
+const REMOVED: [&str; 24] = [
     "EnterPlanMode",
     "ExitPlanMode",
     "CronCreate",
@@ -49,6 +50,8 @@ const REMOVED: [&str; 22] = [
     "ExitWorktree",
     "SyntheticOutput",
     "ToolSearch",
+    "CodeScout",
+    "CodeSearch",
 ];
 
 fn names(tools: &[Box<dyn bricks_tools::Tool>]) -> Vec<String> {
@@ -66,7 +69,6 @@ fn the_built_in_surface_is_exactly_the_kept_tools() {
         "ApplyPatch",
         "Glob",
         "Grep",
-        "CodeScout",
         "CodeStats",
     ];
     if cfg!(unix) {
@@ -91,7 +93,7 @@ fn the_built_in_surface_is_exactly_the_kept_tools() {
 
     // `all()` is the coding tools plus the plan.
     let mut coding_and_plan = names(&bricks_tools::coding());
-    assert_eq!(coding_and_plan.len(), if cfg!(unix) { 12 } else { 11 });
+    assert_eq!(coding_and_plan.len(), if cfg!(unix) { 11 } else { 10 });
     coding_and_plan.extend(names(&bricks_tools::planning()));
     assert_eq!(all, coding_and_plan);
     assert_eq!(names(&bricks_tools::planning()), ["TodoWrite"]);

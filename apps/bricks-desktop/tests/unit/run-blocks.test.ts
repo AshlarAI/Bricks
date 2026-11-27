@@ -164,6 +164,21 @@ describe('timelineBlocks: the steps of a run gather under its message', () => {
 		conv.items.push({ kind: 'user', id: 'ghost-1', runId: 'run-inconnu', text: 'Perdu', attachments: [] });
 		expect(shape(blocksOf(conv))).toEqual(['user']);
 	});
+
+	it('compaction and context_cleared events produce separator notices outside WorkBlock', () => {
+		const { conv, feed } = startedRun();
+		readCall(conv, feed, 'tc-1');
+		conv.apply(feed.next({ type: 'compaction', reason: 'auto', outcome: 'compacted', compacted: true }));
+		conv.apply(feed.next({ type: 'context_cleared', messages_removed: 4 }));
+		conv.apply(feed.next({ type: 'text_delta', text: 'Suite.' }));
+		conv.apply(feed.next({ type: 'run_finished', outcome: 'succeeded', text: 'Suite.', turns: 1 }));
+
+		const blocks = blocksOf(conv);
+		expect(shape(blocks)).toEqual(['user', 'work:1', 'notice', 'notice', 'answer', 'run_end']);
+		expect(workOf(blocks, 1).items.map((i) => i.kind)).toEqual(['tool']);
+		expect(blocks[2]).toMatchObject({ kind: 'item', item: { kind: 'notice', separator: true } });
+		expect(blocks[3]).toMatchObject({ kind: 'item', item: { kind: 'notice', separator: true } });
+	});
 });
 
 describe('answerOf: the answer of an ended run', () => {

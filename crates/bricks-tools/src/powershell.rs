@@ -28,6 +28,9 @@ impl Tool for PowerShellTool {
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::Execute
     }
+    fn is_concurrent_safe(&self, _input: &Value) -> bool {
+        false
+    }
     fn category(&self) -> ToolCategory {
         ToolCategory::Shell
     }

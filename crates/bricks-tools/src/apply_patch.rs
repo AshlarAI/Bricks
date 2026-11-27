@@ -140,15 +140,20 @@ impl Tool for ApplyPatchTool {
         }
         match apply_unified_patch(&input.patch, &ctx.working_dir) {
             Ok(changes) if changes.is_empty() => ToolResult::error(NO_FILE_CHANGES),
-            Ok(changes) => ToolResult::success(format!(
-                "Patch applied to {} file(s):\n{}",
-                changes.len(),
-                changes
-                    .iter()
-                    .map(|c| format!("  {c}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )),
+            Ok(changes) => {
+                for (path, _) in &targets {
+                    crate::read_state::ReadFileState::invalidate_in_ctx(ctx, path);
+                }
+                ToolResult::success(format!(
+                    "Patch applied to {} file(s):\n{}",
+                    changes.len(),
+                    changes
+                        .iter()
+                        .map(|c| format!("  {c}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ))
+            }
             Err(e) => ToolResult::error(format!("The patch was not applied: {e}")),
         }
     }
@@ -940,5 +945,49 @@ mod tests {
     fn targets_match_what_is_written() {
         let patch = "--- a/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n-a\n+b\n--- /dev/null\n+++ b/new.rs\n@@ -0,0 +1 @@\n+n\n--- a/gone.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-g\n";
         assert_eq!(patch_targets(patch), vec!["x.rs", "new.rs", "gone.rs"]);
+    }
+
+    #[tokio::test]
+    async fn apply_patch_invalidates_read_state_for_updated_and_deleted_files() {
+        let d = dir_with(&[("x.rs", "a\n"), ("gone.rs", "g\n")]);
+        let state = Arc::new(crate::read_state::ReadFileState::default());
+        let ctx = ToolContext {
+            working_dir: d.path().to_path_buf(),
+            session_id: "patch-read-state-test".into(),
+            permissions: Arc::new(crate::permissions::AllowAll),
+            cost_tracker: Arc::new(CostTracker::new()),
+            mcp_manager: None,
+            extensions: Extensions::default(),
+        };
+        ctx.extensions.insert(Arc::clone(&state));
+
+        for f in ["x.rs", "gone.rs"] {
+            let r = crate::file_read::FileReadTool
+                .execute(serde_json::json!({ "file_path": f }), &ctx)
+                .await;
+            assert!(!r.is_error, "{}", r.content);
+        }
+
+        let patch = "--- a/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n-a\n+b\n\
+                     --- /dev/null\n+++ b/new.rs\n@@ -0,0 +1 @@\n+n\n\
+                     --- a/gone.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-g\n";
+        let res = ApplyPatchTool
+            .execute(serde_json::json!({ "patch": patch }), &ctx)
+            .await;
+        assert!(!res.is_error, "{}", res.content);
+
+        let rx = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "x.rs" }), &ctx)
+            .await;
+        assert!(rx.content.contains("1 | b"), "{}", rx.content);
+        assert!(!rx.content.starts_with("[file_unchanged]"));
+
+        // Verify deleted file entry was removed from ReadFileState even if recreated with same bytes.
+        std::fs::write(d.path().join("gone.rs"), "g\n").unwrap();
+        let rg = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "gone.rs" }), &ctx)
+            .await;
+        assert!(rg.content.contains("1 | g"), "{}", rg.content);
+        assert!(!rg.content.starts_with("[file_unchanged]"));
     }
 }

@@ -36,14 +36,13 @@ struct Cli {
     #[arg(long)]
     model: String,
 
-    /// Providers configuration file (`.toml` or `.json`). Default:
-    /// `~/.bricks/providers.toml`. An explicit path replaces the default; the
-    /// two are never merged.
+    /// Providers JSON configuration file. Default: `~/.bricks/config.json`.
+    /// An explicit path replaces the default; the two are never merged.
     #[arg(long)]
     providers: Option<String>,
 
     /// Tool-output compression for token efficiency: off | minimal | aggressive.
-    /// Default: `[compression] level` of `bricks.toml`, else minimal.
+    /// Default: `compression.level` of `.bricks/config.json`, else minimal.
     #[arg(long)]
     compress: Option<String>,
 
@@ -297,23 +296,26 @@ mod tests {
         let rules = dir.path().join("rules");
         std::fs::create_dir(&rules).unwrap();
         std::fs::write(
-            rules.join("mine.toml"),
-            "schema_version = 1\n[filters.mytool]\nmatch = [{ program = \"mytool\" }]\nmax_lines = 5\n",
+            rules.join("mine.json"),
+            r#"{"schema_version":1,"filters":{"mytool":{"match":[{"program":"mytool"}],"max_lines":5}}}"#,
         )
         .unwrap();
+        let proj = dir.path().join(".bricks").join("config.json");
+        std::fs::create_dir_all(proj.parent().unwrap()).unwrap();
         std::fs::write(
-            dir.path().join("bricks.toml"),
-            "[compression.filters.mytool]\nmatch = [{ program = \"mytool\" }]\nmax_lines = 9\n",
+            &proj,
+            r#"{"compression":{"filters":{"mytool":{"match":[{"program":"mytool"}],"max_lines":9}}}}"#,
         )
         .unwrap();
         let config = load_bricks_config(&bricks_compression::RuleSources {
             user_rules_dir: Some(rules),
-            bricks_toml: Some(dir.path().join("bricks.toml")),
+            user_config: None,
+            project_config: Some(proj),
         });
         let r = configure_runner(runner(dir.path()), config, None);
         let applied = r.bricks_config().unwrap();
         assert!(applied.diagnostics.is_empty());
-        // bricks.toml wins over the user rule file, as everywhere else.
+        // Project config wins over the user rule file, as everywhere else.
         assert_eq!(applied.rules.get("mytool").unwrap().max_lines, Some(9));
     }
 
@@ -322,7 +324,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = load_bricks_config(&bricks_compression::RuleSources {
             user_rules_dir: Some(dir.path().join("absent")),
-            bricks_toml: Some(dir.path().join("bricks.toml")),
+            user_config: None,
+            project_config: Some(dir.path().join(".bricks").join("config.json")),
         });
         let r = configure_runner(runner(dir.path()), config, None);
         let applied = r.bricks_config().unwrap();

@@ -1,11 +1,10 @@
 //! General Agent Framework Benchmark — Bricks harness
 //!
-//! Five axes:
+//! Four axes:
 //!   1. Instantiation (μs) — Agent::builder().build()
 //!   2. Per-agent memory (bytes) — jemalloc allocated delta over N instantiations
 //!   3. Max concurrent agents — spawn N tasks, first-tool-call latency p99, process RSS
 //!   4. Graph memory recall under load — Bricks-only
-//!   5. Semantic search under load — Bricks-only
 //!
 //! Writes JSON output to bench/general-agents/results/cersei.json matching the
 //! shared schema read by bench/general-agents/aggregate.py.
@@ -30,7 +29,6 @@ use bricks_types::*;
 use serde::Serialize;
 use serde_json::json;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -45,7 +43,6 @@ struct Report {
     axis_2_per_agent_bytes: Option<MemStats>,
     axis_3_max_concurrent: Option<Vec<ConcurrencyPoint>>,
     axis_4_graph_recall_us: Option<ScalingLatency>,
-    axis_5_semantic_search_us: Option<ScalingLatency>,
 }
 
 #[derive(Serialize)]
@@ -460,113 +457,6 @@ async fn axis_4_graph_under_load() -> ScalingLatency {
     }
 }
 
-// ─── Axis 5 — Semantic search under load ───────────────────────────────────
-
-use bricks_embeddings::{EmbeddingError, EmbeddingProvider, EmbeddingStore, Metric};
-
-/// Deterministic stub embedder — hashes text into a 64-d vector. Zero network.
-struct StubEmbedder {
-    dim: usize,
-}
-
-#[async_trait]
-impl EmbeddingProvider for StubEmbedder {
-    fn name(&self) -> &str {
-        "stub"
-    }
-    fn dimensions(&self) -> usize {
-        self.dim
-    }
-
-    async fn embed_batch(
-        &self,
-        texts: &[String],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
-        Ok(texts.iter().map(|t| hash_vec(t, self.dim)).collect())
-    }
-}
-
-fn hash_vec(text: &str, dim: usize) -> Vec<f32> {
-    use std::hash::{Hash, Hasher};
-    let mut v = Vec::with_capacity(dim);
-    for i in 0..dim {
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut h);
-        (i as u64).hash(&mut h);
-        let x = h.finish() as f32 / u64::MAX as f32;
-        v.push(x * 2.0 - 1.0);
-    }
-    // L2-normalize so cosine makes sense
-    let mag = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
-    for x in v.iter_mut() {
-        *x /= mag;
-    }
-    v
-}
-
-async fn axis_5_semantic_under_load() -> ScalingLatency {
-    async fn measure(n_chunks: usize) -> LatencyStats {
-        let store =
-            Arc::new(EmbeddingStore::new(StubEmbedder { dim: 64 }, Metric::Cosine).expect("store"));
-        println!("  axis-5  seeding {n_chunks} chunks...");
-        let batch: Vec<(u64, String)> = (0..n_chunks)
-            .map(|i| (i as u64, format!("chunk_{i} about rust topic_{}", i % 20)))
-            .collect();
-        // Ingest in batches of 5000 to keep memory reasonable
-        for slice in batch.chunks(5000) {
-            store.add_batch(slice).await.expect("add_batch");
-        }
-
-        // Semantic search is async-native — can sustain higher concurrency
-        // cleanly, so we keep 50 concurrent "agents" × 100 queries each.
-        let concurrency = 50usize;
-        let per_agent = 100usize;
-        let mut handles = Vec::with_capacity(concurrency);
-        for a in 0..concurrency {
-            let store = Arc::clone(&store);
-            handles.push(tokio::spawn(async move {
-                let mut samples = Vec::with_capacity(per_agent);
-                for q in 0..per_agent {
-                    let query = format!("rust topic_{}", (a + q) % 20);
-                    let t = Instant::now();
-                    let _ = store.search(&query, 5).await;
-                    samples.push(us(t.elapsed()));
-                }
-                samples
-            }));
-        }
-        let mut all = Vec::with_capacity(concurrency * per_agent);
-        for h in handles {
-            all.extend(h.await.unwrap());
-        }
-        let stats = summarize(all);
-        println!(
-            "  axis-5  n={n_chunks} p50={:.1}us p95={:.1}us p99={:.1}us",
-            stats.p50, stats.p95, stats.p99
-        );
-        stats
-    }
-
-    let max = std::env::var("CERSEI_BENCH_SEMANTIC_MAX")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10_000);
-    ScalingLatency {
-        at_10k: measure(max.min(10_000)).await,
-        at_100k: if max >= 100_000 {
-            measure(100_000).await
-        } else {
-            LatencyStats {
-                p50: 0.0,
-                p95: 0.0,
-                p99: 0.0,
-                mean: 0.0,
-                samples: 0,
-            }
-        },
-    }
-}
-
 // ─── Entry point ───────────────────────────────────────────────────────────
 
 fn enabled(axes: &[u8], n: u8) -> bool {
@@ -664,14 +554,6 @@ async fn main() {
         None
     };
 
-    // Axis 5
-    let axis_5 = if enabled(&axes, 5) {
-        println!("\n[axis 5] semantic search under load (100 agents × 100 queries)...");
-        Some(axis_5_semantic_under_load().await)
-    } else {
-        None
-    };
-
     let report = Report {
         framework: "cersei",
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -680,7 +562,6 @@ async fn main() {
         axis_2_per_agent_bytes: axis_2,
         axis_3_max_concurrent: axis_3,
         axis_4_graph_recall_us: axis_4,
-        axis_5_semantic_search_us: axis_5,
     };
 
     let out = write_report(&report);

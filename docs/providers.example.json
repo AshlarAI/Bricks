@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "custom",
+      "name": "Mon fournisseur",
+      "endpoint": "https://api.example.com/v1",
+      "protocol": "chat_completions",
+      "auth": "bearer",
+      "api_key_env": "BRICKS_CUSTOM_API_KEY",
+      "models": [
+        {
+          "id": "flash",
+          "name": "Mon modèle Flash",
+          "api_model": "vendor-flash",
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 96000,
+            "max_output_tokens": 32000
+          },
+          "pricing": {
+            "currency": "USD",
+            "per_tokens": 1000000,
+            "input": "0.30",
+            "output": "1.20",
+            "cache_read": "0.03",
+            "cache_write": "0.40"
+          },
+          "reasoning": {
+            "default": "approfondi",
+            "profiles": [
+              {
+                "id": "rapide",
+                "label": "Rapide",
+                "parameters": {
+                  "reasoning_effort": "low"
+                }
+              },
+              {
+                "id": "approfondi",
+                "label": "Approfondi",
+                "parameters": {
+                  "reasoning_effort": "high"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "expert",
+          "name": "Mon modèle Expert",
+          "api_model": "vendor-expert",
+          "protocol": "responses",
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 64000,
+            "max_output_tokens": 16000
+          },
+          "reasoning": {
+            "profiles": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "chat-example",
+      "name": "Chat Completions server",
+      "endpoint": "https://chat.example.com/v1",
+      "protocol": "chat_completions",
+      "auth": "bearer",
+      "api_key_env": "BRICKS_CHAT_EXAMPLE_KEY",
+      "compat": {
+        "max_tokens_field": "max_completion_tokens"
+      },
+      "models": [
+        {
+          "id": "reasoner",
+          "name": "Reasoning model",
+          "api_model": "vendor-reasoner",
+          "input_modalities": [
+            "text",
+            "image",
+            "audio",
+            "document"
+          ],
+          "document_mime_types": [
+            "application/pdf"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "streaming": true,
+          "remove_parameters": [
+            "/temperature"
+          ],
+          "limits": {
+            "max_input_tokens": 200000,
+            "max_output_tokens": 64000
+          },
+          "reasoning": {
+            "default": "medium",
+            "profiles": [
+              {
+                "id": "off",
+                "label": "No reasoning",
+                "parameters": {
+                  "reasoning_effort": "none"
+                }
+              },
+              {
+                "id": "medium",
+                "parameters": {
+                  "reasoning_effort": "medium"
+                }
+              },
+              {
+                "id": "ultra",
+                "parameters": {
+                  "reasoning_effort": "high",
+                  "max_completion_tokens": 60000
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "responses-example",
+      "name": "Responses server",
+      "endpoint": "https://responses.example.com/v1",
+      "protocol": "responses",
+      "auth": "bearer",
+      "api_key_env": "BRICKS_RESPONSES_EXAMPLE_KEY",
+      "models": [
+        {
+          "id": "agent",
+          "name": "Agentic model",
+          "api_model": "vendor-agent",
+          "input_modalities": [
+            "text",
+            "image",
+            "document"
+          ],
+          "document_mime_types": [
+            "application/pdf",
+            "text/*"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 400000,
+            "max_output_tokens": 128000
+          },
+          "parameters": {
+            "store": false,
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "reasoning": {
+              "summary": "auto"
+            }
+          },
+          "reasoning": {
+            "default": "standard",
+            "profiles": [
+              {
+                "id": "standard",
+                "parameters": {
+                  "reasoning": {
+                    "effort": "medium"
+                  }
+                }
+              },
+              {
+                "id": "deep",
+                "parameters": {
+                  "reasoning": {
+                    "effort": "high"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "messages-example",
+      "name": "Messages server",
+      "endpoint": "https://messages.example.com/v1",
+      "protocol": "anthropic_messages",
+      "auth": "api_key_header",
+      "api_key_env": "BRICKS_MESSAGES_EXAMPLE_KEY",
+      "models": [
+        {
+          "id": "thinker",
+          "name": "Thinking model",
+          "api_model": "vendor-thinker",
+          "input_modalities": [
+            "text",
+            "image",
+            "document"
+          ],
+          "document_mime_types": [
+            "application/pdf",
+            "text/plain"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 200000,
+            "max_output_tokens": 64000
+          },
+          "pricing": {
+            "currency": "USD",
+            "per_tokens": 1000000,
+            "input": "3.00",
+            "output": "15.00",
+            "cache_read": "0.30",
+            "cache_write": "3.75",
+            "cache_write_variants": {
+              "1h": "6.00"
+            }
+          },
+          "token_counting": {},
+          "reasoning": {
+            "default": "adaptive",
+            "profiles": [
+              {
+                "id": "off",
+                "label": "Thinking off",
+                "parameters": {
+                  "thinking": {
+                    "type": "disabled"
+                  }
+                }
+              },
+              {
+                "id": "adaptive",
+                "label": "Adaptive",
+                "parameters": {
+                  "thinking": {
+                    "type": "adaptive"
+                  },
+                  "output_config": {
+                    "effort": "high"
+                  }
+                }
+              },
+              {
+                "id": "budgeted",
+                "label": "Fixed budget",
+                "parameters": {
+                  "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 8000
+                  }
+                },
+                "remove": [
+                  "/temperature"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "name": "Local server",
+      "endpoint": "http://localhost:11434/v1",
+      "protocol": "chat_completions",
+      "auth": "none",
+      "models": [
+        {
+          "id": "coder",
+          "name": "Local coder",
+          "api_model": "your-local-model:7b",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 32000,
+            "max_output_tokens": 8000
+          },
+          "parameters": {
+            "options": {
+              "num_ctx": 32768
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "multi",
+      "name": "Multi-format server",
+      "endpoint": "https://api.multi.example.com",
+      "protocol": "chat_completions",
+      "auth": "bearer",
+      "api_key_env": "BRICKS_MULTI_KEY",
+      "models": [
+        {
+          "id": "flash-chat",
+          "name": "Flash (chat completions)",
+          "api_model": "multi-flash",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 128000,
+            "max_output_tokens": 32000
+          },
+          "pricing": {
+            "currency": "USD",
+            "per_tokens": 1000000,
+            "input": "0.14",
+            "output": "0.28",
+            "cache_read": "0.014",
+            "variants": {
+              "offpeak": {
+                "input": "0.07",
+                "output": "0.14",
+                "cache_read": "0.007"
+              }
+            }
+          }
+        },
+        {
+          "id": "flash-responses",
+          "name": "Flash (responses)",
+          "api_model": "multi-flash",
+          "protocol": "responses",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 128000,
+            "max_output_tokens": 32000
+          }
+        },
+        {
+          "id": "flash-messages",
+          "name": "Flash (messages)",
+          "api_model": "multi-flash",
+          "protocol": "anthropic_messages",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 128000,
+            "max_output_tokens": 32000
+          }
+        }
+      ]
+    },
+    {
+      "id": "gateway",
+      "name": "Corporate gateway",
+      "endpoint": "https://gw.example.com/team-a/openai?api-version=2025-01-01",
+      "protocol": "chat_completions",
+      "auth": "api_key_header",
+      "auth_header": "api-key",
+      "api_key_env": "BRICKS_GATEWAY_KEY",
+      "path": "deployments/my-deployment/chat/completions",
+      "headers": {
+        "x-team": "team-a"
+      },
+      "models": [
+        {
+          "id": "deployed",
+          "name": "Deployed model",
+          "api_model": "my-deployment",
+          "streaming": true,
+          "limits": {
+            "max_input_tokens": 128000,
+            "max_output_tokens": 16000
+          }
+        }
+      ]
+    }
+  ]
+}

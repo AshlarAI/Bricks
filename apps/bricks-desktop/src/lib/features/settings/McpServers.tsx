@@ -1,5 +1,5 @@
-// The MCP servers of the person (~/.bricks/mcp.toml, shared with `bricks mcp`) and those the
-// project in view declares in its bricks.toml: a project's server connects only once allowed,
+// The MCP servers of the person (~/.bricks/config.json, shared with `bricks mcp`) and those the
+// project in view declares in its .bricks/config.json: a project's server connects only once allowed,
 // as declared. Changes reach the conversations opened afterwards.
 import { useEffect, useState } from 'react'
 import {

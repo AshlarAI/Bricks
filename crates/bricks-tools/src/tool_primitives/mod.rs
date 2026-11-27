@@ -31,6 +31,7 @@ pub mod diff;
 pub mod fs;
 pub mod git;
 pub mod http;
+pub mod lexical;
 pub mod process;
 pub mod replace;
 pub mod search;

@@ -74,7 +74,6 @@ fn config(
 ) -> EngineConfig {
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     tweak(&mut bricks);
     let mut cfg = EngineConfig::new(
         project,

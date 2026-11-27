@@ -122,6 +122,9 @@ impl ShellState {
                 },
             );
         }
+        if let Some(login) = crate::shell::init_snapshot::cached_login_shell_env() {
+            merge_login_env(&mut exports, login);
+        }
         Self {
             inner: Mutex::new(Inner {
                 exports,
@@ -254,6 +257,19 @@ impl ShellState {
             }
         }
         out
+    }
+
+    /// True if any command in `names` is currently defined as an alias or
+    /// function in this session state.
+    pub fn has_override(&self, names: &[String]) -> bool {
+        let inner = self.inner.lock();
+        names.iter().any(|name| {
+            matches!(inner.aliases.get(name), Some(Field { value: Some(_), .. }))
+                || matches!(
+                    inner.functions.get(name),
+                    Some(Field { value: Some(_), .. })
+                )
+        })
     }
 
     /// What an approval of a command depends on: its definitions, the
@@ -401,6 +417,43 @@ fn prelude_script(base: &Snapshot) -> Vec<u8> {
         }
     }
     s
+}
+
+/// Merge captured login-shell environment entries into process exports:
+/// explicit process variables always win, `MANAGED`/`BASH_FUNC_*`/invalid names
+/// are skipped, and login-shell `PATH` entries are appended without duplicates.
+fn merge_login_env(
+    exports: &mut BTreeMap<String, Field<Option<OsString>>>,
+    login: &std::collections::HashMap<String, String>,
+) {
+    if let Some(login_path) = login.get("PATH") {
+        let extra: Vec<PathBuf> = std::env::split_paths(login_path)
+            .filter(|p| !p.as_os_str().is_empty())
+            .collect();
+        let current = exports.get("PATH").and_then(|f| f.value.clone());
+        if let Some(merged) = extended_path(current.as_deref(), &extra) {
+            exports.insert(
+                "PATH".to_string(),
+                Field {
+                    value: Some(merged),
+                    seq: 0,
+                },
+            );
+        }
+    }
+    for (name, value) in login {
+        if name == "PATH"
+            || MANAGED.contains(&name.as_str())
+            || name.starts_with("BASH_FUNC_")
+            || !valid_name(name)
+        {
+            continue;
+        }
+        exports.entry(name.clone()).or_insert_with(|| Field {
+            value: Some(OsString::from(value)),
+            seq: 0,
+        });
+    }
 }
 
 /// Parses the state a command recorded at its end: NUL-separated records,
@@ -569,5 +622,52 @@ mod tests {
     #[test]
     fn quoting_survives_quotes_and_newlines() {
         assert_eq!(quote(b"it's"), b"'it'\\''s'".to_vec());
+    }
+
+    #[test]
+    fn merge_login_env_fills_missing_vars_dedups_path_and_preserves_overrides() {
+        let mut exports = BTreeMap::new();
+        exports.insert(
+            "PATH".to_string(),
+            Field {
+                value: Some(OsString::from("/override/bin:/usr/bin")),
+                seq: 0,
+            },
+        );
+        exports.insert(
+            "CARGO_HOME".to_string(),
+            Field {
+                value: Some(OsString::from("/explicit/cargo")),
+                seq: 0,
+            },
+        );
+
+        let mut login = std::collections::HashMap::new();
+        login.insert(
+            "PATH".to_string(),
+            "/usr/bin:/opt/homebrew/bin:/override/bin/".to_string(),
+        );
+        login.insert("CARGO_HOME".to_string(), "/login/cargo".to_string());
+        login.insert("NVM_DIR".to_string(), "/Users/dev/.nvm".to_string());
+        login.insert("PWD".to_string(), "/should/be/skipped".to_string());
+        login.insert("BASH_FUNC_foo%%".to_string(), "() { :; }".to_string());
+
+        merge_login_env(&mut exports, &login);
+
+        assert_eq!(
+            exports.get("CARGO_HOME").and_then(|f| f.value.as_ref()),
+            Some(&OsString::from("/explicit/cargo")),
+            "explicit process override must win"
+        );
+        assert_eq!(
+            exports.get("NVM_DIR").and_then(|f| f.value.as_ref()),
+            Some(&OsString::from("/Users/dev/.nvm"))
+        );
+        assert!(!exports.contains_key("PWD"));
+        assert!(!exports.contains_key("BASH_FUNC_foo%%"));
+        assert_eq!(
+            exports.get("PATH").and_then(|f| f.value.as_ref()),
+            Some(&OsString::from("/override/bin:/usr/bin:/opt/homebrew/bin"))
+        );
     }
 }

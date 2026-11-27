@@ -438,6 +438,22 @@ impl Provider for ConfiguredProvider {
         }
     }
 
+    fn video_transport(&self) -> crate::VideoTransport {
+        use crate::modality::protocol_support;
+        use bricks_types::Modality;
+        let m = &self.model;
+        if !m.effective_capabilities().input.contains(&Modality::Video) {
+            crate::VideoTransport::None
+        } else if protocol_support(m.protocol)
+            .tool_result_media
+            .contains(&Modality::Video)
+        {
+            crate::VideoTransport::ToolResult
+        } else {
+            crate::VideoTransport::UserTurn
+        }
+    }
+
     fn model_info(&self) -> Option<crate::ModelInfo> {
         let m = &self.model;
         Some(crate::ModelInfo {
@@ -700,7 +716,7 @@ mod tests {
     /// `custom/flash` has prices (USD 0.30 per million input tokens);
     /// `custom/expert` has none.
     fn resolve(selection: &str) -> ResolvedModel {
-        ProviderRegistry::from_toml_str(BASIC, "test.toml")
+        ProviderRegistry::from_json_str(BASIC, "test.json")
             .unwrap()
             .resolve(selection)
             .unwrap()

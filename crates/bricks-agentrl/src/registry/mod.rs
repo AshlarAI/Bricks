@@ -1,8 +1,7 @@
 //! The dynamic tool registry — a local database of reusable, agent-built tools.
 //!
 //! Before building a new sub-agent, the orchestrator searches here; on a win it
-//! registers the solution. MVP persistence is append-only JSONL with keyword
-//! search; Phase 2 swaps search for a `bricks-embeddings` vector index.
+//! registers the solution. Persistence is append-only JSONL with keyword search.
 //!
 //! All persisted strings are scrubbed (see [`crate::scrub`]).
 

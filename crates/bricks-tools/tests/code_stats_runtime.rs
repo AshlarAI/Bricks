@@ -4,8 +4,7 @@
 //! thread, never by timing alone; scenarios run in order because they read
 //! process-wide counters.
 
-use bricks_semantic::CancellationToken;
-use bricks_tools::code_scout::RunCancel;
+use bricks_tools::RunCancel;
 use bricks_tools::code_stats::{
     CodeStatsProbe, CodeStatsTool, analyses_running, waiting_in_session,
 };
@@ -17,6 +16,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 const RUST: &str = "// comment\nfn main() {\n\n    println!(\"hi\");\n}\n";
 

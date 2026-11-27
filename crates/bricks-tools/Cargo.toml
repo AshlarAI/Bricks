@@ -12,7 +12,6 @@ readme = "../../README.md"
 bricks-types = { workspace = true }
 bricks-mcp = { workspace = true }
 bricks-lsp = { workspace = true }
-bricks-semantic = { workspace = true }
 bricks-skills = { workspace = true }
 bricks-memory = { workspace = true }
 async-trait = { workspace = true }
@@ -20,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
@@ -52,8 +52,6 @@ tree-sitter-go = "0.23"
 notify = { version = "8", optional = true }
 portable-pty = { version = "0.9", optional = true }
 base64 = "0.22"
-tantivy = "0.27.0"
-bricks-embeddings = { workspace = true }
 bricks-vms = { workspace = true, optional = true }
 ignore = { workspace = true }
 grep = { workspace = true }

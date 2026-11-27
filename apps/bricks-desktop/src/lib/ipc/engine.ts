@@ -1,9 +1,9 @@
 // Engine protocol types, mirroring `bricks_agent::control::protocol`
-// (schema 8, see docs/cli.md). These are the JSON shapes the engine
+// (schema 10, see docs/cli.md). These are the JSON shapes the engine
 // serializes; the desktop bridge forwards them unchanged.
 // Owner: orchestrator. Keep in sync with protocol.rs.
 
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 export type PlanStatus = 'pending' | 'in_progress' | 'completed'
 
@@ -413,6 +413,7 @@ export type Event =
       is_error: boolean
       duration_ms: number
       output: string
+      output_truncated?: boolean
       /** `false`: the call never ran (refused, denied, blocked). Absent: it ran. */
       executed?: boolean
       /** `success`, `failure`, `timed_out`, `cancelled` or `running`. */
@@ -465,6 +466,7 @@ export type Event =
   | { type: 'session_saved' }
   | { type: 'title_changed'; title: string }
   | { type: 'plan_updated'; plan: PlanState }
+  | { type: 'message_injected'; text: string }
   | { type: 'notice'; message: string }
   | {
       type: 'run_finished'
@@ -610,6 +612,7 @@ export interface Prompt {
 
 export type Command =
   | { type: 'submit'; prompt: Prompt }
+  | { type: 'inject'; text: string }
   /**
    * Replaces the user message at `user_index` (among the user-role messages of the
    * active history; `original` is its text as shown) and runs again from it.

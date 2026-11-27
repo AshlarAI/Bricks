@@ -1,4 +1,4 @@
-//! Compression settings and their `[compression]` section in `bricks.toml`.
+//! Compression settings and their `compression` section in JSON configuration.
 //!
 //! The defaults are starting points chosen for a 100k–200k-token context and
 //! typical developer tooling, not universal values; every one can be changed.
@@ -40,8 +40,8 @@ impl Default for CompressionConfig {
     }
 }
 
-/// The `[compression]` table of `bricks.toml` (rules live in
-/// `[compression.filters.<id>]` and are read by [`crate::rules::RuleSet`]).
+/// The `compression` object of a JSON configuration file (rules live in
+/// `compression.filters.<id>` and are read by [`crate::rules::RuleSet`]).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompressionSection {
@@ -60,30 +60,40 @@ pub struct CompressionSection {
     pub json_max_output_bytes: Option<usize>,
     pub skeleton_min_lines: Option<usize>,
     /// Directory where full outputs are saved (default: a per-session
-    /// directory under the system temporary directory).
+    /// directory under the system temporary directory). Only allowed in user
+    /// configuration; ignored in project configuration.
     pub raw_output_dir: Option<PathBuf>,
     /// Rules; validated separately so one bad rule never rejects the section.
     #[serde(default)]
-    pub filters: Option<toml::Value>,
+    pub filters: Option<serde_json::Value>,
 }
 
 impl CompressionSection {
-    /// Read the `[compression]` table of a `bricks.toml` text. A missing
-    /// table is the default section.
-    pub fn from_bricks_toml(text: &str) -> Result<Self, String> {
-        #[derive(Deserialize)]
-        struct Doc {
-            #[serde(default)]
-            compression: Option<toml::Value>,
+    /// Read the `compression` object of a JSON configuration text. A missing
+    /// object is the default section.
+    pub fn from_config_json(text: &str) -> Result<Self, String> {
+        let doc: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| format!("invalid JSON: {e}"))?;
+        Self::from_json_doc(&doc)
+    }
+
+    /// Read the `compression` object from an already-parsed JSON document.
+    pub fn from_json_doc(doc: &serde_json::Value) -> Result<Self, String> {
+        let Some(obj) = doc.as_object() else {
+            return Err("configuration must be a JSON object".into());
+        };
+        match obj.get("compression") {
+            None | Some(serde_json::Value::Null) => Ok(Self::default()),
+            Some(v) => Self::from_json_section(v),
         }
-        let doc: Doc = toml::from_str(text).map_err(|e| format!("invalid TOML: {e}"))?;
-        match doc.compression {
-            None => Ok(Self::default()),
-            Some(v) => serde_path_to_error::deserialize(v).map_err(|e| {
-                let path = e.path().to_string();
-                format!("[compression] field `{path}`: {}", e.into_inner())
-            }),
-        }
+    }
+
+    /// Deserialize a `compression` section JSON value directly.
+    pub fn from_json_section(v: &serde_json::Value) -> Result<Self, String> {
+        serde_path_to_error::deserialize(v).map_err(|e| {
+            let path = e.path().to_string();
+            format!("compression field `{path}`: {}", e.into_inner())
+        })
     }
 
     /// Apply the section over `base`.
@@ -156,8 +166,17 @@ mod tests {
 
     #[test]
     fn section_overrides_defaults() {
-        let s = CompressionSection::from_bricks_toml(
-            "[compression]\nlevel = \"aggressive\"\nmax_error_lines = 400\njson_sample_items = 5\n[compression.filters.x]\nmatch = [{ program = \"x\" }]\n",
+        let s = CompressionSection::from_config_json(
+            r#"{
+                "compression": {
+                    "level": "aggressive",
+                    "max_error_lines": 400,
+                    "json_sample_items": 5,
+                    "filters": {
+                        "x": { "match": [{ "program": "x" }] }
+                    }
+                }
+            }"#,
         )
         .unwrap();
         assert_eq!(s.level, Some(CompressionLevel::Aggressive));
@@ -168,17 +187,24 @@ mod tests {
 
     #[test]
     fn unknown_fields_and_zero_limits_are_errors() {
-        let e = CompressionSection::from_bricks_toml("[compression]\nmax_eror_lines = 1\n")
-            .unwrap_err();
+        let e = CompressionSection::from_config_json(
+            r#"{"compression":{"max_eror_lines":1}}"#,
+        )
+        .unwrap_err();
         assert!(e.contains("max_eror_lines"), "{e}");
-        let s = CompressionSection::from_bricks_toml("[compression]\nmax_lines = 0\n").unwrap();
+        let s = CompressionSection::from_config_json(
+            r#"{"compression":{"max_lines":0}}"#,
+        )
+        .unwrap();
         assert!(s.apply(&CompressionConfig::default()).is_err());
     }
 
     #[test]
     fn missing_section_is_default() {
-        let s =
-            CompressionSection::from_bricks_toml("[context]\nsafety_margin_tokens = 1\n").unwrap();
+        let s = CompressionSection::from_config_json(
+            r#"{"context":{"safety_margin_tokens":1}}"#,
+        )
+        .unwrap();
         assert!(s.level.is_none());
     }
 }

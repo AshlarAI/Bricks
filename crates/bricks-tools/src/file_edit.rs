@@ -178,6 +178,7 @@ impl Tool for FileEditTool {
         if let Err(e) = pfs::write_atomic(&absolute, prepared.content.as_bytes()).await {
             return ToolResult::error(format!("Failed to edit file {}: {}", call.file_path, e));
         }
+        crate::read_state::ReadFileState::invalidate_in_ctx(ctx, &absolute);
         ToolResult::success(describe_success(&call, &before, &prepared))
     }
 }
@@ -1270,5 +1271,46 @@ mod tests {
             !early.load(Ordering::SeqCst),
             "the link's edit ran inside the target's critical section"
         );
+    }
+
+    #[tokio::test]
+    async fn editing_an_unread_file_succeeds_and_invalidates_read_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let unread = tmp.path().join("unread.txt");
+        let memoed = tmp.path().join("memoed.txt");
+        std::fs::write(&unread, "before\n").unwrap();
+        std::fs::write(&memoed, "one\ntwo\n").unwrap();
+
+        let state = Arc::new(crate::read_state::ReadFileState::default());
+        let ctx = test_ctx(tmp.path());
+        ctx.extensions.insert(Arc::clone(&state));
+
+        // Edit on an unread file must succeed (no Read-before-Edit block).
+        let edit_unread = FileEditTool
+            .execute(one(&unread, "before", "after"), &ctx)
+            .await;
+        assert!(!edit_unread.is_error, "{}", edit_unread.content);
+        assert_eq!(std::fs::read_to_string(&unread).unwrap(), "after\n");
+
+        // Read memoed, verify unchanged stub, then Edit it -> Read must return new content.
+        let r1 = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "memoed.txt" }), &ctx)
+            .await;
+        assert!(r1.content.contains("1 | one"), "{}", r1.content);
+        let r2 = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "memoed.txt" }), &ctx)
+            .await;
+        assert!(r2.content.starts_with("[file_unchanged]"), "{}", r2.content);
+
+        let edit_memoed = FileEditTool
+            .execute(one(&memoed, "one", "uno"), &ctx)
+            .await;
+        assert!(!edit_memoed.is_error, "{}", edit_memoed.content);
+
+        let r3 = crate::file_read::FileReadTool
+            .execute(serde_json::json!({ "file_path": "memoed.txt" }), &ctx)
+            .await;
+        assert!(r3.content.contains("1 | uno"), "{}", r3.content);
+        assert!(!r3.content.starts_with("[file_unchanged]"));
     }
 }

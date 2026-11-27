@@ -127,9 +127,8 @@ pub struct SystemPromptOptions {
 
     // ── New fields for conditional components ──
     /// Names of the tools announced to the model in this prompt's agent
-    /// (for conditional guidance). It decides two bullets of the foundation
-    /// (CodeScout, delegation) and the specialised sections; it grants
-    /// nothing.
+    /// (for conditional guidance). It decides the foundation bullets and the
+    /// specialised sections; it grants nothing.
     pub tools_available: Vec<String>,
     /// The question timer of the current message (decides the `Ask`
     /// bullet's last sentence).
@@ -335,10 +334,6 @@ pub fn build_system_prompt(opts: &SystemPromptOptions) -> String {
 /// The first paragraph of the foundation: Bricks' identity.
 pub const BRICKS_INTRODUCTION: &str = "You are Bricks, an autonomous software engineering agent.";
 
-/// The foundation's bullet kept only when `CodeScout` is announced.
-const CODE_SCOUT_BULLET: &str =
-    "- Use CodeScout when symbols, references, or diagnostics provide needed precision.";
-
 /// The foundation's bullet kept only when `CodeStats` is announced.
 const CODE_STATS_BULLET: &str = "- Use CodeStats to count code, comments, and blank lines in a file or project. `top_n` limits display, not analysis; check `partial` before reporting totals as complete.";
 
@@ -475,9 +470,6 @@ pub fn bricks_foundation_with(tools: &[String], ask_timer: crate::control::AskTi
     }
     if has("memory_write") {
         bullets.push(MEMORY_WRITE_BULLET.to_string());
-    }
-    if has("CodeScout") {
-        bullets.push(CODE_SCOUT_BULLET.to_string());
     }
     if has("CodeStats") {
         bullets.push(CODE_STATS_BULLET.to_string());
@@ -659,6 +651,14 @@ fn render_request_context(ctx: &RequestContext) -> Vec<String> {
     }
     if let Some(os) = &ctx.os {
         env.push(format!("System: {}", escape_data(os)));
+        if os.to_ascii_lowercase().starts_with("windows") {
+            env.push(
+                "Windows shell note: PowerShell uses `;` to chain commands, `$env:VAR` for \
+                 environment variables, and single quotes for literal strings; `cmd.exe` uses \
+                 `&&`, `%VAR%`, and double quotes. Match syntax and path quoting to the active shell."
+                    .to_string(),
+            );
+        }
     }
     if let Some(dir) = &ctx.tools_directory {
         env.push(format!(
@@ -749,13 +749,12 @@ mod tests {
     const FILE_TOOLS: [&str; 5] = ["Glob", "Grep", "Read", "Edit", "Write"];
 
     /// The reference with the file tools, keeping the Bash (with Job),
-    /// CodeScout, CodeStats and web bullets as asked.
-    fn reference(bash: bool, code_scout: bool, code_stats: bool, web: bool) -> String {
+    /// CodeStats and web bullets as asked.
+    fn reference(bash: bool, code_stats: bool, web: bool) -> String {
         REFERENCE
             .trim_end_matches('\n')
             .lines()
             .filter(|l| bash || !l.starts_with("- Use Bash for"))
-            .filter(|l| code_scout || !l.starts_with("- Use CodeScout when"))
             .filter(|l| code_stats || !l.starts_with("- Use CodeStats to"))
             .filter(|l| web || !l.starts_with("- For uncertain or potentially outdated"))
             .collect::<Vec<_>>()
@@ -788,22 +787,19 @@ mod tests {
     #[test]
     fn the_foundation_is_the_reference_in_every_combination() {
         for bash in [true, false] {
-            for (scout, stats) in [(true, true), (true, false), (false, true), (false, false)] {
+            for stats in [true, false] {
                 for web in [None, Some("WebFetch"), Some("WebSearch")] {
                     let mut extra = Vec::new();
                     if bash {
                         extra.push("Bash");
                         extra.push("Job");
                     }
-                    if scout {
-                        extra.push("CodeScout");
-                    }
                     if stats {
                         extra.push("CodeStats");
                     }
                     extra.extend(web);
                     let names = with_files(&extra);
-                    let expected = reference(bash, scout, stats, web.is_some());
+                    let expected = reference(bash, stats, web.is_some());
                     assert_eq!(bricks_foundation(&names), expected, "{names:?}");
                     for mode in [
                         SystemPromptPrefix::Interactive,
@@ -826,7 +822,6 @@ mod tests {
             bricks_foundation(&with_files(&[
                 "Bash",
                 "Job",
-                "CodeScout",
                 "CodeStats",
                 "WebFetch",
                 "WebSearch"
@@ -862,7 +857,6 @@ mod tests {
             "Bash",
             "Job",
             "ViewImage",
-            "CodeScout",
             "CodeStats",
             "then the web",
         ] {
@@ -942,7 +936,8 @@ mod tests {
     #[test]
     fn the_replaced_blocks_do_not_survive() {
         let all_tools = tools(&[
-            "CodeScout",
+            "CodeStats",
+            "Grep",
             "Agent",
             "Managent",
             "Messagent",
@@ -989,13 +984,12 @@ mod tests {
         }
         assert_eq!(prompt.matches(BRICKS_INTRODUCTION).count(), 1);
         assert_eq!(prompt.matches("## Delegation").count(), 1);
-        assert_eq!(prompt.matches(CODE_SCOUT_BULLET).count(), 1);
     }
 
     #[test]
     fn a_sub_agent_keeps_its_role_and_its_own_tools_decide() {
         for (names, delegates) in [
-            (vec!["Read", "Bash", "CodeScout"], false),
+            (vec!["Read", "Bash", "Grep"], false),
             (vec!["Read", "Agent", "Managent"], true),
         ] {
             let prompt = build_system_prompt(&SystemPromptOptions {
@@ -1025,7 +1019,7 @@ mod tests {
         let opts = SystemPromptOptions {
             custom_system_prompt: Some("CUSTOM-ONLY-MARK".to_string()),
             replace_system_prompt: true,
-            tools_available: tools(&["CodeScout", "Agent"]),
+            tools_available: tools(&["Grep", "Agent"]),
             working_directory: Some("/w".into()),
             ..Default::default()
         };
@@ -1092,10 +1086,10 @@ mod tests {
         assert!(prompt.contains("Persistent memory"));
         // A custom text repeating the foundation is the user's: kept.
         let echoed = build_system_prompt(&SystemPromptOptions {
-            custom_system_prompt: Some(CODE_SCOUT_BULLET.into()),
+            custom_system_prompt: Some(CODE_STATS_BULLET.into()),
             ..default_opts()
         });
-        assert_eq!(echoed.matches(CODE_SCOUT_BULLET).count(), 1);
+        assert_eq!(echoed.matches(CODE_STATS_BULLET).count(), 1);
         assert!(stable(&echoed).contains("<custom_instructions>"));
     }
 
@@ -1202,7 +1196,7 @@ mod tests {
             ..default_opts()
         });
         assert!(!prompt.contains("## Delegation"));
-        assert!(prompt.contains(CODE_SCOUT_BULLET));
+        assert!(prompt.contains(CODE_STATS_BULLET));
         assert!(prompt.contains("## Plan (TodoWrite)"));
         assert!(!prompt.contains("Task tracking"));
     }
@@ -1438,5 +1432,29 @@ mod tests {
             "a&amp;amp;b",
             "escaped once, as given"
         );
+    }
+
+    #[test]
+    fn windows_shell_guidance_only_appears_on_windows() {
+        let mut mac_ctx = context();
+        mac_ctx.os = Some("macos aarch64".into());
+        let mac_prompt = build_system_prompt(&SystemPromptOptions {
+            request: Some(mac_ctx),
+            ..default_opts()
+        });
+        assert!(!mac_prompt.contains("Windows shell note:"));
+
+        let mut win_ctx = context();
+        win_ctx.os = Some("windows x86_64".into());
+        let win_prompt = build_system_prompt(&SystemPromptOptions {
+            request: Some(win_ctx),
+            ..default_opts()
+        });
+        let boundary = win_prompt.find(SYSTEM_PROMPT_DYNAMIC_BOUNDARY).unwrap();
+        let at = win_prompt
+            .find("Windows shell note:")
+            .expect("Windows guidance missing");
+        assert!(at > boundary);
+        assert!(win_prompt.contains("$env:VAR") && win_prompt.contains("cmd.exe"));
     }
 }

@@ -517,47 +517,90 @@ async fn cancelling_a_turn_stops_the_running_command() {
     );
 }
 
-/// The bash analysis of `tool_primitives::bash_safety` is an SDK primitive:
-/// a command it rates `Safe` still goes through the approval rules of the
-/// real Bash tool (level `execute`), for `ask` as for `deny`.
+/// `BashTool` wires `tool_primitives::bash_safety`: a command rated `Safe`
+/// (with no session alias/function override) runs as `ReadOnly` under `ASK`,
+/// while a mutative command still asks (`Execute`), a `CUSTOM` deny on `Bash`
+/// still blocks even `Safe` commands, and a `Forbidden` command is always
+/// refused regardless of profile.
 #[tokio::test]
-async fn a_command_rated_safe_still_needs_the_approval_rules() {
+async fn a_safe_command_runs_readonly_while_mutative_asks_and_forbidden_is_denied() {
     use bricks_agent::control::{ApprovalBroker, BrokerApprover};
     use bricks_agent::permission::{PermissionEffect, PermissionProfile, SessionPolicy};
-    use bricks_tools::tool_primitives::bash_safety::is_safe;
+    use bricks_tools::tool_primitives::bash_safety::{is_forbidden, is_safe};
 
-    let command = "ls > /dev/null";
-    assert!(is_safe(command));
-    // The session's policy says ask (nobody can answer here) or deny.
-    let ask = SessionPolicy::chosen(PermissionProfile::Ask);
-    let mut deny = SessionPolicy::chosen(PermissionProfile::Custom);
-    deny.custom.execute = PermissionEffect::Deny;
-    for (name, policy) in [("ask", ask), ("deny", deny)] {
+    let safe_cmd = "ls > /dev/null";
+    let forbidden_cmd = "sudo rm -rf /";
+    assert!(is_safe(safe_cmd));
+    assert!(is_forbidden(forbidden_cmd));
+
+    // Under ASK (non-interactive): `ls > /dev/null` auto-runs as ReadOnly,
+    // `touch ran` is asked as Execute (and refused since non-interactive).
+    {
         let work = tempfile::tempdir().unwrap();
         let url = serve(vec![
-            tool_call("s1", "Bash", json!({ "command": command })),
+            tool_call("s1", "Bash", json!({ "command": safe_cmd })),
             tool_call("s2", "Bash", json!({ "command": "touch ran" })),
             text("ok"),
         ]);
-        // Non-interactive: an `ask` cannot be answered and is refused.
         let broker = ApprovalBroker::new(false);
         let a = agent(&url, work.path())
-            .permission_profile(policy)
+            .permission_profile(SessionPolicy::chosen(PermissionProfile::Ask))
             .permission_policy(BrokerApprover::new(broker.clone()))
             .build()
             .unwrap();
         let _ = a.run("go").await;
         let results = tool_results(&a);
-        assert!(!results.is_empty(), "{name}");
-        assert!(
-            results.iter().all(|r| r.contains("Permission denied")),
-            "{name}: {results:?}"
-        );
-        assert!(!work.path().join("ran").exists(), "{name}: a command ran");
-        if name == "ask" {
-            let asked = broker.unsatisfied();
-            assert_eq!(asked[0].tool, "Bash");
-            assert_eq!(asked[0].level, "execute");
-        }
+        assert_eq!(results.len(), 2, "ask: {results:?}");
+        assert!(!results[0].contains("Permission denied"), "ask safe: {results:?}");
+        assert!(results[1].contains("Permission denied"), "ask mutative: {results:?}");
+        assert!(!work.path().join("ran").exists(), "ask: mutative command ran");
+        let asked = broker.unsatisfied();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0].tool, "Bash");
+        assert_eq!(asked[0].level, "execute");
+    }
+
+    // Under CUSTOM with `Bash: Deny`: even a `Safe` command is denied.
+    {
+        let mut deny_bash = SessionPolicy::chosen(PermissionProfile::Custom);
+        deny_bash
+            .custom
+            .tools
+            .insert("Bash".into(), PermissionEffect::Deny);
+        let work = tempfile::tempdir().unwrap();
+        let url = serve(vec![
+            tool_call("s1", "Bash", json!({ "command": safe_cmd })),
+            text("ok"),
+        ]);
+        let broker = ApprovalBroker::new(false);
+        let a = agent(&url, work.path())
+            .permission_profile(deny_bash)
+            .permission_policy(BrokerApprover::new(broker))
+            .build()
+            .unwrap();
+        let _ = a.run("go").await;
+        let results = tool_results(&a);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].contains("Permission denied"), "deny_bash: {results:?}");
+    }
+
+    // Under EXECUTE: a `Forbidden` command is still denied without asking.
+    {
+        let work = tempfile::tempdir().unwrap();
+        let url = serve(vec![
+            tool_call("s1", "Bash", json!({ "command": forbidden_cmd })),
+            text("ok"),
+        ]);
+        let broker = ApprovalBroker::new(false);
+        let a = agent(&url, work.path())
+            .permission_profile(SessionPolicy::chosen(PermissionProfile::Execute))
+            .permission_policy(BrokerApprover::new(broker.clone()))
+            .build()
+            .unwrap();
+        let _ = a.run("go").await;
+        let results = tool_results(&a);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].contains("Permission denied"), "forbidden: {results:?}");
+        assert!(broker.unsatisfied().is_empty(), "forbidden must never ask");
     }
 }

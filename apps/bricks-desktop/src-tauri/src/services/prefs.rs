@@ -1,9 +1,12 @@
-//! Window and display preferences, in `<bricks_home>/desktop/preferences.json`.
+//! Window and display preferences, stored under `"preferences"` in
+//! `<bricks_home>/config.json`.
 
-use super::paths::{desktop_dir, write_atomic};
+use super::providers::write_replacing;
 use super::{error, io_error};
 use crate::contract::{IpcErrorCode, IpcResult, Preferences};
 use crate::i18n::{msg, tr};
+use bricks_provider::config::SCHEMA_VERSION;
+use serde_json::{Map, Value};
 use std::path::PathBuf;
 
 const WIDTH: std::ops::RangeInclusive<u32> = 160..=640;
@@ -18,7 +21,7 @@ pub struct PrefsStore {
 impl PrefsStore {
     pub fn open() -> Self {
         Self {
-            file: desktop_dir().join("preferences.json"),
+            file: bricks_config::user_config_file(),
         }
     }
 
@@ -27,8 +30,8 @@ impl PrefsStore {
     }
 
     /// The stored preferences. A missing or unreadable file gives the
-    /// defaults; an unreadable one is reported on stderr and replaced by the
-    /// next `set`, never silently merged.
+    /// defaults; an unreadable one is reported on stderr and never silently
+    /// overwritten.
     pub fn get(&self) -> Preferences {
         match std::fs::read(&self.file) {
             Ok(bytes) => sanitize(parse_fields(&bytes, &self.file)),
@@ -38,27 +41,65 @@ impl PrefsStore {
 
     pub fn set(&self, prefs: Preferences) -> IpcResult<()> {
         let clean = sanitize(prefs);
-        let bytes = serde_json::to_vec_pretty(&clean)
+        let prefs_value = serde_json::to_value(&clean)
             .map_err(|e| error(IpcErrorCode::Internal, e.to_string()))?;
-        write_atomic(&self.file, &bytes)
+        let _guard = bricks_config::user_config_lock().lock();
+        let mut root: Map<String, Value> = match std::fs::read(&self.file) {
+            Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+                Ok(Value::Object(map)) => map,
+                Ok(_) => {
+                    return Err(error(
+                        IpcErrorCode::Config,
+                        format!("{}: root must be a JSON object", self.file.display()),
+                    ));
+                }
+                Err(e) => {
+                    return Err(error(
+                        IpcErrorCode::Config,
+                        format!("{}: invalid JSON: {e}", self.file.display()),
+                    ));
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let mut m = Map::new();
+                m.insert("schema_version".into(), Value::from(SCHEMA_VERSION));
+                m
+            }
+            Err(e) => {
+                return Err(io_error(
+                    &tr!(msg::PREFERENCES, file = self.file.display()),
+                    e,
+                ));
+            }
+        };
+        root.entry("schema_version".to_string())
+            .or_insert_with(|| Value::from(SCHEMA_VERSION));
+        root.insert("preferences".into(), prefs_value);
+        let mut bytes = serde_json::to_vec_pretty(&Value::Object(root))
+            .map_err(|e| error(IpcErrorCode::Internal, e.to_string()))?;
+        bytes.push(b'\n');
+        write_replacing(&self.file, &bytes)
             .map_err(|e| io_error(&tr!(msg::PREFERENCES, file = self.file.display()), e))
     }
 }
 
-/// Reads the preferences field by field. A value that does not fit its field
-/// (a width written as text) takes that field's
+/// Reads the preferences field by field from the `"preferences"` section of
+/// `config.json`. A value that does not fit its field takes that field's
 /// default and is reported; the other fields are kept. Unknown keys are
 /// ignored. A file that is not a JSON object gives the defaults.
 fn parse_fields(bytes: &[u8], file: &std::path::Path) -> Preferences {
-    let stored: serde_json::Value = match serde_json::from_slice(bytes) {
+    let root: serde_json::Value = match serde_json::from_slice(bytes) {
         Ok(value) => value,
         Err(e) => {
             eprintln!("bricks-desktop: {} ignored: {e}", file.display());
             return Preferences::default();
         }
     };
-    let Some(stored) = stored.as_object() else {
+    let Some(root_obj) = root.as_object() else {
         eprintln!("bricks-desktop: {} ignored: not an object", file.display());
+        return Preferences::default();
+    };
+    let Some(stored) = root_obj.get("preferences").and_then(Value::as_object) else {
         return Preferences::default();
     };
     let defaults = serde_json::to_value(Preferences::default())
@@ -137,11 +178,37 @@ mod tests {
     use super::*;
     use crate::contract::{AskTimerMode, AskTimerPrefs, Theme};
 
+    fn write_prefs(file: &std::path::Path, prefs_json: &str) {
+        std::fs::write(file, format!(r#"{{"schema_version":1,"preferences":{prefs_json}}}"#))
+            .unwrap();
+    }
+
+    #[test]
+    fn saving_preferences_preserves_sibling_config_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.json");
+        std::fs::write(
+            &file,
+            r#"{"schema_version":1,"providers":[{"id":"p"}],"mcp":{"servers":[]}}"#,
+        )
+        .unwrap();
+        let store = PrefsStore::at(file.clone());
+        let mut p = store.get();
+        p.theme = Theme::Dark;
+        store.set(p).unwrap();
+
+        let saved: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(saved["schema_version"], 1);
+        assert_eq!(saved["providers"][0]["id"], "p");
+        assert!(saved["mcp"]["servers"].is_array());
+        assert_eq!(saved["preferences"]["theme"], "dark");
+    }
+
     #[test]
     fn the_app_icon_follows_the_theme_by_default_and_keeps_a_choice() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(&file, r#"{"theme":"dark"}"#).unwrap();
+        let file = dir.path().join("config.json");
+        write_prefs(&file, r#"{"theme":"dark"}"#);
         let store = PrefsStore::at(file.clone());
         let mut p = store.get();
         assert_eq!(
@@ -160,7 +227,7 @@ mod tests {
     #[test]
     fn preferences_round_trip_and_are_clamped() {
         let dir = tempfile::tempdir().unwrap();
-        let store = PrefsStore::at(dir.path().join("desktop").join("preferences.json"));
+        let store = PrefsStore::at(dir.path().join("config.json"));
         assert_eq!(store.get().left_width, 320, "defaults when absent");
         let p = Preferences {
             theme: Theme::Dark,
@@ -178,14 +245,13 @@ mod tests {
     #[test]
     fn a_wrong_value_keeps_every_other_preference() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r#"{"theme":"dark","left_width":300,"right_open":false,
                 "last_project_id":"p_1","tool_approval":"no_confirmation","right_width":"wide",
                 "from_a_newer_version":true}"#,
-        )
-        .unwrap();
+        );
         let p = PrefsStore::at(file.clone()).get();
         assert!(matches!(p.theme, Theme::Dark), "kept");
         assert_eq!(p.left_width, 300, "kept");
@@ -199,13 +265,13 @@ mod tests {
         PrefsStore::at(file.clone()).set(p).unwrap();
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-        assert!(saved.get("tool_approval").is_none());
+        assert!(saved["preferences"].get("tool_approval").is_none());
     }
 
     #[test]
     fn a_damaged_file_gives_the_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
+        let file = dir.path().join("config.json");
         std::fs::write(&file, "[1,2").unwrap();
         assert_eq!(PrefsStore::at(file).get().right_width, 280);
     }
@@ -213,7 +279,7 @@ mod tests {
     #[test]
     fn the_terminal_ratio_round_trips() {
         let dir = tempfile::tempdir().unwrap();
-        let store = PrefsStore::at(dir.path().join("preferences.json"));
+        let store = PrefsStore::at(dir.path().join("config.json"));
         let p = Preferences {
             terminal_ratio: Some(0.35),
             ..Preferences::default()
@@ -225,12 +291,11 @@ mod tests {
     #[test]
     fn former_custom_colours_are_ignored_and_dropped_at_the_next_save() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r##"{"theme":"dark","colors":{"light":{"accent":"#a1b2c3"},"dark":{"panel":"#0a0a0a"}}}"##,
-        )
-        .unwrap();
+        );
         let p = PrefsStore::at(file.clone()).get();
         assert!(matches!(p.theme, crate::contract::Theme::Dark));
         PrefsStore::at(file.clone()).set(p).unwrap();
@@ -241,12 +306,12 @@ mod tests {
     #[test]
     fn the_terminal_ratio_is_clamped_and_a_missing_one_stays_unset() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(&file, r#"{"terminal_ratio":0.95}"#).unwrap();
+        let file = dir.path().join("config.json");
+        write_prefs(&file, r#"{"terminal_ratio":0.95}"#);
         assert_eq!(PrefsStore::at(file.clone()).get().terminal_ratio, Some(0.8));
-        std::fs::write(&file, r#"{"terminal_ratio":0.01}"#).unwrap();
+        write_prefs(&file, r#"{"terminal_ratio":0.01}"#);
         assert_eq!(PrefsStore::at(file.clone()).get().terminal_ratio, Some(0.1));
-        std::fs::write(&file, r#"{"terminal_ratio":"half"}"#).unwrap();
+        write_prefs(&file, r#"{"terminal_ratio":"half"}"#);
         assert_eq!(
             PrefsStore::at(file.clone()).get().terminal_ratio,
             None,
@@ -254,7 +319,7 @@ mod tests {
         );
 
         // A legacy file: the pixel height is kept, the ratio is left to the interface.
-        std::fs::write(&file, r#"{"terminal_height":300,"terminal_open":true}"#).unwrap();
+        write_prefs(&file, r#"{"terminal_height":300,"terminal_open":true}"#);
         let legacy = PrefsStore::at(file).get();
         assert_eq!(legacy.terminal_height, 300, "the legacy value is kept");
         assert!(legacy.terminal_open);
@@ -281,12 +346,11 @@ mod tests {
     #[test]
     fn an_old_file_without_the_new_fields_reads_as_before() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r#"{"theme":"dark","left_width":300,"tool_approval":"always_ask","last_session_id":"s_9"}"#,
-        )
-        .unwrap();
+        );
         let p = PrefsStore::at(file.clone()).get();
         assert!(matches!(p.theme, crate::contract::Theme::Dark));
         assert_eq!(p.left_width, 300);
@@ -296,8 +360,8 @@ mod tests {
         PrefsStore::at(file.clone()).set(p).unwrap();
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-        assert_eq!(saved["left_width"], 300);
-        assert_eq!(saved["terminal_ratio"], serde_json::Value::Null);
+        assert_eq!(saved["preferences"]["left_width"], 300);
+        assert_eq!(saved["preferences"]["terminal_ratio"], serde_json::Value::Null);
     }
     #[test]
     fn diagrams_default_to_the_requested_sandbox_configuration() {
@@ -320,7 +384,7 @@ mod tests {
     #[test]
     fn diagram_preferences_round_trip_but_cannot_enable_scripts_or_editing() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
+        let file = dir.path().join("config.json");
         let mut prefs = Preferences::default();
         prefs.diagrams.mermaid.theme = crate::contract::MermaidTheme::Dark;
         prefs.diagrams.mermaid.security_level = crate::contract::MermaidSecurityLevel::Loose;
@@ -352,13 +416,12 @@ mod tests {
     #[test]
     fn links_and_animations_start_allowed_once_then_follow_the_choice() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
+        let file = dir.path().join("config.json");
         // Written while they were locked off: the stored `false` was no choice.
-        std::fs::write(
+        write_prefs(
             &file,
             r#"{"diagrams":{"diagramViewer":{"allowZoom":false,"allowLinks":false,"allowAnimations":false}}}"#,
-        )
-        .unwrap();
+        );
         let store = PrefsStore::at(file);
         let mut prefs = store.get();
         let viewer = &prefs.diagrams.diagram_viewer;
@@ -375,12 +438,11 @@ mod tests {
     #[test]
     fn unknown_diagram_themes_fall_back_without_losing_other_preferences() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r#"{"left_width":310,"diagrams":{"mermaid":{"theme":"invented"}}}"#,
-        )
-        .unwrap();
+        );
         let prefs = PrefsStore::at(file).get();
         assert_eq!(prefs.left_width, 310);
         assert!(matches!(
@@ -400,8 +462,8 @@ mod tests {
             }
         );
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(&file, r#"{"left_width":300}"#).unwrap();
+        let file = dir.path().join("config.json");
+        write_prefs(&file, r#"{"left_width":300}"#);
         assert_eq!(
             PrefsStore::at(file).get().ask_timer,
             AskTimerPrefs::default(),
@@ -434,12 +496,11 @@ mod tests {
     #[test]
     fn a_stored_question_timer_is_clamped_when_read_and_when_saved() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r#"{"ask_timer":{"enabled":true,"mode":"custom","seconds":5}}"#,
-        )
-        .unwrap();
+        );
         let store = PrefsStore::at(file.clone());
         let p = store.get();
         assert_eq!(
@@ -453,8 +514,8 @@ mod tests {
         store.set(p).unwrap();
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-        assert_eq!(saved["ask_timer"]["seconds"], 30);
-        assert_eq!(saved["ask_timer"]["mode"], "custom");
+        assert_eq!(saved["preferences"]["ask_timer"]["seconds"], 30);
+        assert_eq!(saved["preferences"]["ask_timer"]["mode"], "custom");
     }
 
     #[test]
@@ -471,12 +532,11 @@ mod tests {
         );
 
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(
+        let file = dir.path().join("config.json");
+        write_prefs(
             &file,
             r#"{"left_width":310,"ask_timer":{"enabled":true,"mode":"invented","seconds":60}}"#,
-        )
-        .unwrap();
+        );
         let p = PrefsStore::at(file).get();
         assert_eq!(
             p.ask_timer,
@@ -489,7 +549,7 @@ mod tests {
     #[test]
     fn pinned_conversations_are_kept_once_in_order_and_capped() {
         let dir = tempfile::tempdir().unwrap();
-        let store = PrefsStore::at(dir.path().join("prefs.json"));
+        let store = PrefsStore::at(dir.path().join("config.json"));
         let mut p = Preferences::default();
         assert!(p.pinned_sessions.is_empty());
         p.pinned_sessions = vec!["s_2".into(), "".into(), "s_1".into(), "s_2".into()];
@@ -507,20 +567,20 @@ mod tests {
     fn the_language_is_english_unless_french_is_chosen() {
         use crate::contract::Language;
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("preferences.json");
-        std::fs::write(&file, r#"{"theme":"dark"}"#).unwrap();
+        let file = dir.path().join("config.json");
+        write_prefs(&file, r#"{"theme":"dark"}"#);
         assert_eq!(
             PrefsStore::at(file.clone()).get().language,
             Language::En,
             "no language: English"
         );
-        std::fs::write(&file, r#"{"language":"fr"}"#).unwrap();
+        write_prefs(&file, r#"{"language":"fr"}"#);
         assert_eq!(
             PrefsStore::at(file.clone()).get().language,
             Language::Fr,
             "French is kept"
         );
-        std::fs::write(&file, r#"{"language":"klingon"}"#).unwrap();
+        write_prefs(&file, r#"{"language":"klingon"}"#);
         assert_eq!(
             PrefsStore::at(file.clone()).get().language,
             Language::En,

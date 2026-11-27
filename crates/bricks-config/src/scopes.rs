@@ -91,7 +91,7 @@ impl MemoryService {
     }
 
     /// Like [`Self::for_run`], optionally receiving the project's directory to
-    /// read optional `[memory]` index limits from `bricks.toml`.
+    /// read optional `memory` index limits from `.bricks/config.json`.
     pub fn for_run_in_project(&self, project: Option<(&str, &str, Option<&Path>)>) -> RunMemory {
         let global = self.shared_store(self.global_dir());
         let mut warnings = Vec::new();
@@ -100,11 +100,11 @@ impl MemoryService {
         let (project_store, project_id) = match project {
             Some((id, name, dir)) => {
                 if let Some(d) = dir
-                    && let Ok(text) = std::fs::read_to_string(d.join("bricks.toml"))
+                    && let Ok(text) = std::fs::read_to_string(crate::project_config_file(d))
                 {
-                    match MemoryConfig::from_bricks_toml(&text) {
+                    match MemoryConfig::from_config_json(&text) {
                         Ok(parsed) => cfg = parsed,
-                        Err(e) => warnings.push(format!("bricks.toml: {e}")),
+                        Err(e) => warnings.push(format!(".bricks/config.json: {e}")),
                     }
                 }
                 match self.project_dir(id) {

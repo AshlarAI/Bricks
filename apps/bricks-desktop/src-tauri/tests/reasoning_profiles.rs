@@ -16,38 +16,47 @@ use bricks_agent::control::ModelCatalog;
 use bricks_desktop_lib::contract::{IpcErrorCode, IpcResult, ModelPatch, ProvidersFile};
 use bricks_desktop_lib::engine::catalog::DesktopCatalog;
 use bricks_desktop_lib::services::providers::{commit, view};
-use bricks_desktop_lib::services::providers_toml::Edit;
+use bricks_desktop_lib::services::providers_json::Edit;
 use serde_json::{Value as Json, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// One provider, one model with a context window inside its limits, and one
-/// profile. A former `default` key is still in the file: it is legacy and
-/// ignored, the first level applies. Comments must survive every write.
-const FILE: &str = r#"# Fournisseur de test : en-tête à conserver
-schema_version = 1
-
-[[providers]]
-id = "local"
-name = "Local"
-endpoint = "http://127.0.0.1:9/v1"
-protocol = "chat_completions"
-auth = "none"
-
-# Le modèle de test
-[[providers.models]]
-id = "small"
-name = "Small"
-api_model = "small-1"
-[providers.models.limits]
-max_input_tokens = 8000
-max_output_tokens = 1000
-context_window_tokens = 8500
-[providers.models.reasoning]
-default = "fast"
-[[providers.models.reasoning.profiles]]
-id = "fast"
-label = "Rapide"
+/// One provider, one model with a legacy context window inside its limits, and
+/// one profile. A former `default` key is still in the file: it is legacy and
+/// ignored, the first level applies.
+const FILE: &str = r#"{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local",
+      "endpoint": "http://127.0.0.1:9/v1",
+      "protocol": "chat_completions",
+      "auth": "none",
+      "models": [
+        {
+          "id": "small",
+          "name": "Small",
+          "api_model": "small-1",
+          "limits": {
+            "max_input_tokens": 8000,
+            "max_output_tokens": 1000,
+            "context_window_tokens": 8500
+          },
+          "reasoning": {
+            "default": "fast",
+            "profiles": [
+              {
+                "id": "fast",
+                "label": "Rapide"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
 "#;
 
 struct Setup {
@@ -61,7 +70,7 @@ fn setup() -> Setup {
 
 fn setup_with(text: &str) -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     std::fs::write(&path, text).unwrap();
     Setup { _dir: dir, path }
 }
@@ -304,7 +313,7 @@ fn a_list_without_the_former_default_is_saved_and_its_first_level_applies() {
     assert!(
         !std::fs::read_to_string(&s.path)
             .unwrap()
-            .contains("default = \"fast\""),
+            .contains("\"default\""),
         "the former default key leaves the file with the list"
     );
     let catalog = fresh_catalog(&s.path);
@@ -348,8 +357,8 @@ fn a_former_default_outside_the_list_is_ignored_and_the_first_level_applies() {
     // A file written before the change: the former default names no level.
     let s = setup_with(
         &FILE
-            .replace("default = \"fast\"", "default = \"fantome\"")
-            .replace("id = \"fast\"", "id = \"rapide\""),
+            .replace("\"default\": \"fast\"", "\"default\": \"fantome\"")
+            .replace("\"id\": \"fast\"", "\"id\": \"rapide\""),
     );
     let catalog = fresh_catalog(&s.path);
     let choice = catalog

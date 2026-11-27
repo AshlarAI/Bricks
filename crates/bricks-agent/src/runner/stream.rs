@@ -52,6 +52,9 @@ pub(super) async fn receive<'a>(
         futures::stream::FuturesUnordered::new();
     let mut early_done: Vec<FinishedCall> = Vec::new();
     let mut early_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Stop early-starting further calls once a non-concurrent-safe or deferred
+    // (`Skill`) call arrives in the stream so wave ordering is preserved.
+    let mut early_blocked = false;
 
     // Process stream events (with cancellation support)
     let mut received = Received::Ended;
@@ -93,32 +96,40 @@ pub(super) async fn receive<'a>(
                         accumulator.process_event(event);
                         if let Some((id, name, input)) =
                             closed.and_then(|index| accumulator.tool_use(index))
-                            && name != "Skill"
-                            && early_ids.insert(id.clone())
                         {
-                            let start = AgentEvent::ToolStart {
-                                name: name.clone(),
-                                id: id.clone(),
-                                input: input.clone(),
-                            };
-                            let _ = event_tx.send(start.clone()).await;
-                            agent.emit(start);
-                            let names: Vec<String> =
-                                agent.tool_list().iter().map(|t| t.name().to_string()).collect();
-                            let cost = agent.cumulative_usage.lock().cost_usd.unwrap_or(0.0);
-                            // The answer is not in the history yet: it will be.
-                            let message_count = agent.messages.lock().len() + 1;
-                            early.push(call_future(
-                                agent,
-                                tool_ctx,
-                                permissions,
-                                &names,
-                                UNPLACED,
-                                (id, name, input),
-                                turn,
-                                cost,
-                                message_count,
-                            ));
+                            let concurrent_safe = name != "Skill"
+                                && !early_blocked
+                                && early.len() < super::MAX_CONCURRENT_TOOL_CALLS
+                                && agent
+                                    .tool_by_name(&name)
+                                    .is_none_or(|t| t.is_concurrent_safe_ctx(&input, tool_ctx));
+                            if !concurrent_safe {
+                                early_blocked = true;
+                            } else if early_ids.insert(id.clone()) {
+                                let start = AgentEvent::ToolStart {
+                                    name: name.clone(),
+                                    id: id.clone(),
+                                    input: input.clone(),
+                                };
+                                let _ = event_tx.send(start.clone()).await;
+                                agent.emit(start);
+                                let names: Vec<String> =
+                                    agent.tool_list().iter().map(|t| t.name().to_string()).collect();
+                                let cost = agent.cumulative_usage.lock().cost_usd.unwrap_or(0.0);
+                                // The answer is not in the history yet: it will be.
+                                let message_count = agent.messages.lock().len() + 1;
+                                early.push(call_future(
+                                    agent,
+                                    tool_ctx,
+                                    permissions,
+                                    &names,
+                                    UNPLACED,
+                                    (id, name, input),
+                                    turn,
+                                    cost,
+                                    message_count,
+                                ));
+                            }
                         }
                     }
                     None => break, // Stream ended

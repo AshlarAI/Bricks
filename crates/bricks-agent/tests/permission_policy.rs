@@ -271,7 +271,7 @@ async fn an_unchosen_policy_asks_even_if_its_profile_says_execute() {
 
 #[tokio::test]
 async fn a_permissions_section_is_reported_and_its_rules_are_not_applied() {
-    let text = "[permissions]\nwrite = \"deny\"\nexecute = \"allow\"\n\n[permissions.tools]\nWrite = \"allow\"\n";
+    let text = r#"{"permissions":{"write":"deny","execute":"allow","tools":{"Write":"allow"}}}"#;
     let mut bricks = BricksConfig::from_texts(Some(text), &[]);
     bricks.agent.model = Some("test/a".into());
     assert!(
@@ -315,7 +315,6 @@ struct Env {
 fn bricks() -> BricksConfig {
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("test/a".into());
-    bricks.semantic.lsp.enabled = false;
     bricks
 }
 

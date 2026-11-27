@@ -47,10 +47,10 @@ export function platformLabel(platform: string): string {
 	return PLATFORM_LABELS[platform.toLowerCase()] ?? platform;
 }
 
-/** Path of the providers file inside the Bricks home folder (display only, no I/O). */
+/** Path of the unified config file inside the Bricks home folder (display only, no I/O). */
 export function providersFilePath(bricksHome: string): string {
 	const sep = bricksHome.includes('\\') && !bricksHome.includes('/') ? '\\' : '/';
-	return `${bricksHome.replace(/[\\/]+$/, '')}${sep}providers.toml`;
+	return `${bricksHome.replace(/[\\/]+$/, '')}${sep}config.json`;
 }
 
 /** `1.0.0-alpha.1` -> `Bricks 1.0 Alpha`; CalVer `2026.11.14` -> `Bricks 2026.11.14`. */

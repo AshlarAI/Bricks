@@ -136,7 +136,7 @@ describe('the person’s servers', () => {
 	});
 
 	it('shows a refusal of the backend as an alert', async () => {
-		await open(view([server({ name: 'files' })], null, ['/home/x/.bricks/mcp.toml: unreadable']));
+		await open(view([server({ name: 'files' })], null, ['/home/x/.bricks/config.json: unreadable']));
 		expect(target.querySelector('[role="alert"]')?.textContent).toContain('unreadable');
 	});
 });

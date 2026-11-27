@@ -54,7 +54,6 @@ impl ProjectLoader for Loader {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
         let mut bricks = BricksConfig::default();
         bricks.agent.model = Some("test/a".into());
-        bricks.semantic.lsp.enabled = false;
         bricks.bash.extra_path = self.extra_path.clone();
         Ok(ProjectContext {
             working_dir: wd.to_path_buf(),

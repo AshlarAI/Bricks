@@ -198,9 +198,26 @@ mod prompt_tests {
 
     fn registry() -> Arc<ProviderRegistry> {
         Arc::new(
-            ProviderRegistry::from_toml_str(
-                "schema_version = 1\n\n[[providers]]\nid = \"local\"\nname = \"L\"\nendpoint = \"http://127.0.0.1:9/v1\"\nprotocol = \"chat_completions\"\nauth = \"none\"\n\n[[providers.models]]\nid = \"m\"\nname = \"M\"\napi_model = \"m\"\nstreaming = true\n\n[providers.models.limits]\nmax_input_tokens = 100000\nmax_output_tokens = 4096\n",
-                "test.toml",
+            ProviderRegistry::from_json_str(
+                &serde_json::json!({
+                    "schema_version": 1,
+                    "providers": [{
+                        "id": "local",
+                        "name": "L",
+                        "endpoint": "http://127.0.0.1:9/v1",
+                        "protocol": "chat_completions",
+                        "auth": "none",
+                        "models": [{
+                            "id": "m",
+                            "name": "M",
+                            "api_model": "m",
+                            "streaming": true,
+                            "limits": { "max_input_tokens": 100000, "max_output_tokens": 4096 }
+                        }]
+                    }]
+                })
+                .to_string(),
+                "test.json",
             )
             .unwrap(),
         )
@@ -208,14 +225,20 @@ mod prompt_tests {
 
     /// The system prompt of the first request of a session opened through
     /// the real controller with the shared project loader.
-    async fn sent(interactive: bool, extra: &str) -> (String, Vec<String>) {
+    async fn sent(interactive: bool, disable_agents: bool) -> (String, Vec<String>) {
         let dir = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
         let wd = std::fs::canonicalize(dir.path()).unwrap();
-        std::fs::write(
-            wd.join("bricks.toml"),
-            format!("[agent]\nmodel = \"test/a\"\n\n[semantic.lsp]\nenabled = false\n\n{extra}"),
-        )
-        .unwrap();
+        let mut user_cfg = serde_json::json!({
+            "schema_version": 1
+        });
+        if disable_agents {
+            user_cfg["agents"] = serde_json::json!({ "enabled": false });
+        }
+        std::fs::write(home.path().join("config.json"), user_cfg.to_string()).unwrap();
+        let proj_cfg = bricks_config::project_config_file(&wd);
+        std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
+        std::fs::write(&proj_cfg, r#"{"agent":{"model":"test/a"}}"#).unwrap();
         let script = Script::new(vec![Reply::text("ok")]);
         let mut cfg = EngineConfig::new(
             &wd,
@@ -224,7 +247,9 @@ mod prompt_tests {
             wd.join(".sessions"),
         );
         cfg.interactive = interactive;
-        cfg.project_loader = Some(Arc::new(Projects::new(registry(), interactive)));
+        cfg.project_loader = Some(Arc::new(
+            Projects::new(registry(), interactive).with_home(home.path().to_path_buf()),
+        ));
         let (ctl, mut events) = Controller::open(
             cfg,
             OpenOptions {
@@ -263,18 +288,19 @@ mod prompt_tests {
     #[tokio::test]
     async fn interactive_and_headless_send_the_same_foundation() {
         for interactive in [true, false] {
-            let (s, tools) = sent(interactive, "").await;
+            let (s, tools) = sent(interactive, false).await;
             // `Ask` exists only when someone can answer: its line aside, the
             // foundation is the same.
             assert_eq!(tools.iter().any(|t| t == "Ask"), interactive);
             let s = without_ask(&s);
-            assert!(tools.iter().any(|t| t == "Agent") && tools.iter().any(|t| t == "CodeScout"));
+            assert!(tools.iter().any(|t| t == "Agent") && tools.iter().any(|t| t == "CodeStats"));
+            assert!(!tools.iter().any(|t| t == "CodeScout" || t == "CodeSearch"));
             assert!(s.starts_with(REFERENCE.trim_end_matches('\n')), "{s}");
             assert_eq!(s.matches("You are Bricks").count(), 1);
             assert!(!s.contains("Cersei SDK"));
             assert!(s.contains("<working_directory>"));
 
-            let (s, tools) = sent(interactive, "[agents]\nenabled = false\n").await;
+            let (s, tools) = sent(interactive, true).await;
             let s = without_ask(&s);
             assert!(!tools.iter().any(|t| t == "Agent" || t == "Messagent"));
             assert!(s.starts_with(REFERENCE.trim_end_matches('\n')), "{s}");

@@ -1,12 +1,12 @@
-//! Provider editing, end to end on a temporary `providers.toml`: the file,
+//! Provider editing, end to end on a temporary `config.json`: the file,
 //! the revision check, the catalog reload.
 
 use super::*;
-use crate::services::providers_toml::fixtures::PROVIDERS;
+use crate::services::providers_json::fixtures::PROVIDERS;
 use bricks_agent::control::ModelCatalog;
 use tempfile::tempdir;
 
-/// A providers file in a temporary folder, its catalog and its lock.
+/// A config file in a temporary folder, its catalog and its lock.
 fn setup() -> (
     tempfile::TempDir,
     std::path::PathBuf,
@@ -14,7 +14,7 @@ fn setup() -> (
     Mutex<()>,
 ) {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     std::fs::write(&path, PROVIDERS).unwrap();
     let registry = bricks_config::load_registry(Some(&path)).map(Arc::new);
     let catalog = DesktopCatalog::new(registry);
@@ -56,18 +56,13 @@ fn a_removed_model_is_unselectable_and_the_catalog_reflects_the_file() {
     let on_disk = std::fs::read_to_string(&path).unwrap();
     assert!(
         !on_disk.contains("big-1"),
-        "the table is gone from the file"
-    );
-    assert!(
-        on_disk.contains("Fournisseurs de test"),
-        "the header comment is kept"
+        "the model is gone from the file"
     );
 }
 
 #[test]
 fn a_provider_update_reaches_the_catalog_and_keeps_the_rest_of_the_file() {
     let (_dir, path, catalog, lock) = setup();
-    let before = std::fs::read_to_string(&path).unwrap();
     apply_edit(
         &path,
         &lock,
@@ -88,14 +83,10 @@ fn a_provider_update_reaches_the_catalog_and_keeps_the_rest_of_the_file() {
         .find(|m| m.selection == "local/small")
         .unwrap();
     assert_eq!(small.provider, "Poste", "the catalog shows the new name");
-    let after = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(
-        after,
-        before.replace(
-            "name = \"Local\"   # libellé",
-            "name = \"Poste\"   # libellé"
-        )
-    );
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(after["providers"][0]["name"], "Poste");
+    assert_eq!(after["providers"][1]["id"], "cloud");
 }
 
 #[test]
@@ -178,11 +169,9 @@ fn a_deleted_provider_takes_its_models_with_it() {
             .all(|m| !m.selection.starts_with("cloud/"))
     );
     assert!(catalog.build("cloud/m1", None).is_err());
-    assert!(
-        std::fs::read_to_string(&path)
-            .unwrap()
-            .contains("Fournisseurs de test")
-    );
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(after["providers"].as_array().unwrap().len(), 2);
 }
 
 #[test]
@@ -215,13 +204,17 @@ fn the_view_carries_the_key_and_never_a_header_value() {
 #[test]
 fn a_missing_file_is_an_empty_list_and_a_broken_one_says_why() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     let missing = current_file(&path);
     assert!(missing.providers.is_empty());
     assert!(missing.error.is_none());
     assert_eq!(missing.path, path.display().to_string());
 
-    std::fs::write(&path, "[[providers\napi_key = \"SECRET-IN-BROKEN-LINE\"\n").unwrap();
+    std::fs::write(
+        &path,
+        "{\"schema_version\":1,\"api_key\":\"SECRET-IN-BROKEN-LINE\" broken",
+    )
+    .unwrap();
     let broken = current_file(&path);
     assert!(broken.providers.is_empty());
     let message = broken.error.expect("the broken file is reported");
@@ -234,7 +227,7 @@ fn a_missing_file_is_an_empty_list_and_a_broken_one_says_why() {
 #[test]
 fn the_first_provider_creates_the_missing_file_and_its_folder() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("home").join("providers.toml");
+    let path = dir.path().join("home").join("config.json");
     let registry = bricks_config::load_registry(Some(&path)).map(Arc::new);
     let catalog = DesktopCatalog::new(registry);
     let lock = Mutex::new(());
@@ -260,14 +253,15 @@ fn the_first_provider_creates_the_missing_file_and_its_folder() {
     assert!(file.error.is_none(), "{:?}", file.error);
     assert_eq!(file.providers.len(), 1);
     assert_eq!(file.providers[0].id, "premier");
-    let on_disk = std::fs::read_to_string(&path).unwrap();
-    assert!(on_disk.starts_with("schema_version = 1\n"), "{on_disk}");
+    let on_disk: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk["schema_version"], 1);
 }
 
 #[test]
 fn a_missing_file_with_a_stale_revision_is_a_conflict_and_stays_missing() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     let catalog = DesktopCatalog::new(bricks_config::load_registry(Some(&path)).map(Arc::new));
     let err = apply_edit(
         &path,
@@ -337,32 +331,30 @@ async fn a_saved_profile_with_free_names_reaches_the_request_it_selects() {
     // A local server stands for the provider: it receives the body and answers.
     let (port, server) = one_shot_server().await;
     let dir = tempdir().unwrap();
-    let path = dir.path().join("providers.toml");
+    let path = dir.path().join("config.json");
     std::fs::write(
         &path,
-        format!(
-            r#"schema_version = 1
-
-[[providers]]
-id = "local"
-name = "Local"
-endpoint = "http://127.0.0.1:{port}/v1"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "small"
-name = "Small"
-api_model = "small-1"
-[providers.models.limits]
-max_input_tokens = 8000
-max_output_tokens = 1000
-[providers.models.reasoning]
-default = "rapide"
-[[providers.models.reasoning.profiles]]
-id = "rapide"
-"#
-        ),
+        serde_json::json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "local",
+                "name": "Local",
+                "endpoint": format!("http://127.0.0.1:{port}/v1"),
+                "protocol": "chat_completions",
+                "auth": "none",
+                "models": [{
+                    "id": "small",
+                    "name": "Small",
+                    "api_model": "small-1",
+                    "limits": { "max_input_tokens": 8000, "max_output_tokens": 1000 },
+                    "reasoning": {
+                        "default": "rapide",
+                        "profiles": [{ "id": "rapide" }]
+                    }
+                }]
+            }]
+        })
+        .to_string(),
     )
     .unwrap();
     let catalog = DesktopCatalog::new(bricks_config::load_registry(Some(&path)).map(Arc::new));
@@ -493,7 +485,7 @@ fn a_key_is_written_replaced_and_removed_in_the_file() {
     assert!(
         std::fs::read_to_string(&path)
             .unwrap()
-            .contains("api_key = \"sk-pasted-2\"")
+            .contains("\"api_key\": \"sk-pasted-2\"")
     );
     let file = apply_edit(&path, &lock, &catalog, &revision(&path), &set("")).expect("removed");
     assert_eq!(

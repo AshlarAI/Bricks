@@ -14,7 +14,10 @@ mod scopes;
 
 pub use engine::engine_config;
 pub use memory::MemoryConfig;
-pub use paths::{bricks_home, providers_file_from_env, sessions_dir};
+pub use paths::{
+    bricks_home, project_config_file, providers_file_from_env, sessions_dir, user_config_file,
+    user_config_lock,
+};
 pub use projects::{Projects, announced_tools};
 pub use providers::load_registry;
 pub use scopes::{MemoryService, RetiredStore};

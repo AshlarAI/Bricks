@@ -160,69 +160,56 @@ fn serve(answers: Vec<Answer>) -> Server {
 /// none is chosen), `c` (Anthropic messages, thinking parameters, one level
 /// that is therefore its default), `plain` (no profiles).
 fn registry(url: &str) -> Arc<ProviderRegistry> {
-    let toml = format!(
-        r#"
-schema_version = 1
-
-[[providers]]
-id = "local"
-name = "Local"
-endpoint = "{url}"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "a"
-name = "Example Model"
-api_model = "model-a"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 4096
-[providers.models.reasoning]
-[[providers.models.reasoning.profiles]]
-id = "high"
-label = "High"
-parameters = {{ reasoning_effort = "high" }}
-[[providers.models.reasoning.profiles]]
-id = "low"
-label = "Low"
-parameters = {{ reasoning_effort = "low" }}
-[[providers.models.reasoning.profiles]]
-id = "medium"
-label = "Medium"
-parameters = {{ reasoning_effort = "medium" }}
-[[providers.models.reasoning.profiles]]
-id = "default"
-label = "Profile named default"
-parameters = {{ reasoning_effort = "minimal" }}
-
-[[providers.models]]
-id = "c"
-name = "Claude-like"
-api_model = "model-c"
-protocol = "anthropic_messages"
-auth = "none"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 8192
-[[providers.models.reasoning.profiles]]
-id = "Deep_Think"
-label = "Deep"
-parameters = {{ thinking = {{ type = "enabled", budget_tokens = 2048 }} }}
-
-[[providers.models]]
-id = "plain"
-name = "Plain"
-api_model = "model-plain"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 4096
-"#
-    );
-    Arc::new(ProviderRegistry::from_toml_str(&toml, "effort-test.toml").expect("valid config"))
+    let json = serde_json::json!({
+        "schema_version": 1,
+        "providers": [{
+            "id": "local",
+            "name": "Local",
+            "endpoint": url,
+            "protocol": "chat_completions",
+            "auth": "none",
+            "models": [
+                {
+                    "id": "a",
+                    "name": "Example Model",
+                    "api_model": "model-a",
+                    "streaming": true,
+                    "limits": { "max_input_tokens": 100000, "max_output_tokens": 4096 },
+                    "reasoning": {
+                        "profiles": [
+                            { "id": "high", "label": "High", "parameters": { "reasoning_effort": "high" } },
+                            { "id": "low", "label": "Low", "parameters": { "reasoning_effort": "low" } },
+                            { "id": "medium", "label": "Medium", "parameters": { "reasoning_effort": "medium" } },
+                            { "id": "default", "label": "Profile named default", "parameters": { "reasoning_effort": "minimal" } }
+                        ]
+                    }
+                },
+                {
+                    "id": "c",
+                    "name": "Claude-like",
+                    "api_model": "model-c",
+                    "protocol": "anthropic_messages",
+                    "auth": "none",
+                    "streaming": true,
+                    "limits": { "max_input_tokens": 100000, "max_output_tokens": 8192 },
+                    "reasoning": {
+                        "profiles": [
+                            { "id": "Deep_Think", "label": "Deep", "parameters": { "thinking": { "type": "enabled", "budget_tokens": 2048 } } }
+                        ]
+                    }
+                },
+                {
+                    "id": "plain",
+                    "name": "Plain",
+                    "api_model": "model-plain",
+                    "streaming": true,
+                    "limits": { "max_input_tokens": 100000, "max_output_tokens": 4096 }
+                }
+            ]
+        }]
+    })
+    .to_string();
+    Arc::new(ProviderRegistry::from_json_str(&json, "effort-test.json").expect("valid config"))
 }
 
 struct Env {
@@ -237,7 +224,6 @@ async fn open(answers: Vec<Answer>) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let mut bricks = BricksConfig::default();
     bricks.agent.model = Some("local/a".into());
-    bricks.semantic.lsp.enabled = false;
     let mut cfg = EngineConfig::new(
         dir.path(),
         registry(&server.url),

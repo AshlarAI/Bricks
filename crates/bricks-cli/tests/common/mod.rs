@@ -130,44 +130,47 @@ pub struct Project {
 }
 
 impl Project {
-    /// A Bricks home with a providers file for `url`, and a project whose
-    /// bricks.toml selects the model and holds `extra`.
+    /// A Bricks home with a unified `config.json` for `url` (merging optional
+    /// user JSON sections from `extra`), and a project whose `.bricks/config.json`
+    /// selects the model.
     pub fn new(url: &str, extra: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let dir = tempfile::tempdir().unwrap();
+        let mut user_cfg = json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "local",
+                "name": "Local test server",
+                "endpoint": url,
+                "protocol": "chat_completions",
+                "auth": "none",
+                "models": [{
+                    "id": "m",
+                    "name": "Test model",
+                    "api_model": "test-model",
+                    "streaming": true,
+                    "limits": { "max_input_tokens": 100000, "max_output_tokens": 4096 },
+                    "reasoning": { "profiles": [{ "id": "deep" }] }
+                }]
+            }]
+        });
+        if !extra.trim().is_empty() {
+            let extra_val: Value =
+                serde_json::from_str(extra).expect("Project::new extra must be valid JSON object");
+            if let (Some(dst), Some(src)) = (user_cfg.as_object_mut(), extra_val.as_object()) {
+                for (k, v) in src {
+                    dst.insert(k.clone(), v.clone());
+                }
+            }
+        }
         std::fs::write(
-            home.path().join("providers.toml"),
-            format!(
-                r#"schema_version = 1
-
-[[providers]]
-id = "local"
-name = "Local test server"
-endpoint = "{url}"
-protocol = "chat_completions"
-auth = "none"
-
-[[providers.models]]
-id = "m"
-name = "Test model"
-api_model = "test-model"
-streaming = true
-
-[providers.models.limits]
-max_input_tokens = 100000
-max_output_tokens = 4096
-
-[providers.models.reasoning]
-profiles = [{{ id = "deep" }}]
-"#
-            ),
+            home.path().join("config.json"),
+            serde_json::to_string_pretty(&user_cfg).unwrap(),
         )
         .unwrap();
-        std::fs::write(
-            dir.path().join("bricks.toml"),
-            format!("[agent]\nmodel = \"local/m\"\n\n{extra}"),
-        )
-        .unwrap();
+        let proj_cfg = dir.path().join(".bricks").join("config.json");
+        std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
+        std::fs::write(&proj_cfg, r#"{"agent":{"model":"local/m"}}"#).unwrap();
         Self { home, dir }
     }
 

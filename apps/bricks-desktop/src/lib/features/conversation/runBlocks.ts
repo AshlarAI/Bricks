@@ -114,24 +114,52 @@ export function timelineBlocks(
     if (item.text.trim()) answers.set(item.runId, item)
   }
 
-  // The steps of each run in the window, in order.
-  const steps = new Map<string, TimelineItem[]>()
+  const isStandalone = (item: TimelineItem) =>
+    item.kind === 'run_end' || (item.kind === 'notice' && item.separator === true)
+
+  // The steps of each run in the window, segmented around user items (initial or steered)
+  // so steps performed after mid-run steering stay below the steered bubble.
+  const segmentsByRun = new Map<string, { items: TimelineItem[]; hasAnswer: boolean }[]>()
+  const currentSegmentIndex = new Map<string, number>()
+
   for (const item of visible) {
     const runId = item.runId
-    if (!runId || !runs.has(runId) || item.kind === 'user' || item.kind === 'run_end') continue
-    if (item === answers.get(runId)) continue
-    let list = steps.get(runId)
-    if (!list) steps.set(runId, (list = []))
-    list.push(item)
+    if (!runId || !runs.has(runId)) continue
+    let list = segmentsByRun.get(runId)
+    if (!list) {
+      list = [{ items: [], hasAnswer: false }]
+      segmentsByRun.set(runId, list)
+      currentSegmentIndex.set(runId, 0)
+    } else if (item.kind === 'user') {
+      list.push({ items: [], hasAnswer: false })
+      currentSegmentIndex.set(runId, list.length - 1)
+    }
+    if (item.kind === 'user' || isStandalone(item)) continue
+    const seg = list[currentSegmentIndex.get(runId)!]
+    if (item === answers.get(runId)) {
+      seg.hasAnswer = true
+      continue
+    }
+    seg.items.push(item)
   }
 
   const blocks: TimelineBlock[] = []
-  const opened = new Set<string>()
-  const open = (runId: string) => {
-    opened.add(runId)
+  const segmentCursor = new Map<string, number>()
+  const pushWork = (runId: string, forceInitial: boolean) => {
+    const segIdx = segmentCursor.get(runId) ?? 0
+    const list = segmentsByRun.get(runId) ?? []
+    if (segIdx >= list.length) return
+    segmentCursor.set(runId, segIdx + 1)
+    const seg = list[segIdx]
     const final = answers.get(runId)
-    const reasoning = final && final.thinking.trim() && visible.includes(final) ? final : null
-    blocks.push({ kind: 'work', key: `work-${runId}`, runId, items: steps.get(runId) ?? [], answerReasoning: reasoning })
+    const reasoning =
+      seg.hasAnswer && final && final.thinking.trim() && visible.includes(final) ? final : null
+    const isLatestActive = runId === runningRunId && segIdx === list.length - 1
+    if (!forceInitial && seg.items.length === 0 && reasoning === null && !isLatestActive) {
+      return
+    }
+    const key = segIdx === 0 ? `work-${runId}` : `work-${runId}-${segIdx}`
+    blocks.push({ kind: 'work', key, runId, items: seg.items, answerReasoning: reasoning })
   }
 
   for (const item of visible) {
@@ -143,11 +171,14 @@ export function timelineBlocks(
     }
     if (item.kind === 'user') {
       blocks.push({ kind: 'item', key: item.id, item })
-      if (!opened.has(runId)) open(runId)
+      const segIdx = segmentCursor.get(runId) ?? 0
+      pushWork(runId, segIdx === 0)
       continue
     }
-    if (!opened.has(runId)) open(runId)
-    if (item.kind === 'run_end') blocks.push({ kind: 'item', key: item.id, item })
+    if (!segmentCursor.has(runId)) {
+      pushWork(runId, true)
+    }
+    if (isStandalone(item)) blocks.push({ kind: 'item', key: item.id, item })
     else if (item === answers.get(runId)) blocks.push({ kind: 'item', key: item.id, item, answer: true })
   }
   return blocks

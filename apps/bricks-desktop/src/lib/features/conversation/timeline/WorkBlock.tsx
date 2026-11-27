@@ -22,12 +22,14 @@ import { currentStep, needsAttention } from '../runBlocks'
 import { THINKING_ICON } from './toolIcons'
 import AssistantMessage from './AssistantMessage'
 import TimelineEntry from './TimelineEntry'
+import WorkPlanPopover from './WorkPlanPopover'
 
 export interface WorkBlockProps {
   conversation: Conversation
   runId: string
   items: TimelineItem[]
   answerReasoning?: AssistantItem | null
+  showPlan?: boolean
 }
 
 const TONE: Record<RunOutcome, string> = {
@@ -42,6 +44,7 @@ function WorkBlockComponent({
   runId,
   items,
   answerReasoning = null,
+  showPlan = false,
 }: WorkBlockProps) {
   useLanguage()
   const liveConversation =
@@ -55,6 +58,7 @@ function WorkBlockComponent({
     liveConversation,
     (c) => c.runs.get(runId)?.workedMs ?? null,
   )
+  const subscribedPlan = useConversation(liveConversation, (c) => (showPlan ? (c.plan ?? null) : null))
 
   const running = liveConversation
     ? (subscribedRunning ?? false)
@@ -62,6 +66,11 @@ function WorkBlockComponent({
   const outcome: RunOutcome | null = liveConversation
     ? (subscribedOutcome ?? null)
     : (conversation?.runs?.get(runId)?.outcome ?? null)
+  const plan = showPlan
+    ? liveConversation
+      ? (subscribedPlan ?? null)
+      : (conversation?.plan ?? null)
+    : null
 
   const startedAt = conversation?.runs?.get(runId)?.startedAt ?? null
   const workedMs = liveConversation
@@ -111,7 +120,7 @@ function WorkBlockComponent({
       onOpenChange={(next) => setOverride({ forRunning: running, open: next })}
       className="flex flex-col gap-2"
     >
-      <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">
         {hasSteps ? (
           <CollapsibleTrigger className="group inline-flex shrink-0 items-center gap-1.5 rounded-md hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
             {bar}
@@ -123,6 +132,7 @@ function WorkBlockComponent({
         ) : (
           <div className="inline-flex shrink-0 items-center gap-1.5">{bar}</div>
         )}
+        {plan && plan.todos.length > 0 && <WorkPlanPopover plan={plan} running={running} />}
         {step && !open && StepIcon && (
           <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
             {StepIcon === THINKING_ICON ? (
@@ -167,6 +177,7 @@ function areWorkBlockPropsEqual(prev: WorkBlockProps, next: WorkBlockProps): boo
     prev.conversation === next.conversation &&
     prev.runId === next.runId &&
     prev.answerReasoning === next.answerReasoning &&
+    Boolean(prev.showPlan) === Boolean(next.showPlan) &&
     sameItems(prev.items, next.items)
   )
 }

@@ -43,27 +43,33 @@ fn http_with_everything() -> ServerEntry {
     ServerEntry::new(config)
 }
 
-/// Writes a project's bricks.toml, with the given server tables.
-fn write_project(dir: &Path, servers: &str) {
-    std::fs::write(
-        dir.join("bricks.toml"),
-        format!("[agent]\nmodel = \"local/m\"\n\n{servers}"),
-    )
-    .unwrap();
+/// Writes a project's `.bricks/config.json`, with the given servers JSON array.
+fn write_project(dir: &Path, servers: serde_json::Value) {
+    let path = bricks_config::project_config_file(dir);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let doc = serde_json::json!({
+        "agent": { "model": "local/m" },
+        "mcp": { "servers": servers }
+    });
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
 }
 
-const ENV_SERVER: &str = r#"[[mcp.servers]]
-name = "repo"
-command = "python3"
-args = ["server.py"]
-env = { A_KEY = "1", B_KEY = "2", C_KEY = "3", D_KEY = "4", E_KEY = "5", F_KEY = "6" }
-
-[[mcp.servers]]
-name = "remote"
-type = "http"
-url = "https://mcp.example.com/mcp"
-headers = { Authorization = "Bearer ${TOKEN}", "X-One" = "1", "X-Two" = "2", "X-Three" = "3" }
-"#;
+fn env_servers() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "name": "repo",
+            "command": "python3",
+            "args": ["server.py"],
+            "env": { "A_KEY": "1", "B_KEY": "2", "C_KEY": "3", "D_KEY": "4", "E_KEY": "5", "F_KEY": "6" }
+        },
+        {
+            "name": "remote",
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "headers": { "Authorization": "Bearer ${TOKEN}", "X-One": "1", "X-Two": "2", "X-Three": "3" }
+        }
+    ])
+}
 
 #[test]
 fn a_server_with_env_headers_cwd_and_limits_survives_the_round_trip() {
@@ -91,8 +97,8 @@ fn a_server_with_env_headers_cwd_and_limits_survives_the_round_trip() {
     mcp::set_enabled(home.path(), "files", true).unwrap();
     assert_eq!(read_user(home.path()).unwrap()[0], stdio);
     let text = std::fs::read_to_string(mcp::user_file(home.path())).unwrap();
-    assert!(text.contains("cwd = \"/opt/servers/files\""), "{text}");
-    assert!(text.contains("protocol = \"legacy\""), "{text}");
+    assert!(text.contains("\"cwd\": \"/opt/servers/files\""), "{text}");
+    assert!(text.contains("\"protocol\": \"legacy\""), "{text}");
 }
 
 #[test]
@@ -123,7 +129,7 @@ fn the_fingerprint_of_a_declaration_is_the_same_on_every_read() {
     // Several env and header keys: the HashMaps of each read iterate in their own order, so a
     // fingerprint built from the JSON text of the maps changes from one read to the next.
     let project = tempfile::tempdir().unwrap();
-    write_project(project.path(), ENV_SERVER);
+    write_project(project.path(), env_servers());
     let first: Vec<String> = read_project(project.path())
         .unwrap()
         .iter()
@@ -143,7 +149,7 @@ fn the_fingerprint_of_a_declaration_is_the_same_on_every_read() {
 fn an_approved_declaration_with_several_env_keys_stays_approved() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
-    write_project(project.path(), ENV_SERVER);
+    write_project(project.path(), env_servers());
     decide(home.path(), project.path(), "repo", true).unwrap();
     for _ in 0..10 {
         let sel = select(home.path(), Some(project.path()));
@@ -170,7 +176,7 @@ fn an_approval_given_through_a_symlink_or_a_trailing_dot_is_the_same_decision() 
     // No env or headers here: the fingerprint is not what this test looks at.
     write_project(
         &real,
-        "[[mcp.servers]]\nname = \"repo\"\ncommand = \"python3\"\nargs = [\"server.py\"]\n",
+        serde_json::json!([{ "name": "repo", "command": "python3", "args": ["server.py"] }]),
     );
     let link = root.path().join("linked");
     std::os::unix::fs::symlink(&real, &link).unwrap();
@@ -226,7 +232,7 @@ fn a_decision_does_not_erase_an_unreadable_approvals_file() {
     // not an empty list that the next decision overwrites.
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
-    write_project(project.path(), ENV_SERVER);
+    write_project(project.path(), env_servers());
     let approvals = mcp::approvals_file(home.path());
     std::fs::write(&approvals, "{ this is not json").unwrap();
 

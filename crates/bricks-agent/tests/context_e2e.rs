@@ -395,30 +395,32 @@ async fn a_request_that_cannot_fit_is_never_sent() {
 
 #[tokio::test]
 async fn the_output_reserve_counts_against_a_shared_window() {
-    let toml = |endpoint: &str| {
-        format!(
-            r#"
-schema_version = 1
-[[providers]]
-id = "w"
-name = "W"
-endpoint = "{endpoint}"
-protocol = "chat_completions"
-auth = "none"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "m"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 8000
-max_output_tokens = 6000
-context_window_tokens = 8000
-"#
-        )
+    let cfg = |endpoint: &str| {
+        json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "w",
+                "name": "W",
+                "endpoint": endpoint,
+                "protocol": "chat_completions",
+                "auth": "none",
+                "models": [{
+                    "id": "m",
+                    "name": "M",
+                    "api_model": "m",
+                    "streaming": true,
+                    "limits": {
+                        "max_input_tokens": 8000,
+                        "max_output_tokens": 6000,
+                        "context_window_tokens": 8000
+                    }
+                }]
+            }]
+        })
+        .to_string()
     };
     let (url, seen) = serve(vec![chat_text("ok", None)]);
-    let provider = ProviderRegistry::from_toml_str(&toml(&url), "w.toml")
+    let provider = ProviderRegistry::from_json_str(&cfg(&url), "w.json")
         .unwrap()
         .resolve("w/m")
         .unwrap()
@@ -450,28 +452,27 @@ async fn preflight_uses_a_configured_counting_endpoint() {
         Reply::json(200, json!({ "input_tokens": 350 })),
         anthropic_text("counted again", 350),
     ]);
-    let toml = format!(
-        r#"
-schema_version = 1
-[[providers]]
-id = "a"
-name = "A"
-endpoint = "{url}"
-protocol = "anthropic_messages"
-auth = "api_key_header"
-api_key_env = "BRICKS_TEST_API_KEY"
-[[providers.models]]
-id = "m"
-name = "M"
-api_model = "m"
-streaming = true
-[providers.models.limits]
-max_input_tokens = 50000
-max_output_tokens = 4000
-[providers.models.token_counting]
-"#
-    );
-    let provider = ProviderRegistry::from_toml_str(&toml, "a.toml")
+    let cfg = json!({
+        "schema_version": 1,
+        "providers": [{
+            "id": "a",
+            "name": "A",
+            "endpoint": url,
+            "protocol": "anthropic_messages",
+            "auth": "api_key_header",
+            "api_key_env": "BRICKS_TEST_API_KEY",
+            "models": [{
+                "id": "m",
+                "name": "M",
+                "api_model": "m",
+                "streaming": true,
+                "limits": { "max_input_tokens": 50000, "max_output_tokens": 4000 },
+                "token_counting": {}
+            }]
+        }]
+    })
+    .to_string();
+    let provider = ProviderRegistry::from_json_str(&cfg, "a.json")
         .unwrap()
         .resolve("a/m")
         .unwrap()

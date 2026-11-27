@@ -15,7 +15,7 @@ pub mod projects;
 pub mod provider_catalog;
 pub mod provider_keys;
 pub mod providers;
-pub mod providers_toml;
+pub mod providers_json;
 pub mod run_labels;
 pub mod run_records;
 pub mod skills;

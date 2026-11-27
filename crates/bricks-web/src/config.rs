@@ -1,7 +1,7 @@
-//! `[web]` settings of `bricks.toml`: search providers, fetch limits, passage
+//! `web` settings of `~/.bricks/config.json`: search providers, fetch limits, passage
 //! selection and session storage.
 //!
-//! Without a `[web]` section the defaults apply: DuckDuckGo HTML search (no
+//! Without a `web` section the defaults apply: DuckDuckGo HTML search (no
 //! key), five pages, global concurrency 5, two downloads per host, 4 s per
 //! page, 1 500 000 decoded bytes per page. A provider is used only when the
 //! file names it; an API key is read only from the environment variable the
@@ -365,18 +365,18 @@ pub struct LoadedWebConfig {
 }
 
 impl WebConfig {
-    /// Read the `[web]` section of a `bricks.toml` text, resolving keys from
-    /// the process environment.
-    pub fn from_bricks_toml(text: &str) -> Result<LoadedWebConfig, String> {
-        Self::from_bricks_toml_with_env(text, |name| std::env::var(name).ok())
+    /// Read the `web` section of a JSON configuration document, resolving keys
+    /// from the process environment.
+    pub fn from_config_json(text: &str) -> Result<LoadedWebConfig, String> {
+        Self::from_config_json_with_env(text, |name| std::env::var(name).ok())
     }
 
     /// Same, with an explicit environment (tests).
-    pub fn from_bricks_toml_with_env(
+    pub fn from_config_json_with_env(
         text: &str,
         env: impl Fn(&str) -> Option<String>,
     ) -> Result<LoadedWebConfig, String> {
-        // Other sections of the file are not ours to judge: only `[web]` is
+        // Other sections of the file are not ours to judge: only `web` is
         // read, strictly.
         let root = web_only(text)?;
         let mut c = Self::default();
@@ -567,14 +567,16 @@ impl WebConfig {
 }
 
 fn web_only(text: &str) -> Result<FileRoot, String> {
-    let value: toml::Value = toml::from_str(text).map_err(|e| e.to_string())?;
-    match value.get("web") {
-        None => Ok(FileRoot::default()),
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("invalid JSON: {e}"))?;
+    let Some(obj) = value.as_object() else {
+        return Err("configuration must be a JSON object".into());
+    };
+    match obj.get("web") {
+        None | Some(serde_json::Value::Null) => Ok(FileRoot::default()),
         Some(w) => {
-            let web: FileWeb = w
-                .clone()
-                .try_into()
-                .map_err(|e: toml::de::Error| format!("[web]: {}", e.to_string().trim()))?;
+            let web: FileWeb = serde_json::from_value(w.clone())
+                .map_err(|e| format!("web: {}", e.to_string().trim()))?;
             Ok(FileRoot { web: Some(web) })
         }
     }
@@ -644,7 +646,7 @@ mod tests {
 
     #[test]
     fn defaults_without_a_section() {
-        let l = WebConfig::from_bricks_toml_with_env("[context]\nx = 1\n", env_none).unwrap();
+        let l = WebConfig::from_config_json_with_env(r#"{"context":{"x":1}}"#, env_none).unwrap();
         assert_eq!(l.config, WebConfig::default());
         assert_eq!(l.config.search.chain(), vec![ProviderKind::DuckDuckGo]);
         let f = &l.config.fetch;
@@ -657,17 +659,17 @@ mod tests {
 
     #[test]
     fn a_provider_with_fallback_and_its_key() {
-        let toml = r#"
-[web.search]
-provider = "brave"
-fallback = ["tavily", "duckduckgo"]
-[web.search.brave]
-api_key_env = "BRAVE_KEY"
-[web.search.tavily]
-api_key_env = "TAVILY_KEY"
-mode = "advanced"
-"#;
-        let l = WebConfig::from_bricks_toml_with_env(toml, |v| {
+        let json = r#"{
+            "web": {
+                "search": {
+                    "provider": "brave",
+                    "fallback": ["tavily", "duckduckgo"],
+                    "brave": { "api_key_env": "BRAVE_KEY" },
+                    "tavily": { "api_key_env": "TAVILY_KEY", "mode": "advanced" }
+                }
+            }
+        }"#;
+        let l = WebConfig::from_config_json_with_env(json, |v| {
             (v == "BRAVE_KEY").then(|| "sk-very-secret".to_string())
         })
         .unwrap();
@@ -691,38 +693,41 @@ mode = "advanced"
 
     #[test]
     fn a_key_in_the_file_is_refused() {
-        let toml =
-            "[web.search]\nprovider = \"exa\"\n[web.search.exa]\napi_key_env = \"sk-123abc\"\n";
-        let e = WebConfig::from_bricks_toml_with_env(toml, env_none).unwrap_err();
+        let json =
+            r#"{"web":{"search":{"provider":"exa","exa":{"api_key_env":"sk-123abc"}}}}"#;
+        let e = WebConfig::from_config_json_with_env(json, env_none).unwrap_err();
         assert!(e.contains("environment variable name"), "{e}");
         assert!(!e.contains("sk-123abc"));
     }
 
     #[test]
     fn invalid_values_are_reported() {
-        for (toml, needle) in [
+        for (json, needle) in [
             (
-                "[web.search]\nprovider = \"brave\"\n",
+                r#"{"web":{"search":{"provider":"brave"}}}"#,
                 "api_key_env is not set",
             ),
-            ("[web.fetch]\nper_host = 9\n", "per_host"),
-            ("[web.fetch]\nmax_page_bytes = 0\n", "max_page_bytes"),
-            ("[web.passages]\nmin_chars = 2000\n", "min_chars"),
+            (r#"{"web":{"fetch":{"per_host":9}}}"#, "per_host"),
+            (r#"{"web":{"fetch":{"max_page_bytes":0}}}"#, "max_page_bytes"),
+            (r#"{"web":{"passages":{"min_chars":2000}}}"#, "min_chars"),
             (
-                "[web.search.brave]\nendpoint = \"http://search.example.com/\"\napi_key_env = \"K\"\n",
+                r#"{"web":{"search":{"brave":{"endpoint":"http://search.example.com/","api_key_env":"K"}}}}"#,
                 "https",
             ),
-            ("[web.search]\nfallback = [\"exa\", \"exa\"]\n", "twice"),
-            ("[web.fetch]\nbogus = 1\n", "unknown field"),
+            (
+                r#"{"web":{"search":{"fallback":["exa","exa"]}}}"#,
+                "twice",
+            ),
+            (r#"{"web":{"fetch":{"bogus":1}}}"#, "unknown field"),
         ] {
-            let e = WebConfig::from_bricks_toml_with_env(toml, env_none).unwrap_err();
-            assert!(e.contains(needle), "{toml}: {e}");
+            let e = WebConfig::from_config_json_with_env(json, env_none).unwrap_err();
+            assert!(e.contains(needle), "{json}: {e}");
         }
     }
 
     #[test]
     fn loopback_http_endpoints_are_allowed_for_local_servers() {
-        let toml = "[web.search]\nprovider = \"tavily\"\n[web.search.tavily]\napi_key_env = \"T\"\nendpoint = \"http://127.0.0.1:9/search\"\n";
-        assert!(WebConfig::from_bricks_toml_with_env(toml, env_none).is_ok());
+        let json = r#"{"web":{"search":{"provider":"tavily","tavily":{"api_key_env":"T","endpoint":"http://127.0.0.1:9/search"}}}}"#;
+        assert!(WebConfig::from_config_json_with_env(json, env_none).is_ok());
     }
 }

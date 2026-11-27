@@ -48,13 +48,8 @@ impl ModelCatalog for Follow {
 
 const REFERENCE: &str = include_str!("fixtures/bricks_foundation.txt");
 
-fn reference(code_scout: bool) -> String {
-    REFERENCE
-        .trim_end_matches('\n')
-        .lines()
-        .filter(|l| code_scout || !l.starts_with("- Use CodeScout when"))
-        .collect::<Vec<_>>()
-        .join("\n")
+fn reference() -> String {
+    REFERENCE.trim_end_matches('\n').to_string()
 }
 
 const INTRO: &str = "You are Bricks, an autonomous software engineering agent.";
@@ -98,7 +93,6 @@ impl ProjectLoader for Loader {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
         let mut bricks = BricksConfig::default();
         bricks.agent.model = Some("test/a".into());
-        bricks.semantic.lsp.enabled = false;
         bricks.agents.enabled = self.agents;
         bricks.agents.max_depth = 2;
         let mut tools: Vec<String> = bricks_tools::coding()
@@ -231,7 +225,7 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
 
     // The session agent: the foundation first, whole, once.
     let p = system(parent);
-    assert!(p.starts_with(&reference(true)), "{p}");
+    assert!(p.starts_with(&reference()), "{p}");
     // CodeStats is announced once, and so is its line; NotebookEdit is gone.
     let announced: Vec<&str> = parent.tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(announced.iter().filter(|n| **n == "CodeStats").count(), 1);
@@ -266,7 +260,8 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
     let names: Vec<&str> = child.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(
         names.contains(&"Agent")
-            && names.contains(&"CodeScout")
+            && names.contains(&"Grep")
+            && !names.contains(&"CodeScout")
             && names.contains(&"memory_search"),
         "{names:?}"
     );
@@ -283,7 +278,7 @@ async fn the_session_and_its_child_send_the_foundation_with_their_own_bullets() 
             "",
             1,
         )
-        .starts_with(&reference(true)),
+        .starts_with(&reference()),
         "{c}"
     );
     assert_eq!(c.matches(INTRO).count(), 1);
@@ -302,7 +297,7 @@ async fn without_delegation_tools_the_bullet_is_absent_from_the_request() {
     let r = &reqs[0];
     assert!(!r.tools.iter().any(|t| t.name == "Agent"));
     let s = system(r);
-    assert!(s.starts_with(&reference(true)), "{s}");
+    assert!(s.starts_with(&reference()), "{s}");
     assert!(!s.contains("## Delegation"));
     assert_eq!(s.matches("MARK-RECALL").count(), 1);
 }

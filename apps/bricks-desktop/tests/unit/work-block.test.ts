@@ -50,7 +50,7 @@ let target: HTMLDivElement;
 let app: MountedComponent<WorkBlockProps> | null = null;
 
 /** Mounts the block with the run's current steps and reasoning. */
-function show(conv: Conversation): void {
+function show(conv: Conversation, showPlan = false): void {
 	const { items, answerReasoning } = barOf(conv);
 	app = mountReact(WorkBlock, {
 		target,
@@ -59,6 +59,7 @@ function show(conv: Conversation): void {
 			runId: RUN,
 			items,
 			answerReasoning,
+			showPlan,
 		},
 	});
 }
@@ -189,5 +190,49 @@ describe('WorkBlock once the run has ended', () => {
 		conv.apply(feed.next({ type: 'run_finished', outcome, text: '', turns: 1 }, { at: T0 + 6_000 }));
 		show(conv);
 		expect(text()).toBe(label);
+	});
+});
+
+describe('WorkBlock with showPlan', () => {
+	it('places the compact step count beside the worked bar and opens the Trace popover on click', () => {
+		const { conv, feed } = runningRun();
+		readCall(conv, feed, 'tc-1', 'Read');
+		conv.apply(
+			feed.next({
+				type: 'plan_updated',
+				plan: {
+					version: 1,
+					revision: 1,
+					updated_at: T0 + 1,
+					explanation: 'Étape par étape.',
+					todos: [
+						{ content: 'Installer @base-ui/react', activeForm: 'Installation en cours', status: 'completed' },
+						{ content: 'Remplacer Radix', activeForm: 'Remplacement des imports Radix', status: 'in_progress' },
+						{ content: 'Vérifier les types', activeForm: 'Vérification des types', status: 'pending' },
+					],
+				},
+			}),
+		);
+		conv.apply(feed.next({ type: 'run_finished', outcome: 'succeeded', text: '', turns: 1 }, { at: T0 + 21_000 }));
+
+		show(conv, true);
+		expect(text()).toContain('A travaillé 21s');
+		expect(text()).toContain('1/3 étapes');
+
+		const planTrigger = target.querySelector<HTMLButtonElement>('[data-slot="work-plan-trigger"]');
+		expect(planTrigger).not.toBeNull();
+		expect(document.querySelector('[data-slot="work-plan-popover"]')).toBeNull();
+
+		flushReact(() => {
+			planTrigger!.click();
+		});
+
+		const popover = document.querySelector<HTMLElement>('[data-slot="work-plan-popover"]');
+		expect(popover).not.toBeNull();
+		expect(popover!.textContent).toContain('1 sur 3 faites');
+		expect(popover!.textContent).toContain('Installer @base-ui/react');
+		expect(popover!.textContent).toContain('Remplacement des imports Radix');
+		expect(popover!.textContent).toContain('Vérifier les types');
+		expect(popover!.textContent).toContain('Étape par étape.');
 	});
 });

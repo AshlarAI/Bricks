@@ -907,21 +907,25 @@ impl ContextManager {
     }
 }
 
-// ─── `bricks.toml` ───────────────────────────────────────────────────────────
+// ─── JSON configuration ──────────────────────────────────────────────────────
 
-/// Read the `[context]` table of a `bricks.toml` text.
-pub fn policy_from_bricks_toml(text: &str) -> std::result::Result<ContextPolicy, String> {
-    #[derive(Deserialize)]
-    struct Doc {
-        #[serde(default)]
-        context: Option<toml::Value>,
-    }
-    let doc: Doc = toml::from_str(text).map_err(|e| format!("invalid TOML: {e}"))?;
-    let policy: ContextPolicy = match doc.context {
-        None => ContextPolicy::default(),
+/// Read the `context` object of a JSON configuration text.
+pub fn policy_from_config_json(text: &str) -> std::result::Result<ContextPolicy, String> {
+    let doc: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("invalid JSON: {e}"))?;
+    policy_from_json_doc(&doc)
+}
+
+/// Read the `context` object from an already-parsed JSON document.
+pub fn policy_from_json_doc(doc: &serde_json::Value) -> std::result::Result<ContextPolicy, String> {
+    let Some(obj) = doc.as_object() else {
+        return Err("configuration must be a JSON object".into());
+    };
+    let policy: ContextPolicy = match obj.get("context") {
+        None | Some(serde_json::Value::Null) => ContextPolicy::default(),
         Some(v) => serde_path_to_error::deserialize(v).map_err(|e| {
             let path = e.path().to_string();
-            format!("[context] field `{path}`: {}", e.into_inner())
+            format!("context field `{path}`: {}", e.into_inner())
         })?,
     };
     policy.validate()?;
@@ -1217,18 +1221,18 @@ mod tests {
     }
 
     #[test]
-    fn policy_reads_from_bricks_toml() {
-        let p = policy_from_bricks_toml(
-            "[context]\ncompact_threshold = 0.7\nsafety_margin_tokens = 2048\n",
+    fn policy_reads_from_config_json() {
+        let p = policy_from_config_json(
+            r#"{"context":{"compact_threshold":0.7,"safety_margin_tokens":2048}}"#,
         )
         .unwrap();
         assert_eq!((p.compact_threshold, p.safety_margin_tokens), (0.7, 2048));
         assert!(
-            policy_from_bricks_toml("[context]\ncompact_treshold = 0.7\n")
+            policy_from_config_json(r#"{"context":{"compact_treshold":0.7}}"#)
                 .unwrap_err()
                 .contains("compact_treshold")
         );
-        assert!(policy_from_bricks_toml("[context]\npreflight_ratio = 1.5\n").is_err());
+        assert!(policy_from_config_json(r#"{"context":{"preflight_ratio":1.5}}"#).is_err());
     }
 
     fn request(

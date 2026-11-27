@@ -1,9 +1,0 @@
-schema_version = 1
-
-[filters.generic]
-description = "Fallback for commands without a specific rule: ANSI and progress cleaned, exact repeats collapsed, diagnostics kept, the rest capped."
-match = [{ program = "*" }]
-truncate_lines_at = 2000
-head_lines = 60
-tail_lines = 140
-max_lines = 300

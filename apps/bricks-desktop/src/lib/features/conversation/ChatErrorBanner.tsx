@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '$lib/components/ui/dialog'
+import { Marker, MarkerContent, MarkerIcon } from '$lib/components/ui/marker'
 import { ScrollArea } from '$lib/components/ui/scroll-area'
 import { cn } from '$lib/utils'
 import { chatErrorCopyText, type ChatErrorView } from './chat-error'
@@ -72,16 +73,18 @@ export function ChatErrorBanner({
         data-slot="chat-error-banner"
         className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 backdrop-blur-md"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-ui text-foreground">
-          {error.hookBlocked ? (
-            <AnchorIcon className="size-4 shrink-0" aria-hidden="true" data-slot="chat-error-hook-icon" />
-          ) : (
-            <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
-          )}
-          <div className="min-w-0 truncate font-medium" title={error.message}>
+        <Marker className="flex-1 items-center text-ui text-foreground">
+          <MarkerIcon className="mt-0 [&>svg]:size-4">
+            {error.hookBlocked ? (
+              <AnchorIcon aria-hidden="true" data-slot="chat-error-hook-icon" />
+            ) : (
+              <InfoIcon aria-hidden="true" />
+            )}
+          </MarkerIcon>
+          <MarkerContent className="truncate font-medium whitespace-nowrap" title={error.message}>
             {error.message}
-          </div>
-        </div>
+          </MarkerContent>
+        </Marker>
 
         {error.modelConfigMissing && onOpenModelSettings && (
           <Button

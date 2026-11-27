@@ -12,7 +12,7 @@ use std::path::PathBuf;
         Without a command, prints this help. `bricks run` runs one prompt (scripts, CI); \
         `bricks run --session <id>` continues a stored session. The desktop application \
         resumes sessions from its sidebar and the `/resume` command. Models come from \
-        ~/.bricks/providers.toml (or --providers); settings from the project's bricks.toml. \
+        ~/.bricks/config.json (or --providers); project settings from .bricks/config.json. \
         See docs/cli.md.\n\n\
         Examples:\n  \
         bricks --workspace ./atlas sessions\n  \
@@ -39,7 +39,7 @@ pub struct Global {
         value_name = "DIR"
     )]
     pub workspace: Option<PathBuf>,
-    /// Providers file (default: ~/.bricks/providers.toml). A relative path
+    /// Config/providers JSON file (default: ~/.bricks/config.json). A relative path
     /// starts from the current folder.
     #[arg(long, global = true, value_name = "FILE")]
     pub providers: Option<PathBuf>,
@@ -55,7 +55,7 @@ pub struct Global {
 pub enum Cmd {
     /// Run one prompt (`--session <id>` continues a stored session).
     Run(RunArgs),
-    /// MCP servers: yours (~/.bricks/mcp.toml) and the project's (bricks.toml).
+    /// MCP servers: yours (~/.bricks/config.json) and the project's (.bricks/config.json).
     Mcp {
         #[command(subcommand)]
         action: McpCmd,

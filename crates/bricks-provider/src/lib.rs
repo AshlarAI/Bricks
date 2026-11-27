@@ -214,6 +214,18 @@ pub enum ImageTransport {
     None,
 }
 
+/// How a video a tool returns can reach the bound model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoTransport {
+    /// Inside the tool result itself (the protocol carries media there).
+    ToolResult,
+    /// Next to the tool results, in the same user turn (the model reads
+    /// videos, but its protocol carries only text in a tool result).
+    UserTurn,
+    /// The model does not read videos.
+    None,
+}
+
 #[async_trait]
 pub trait Provider: Send + Sync {
     /// The configured provider id (e.g. `custom`).
@@ -235,6 +247,12 @@ pub trait Provider: Send + Sync {
     /// (no image) for providers that do not declare their inputs.
     fn image_transport(&self) -> ImageTransport {
         ImageTransport::None
+    }
+
+    /// How a video returned by a tool can reach the bound model. `None`
+    /// (no video) for providers that do not declare or transport video inputs.
+    fn video_transport(&self) -> VideoTransport {
+        VideoTransport::None
     }
 
     /// The identity of a request sent with `options` by this instance,

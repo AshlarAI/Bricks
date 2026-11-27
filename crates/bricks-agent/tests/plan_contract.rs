@@ -34,7 +34,6 @@ impl ProjectLoader for Project {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
         let mut bricks = BricksConfig::default();
         bricks.agent.model = Some("test/a".into());
-        bricks.semantic.lsp.enabled = false;
         bricks.agents.enabled = self.agents;
         bricks.agents.max_depth = 2;
         Ok(ProjectContext {

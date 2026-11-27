@@ -427,6 +427,9 @@ struct Inner {
     spawner: parking_lot::RwLock<Option<Arc<crate::agents::AgentSpawner>>>,
     /// The session's skills (service and trust), when configured.
     skills: parking_lot::RwLock<Option<bricks_skills::SkillAccess>>,
+    /// Active run controls (`run_id`, `StreamControls`), present only while a
+    /// run is executing so `Command::Inject` can enqueue steering messages.
+    active_controls: parking_lot::Mutex<Option<(String, Arc<crate::events::StreamControls>)>>,
     /// The catalog revision the current provider was built with.
     provider_revision: AtomicU64,
     /// The session's last run in this controller ended with its answer
@@ -480,7 +483,7 @@ fn model_list(cfg: &EngineConfig) -> String {
         .map(|m| m.selection)
         .collect();
     if models.is_empty() {
-        "no model is configured (providers.toml)".to_string()
+        "no model is configured (~/.bricks/config.json)".to_string()
     } else {
         format!("configured models: {}", models.join(", "))
     }
@@ -711,7 +714,7 @@ fn prepare(
                 .or_else(|| settings.model.clone())
                 .ok_or_else(|| {
                     format!(
-                        "no model selected: pass --model or set [agent] model in bricks.toml ({})",
+                        "no model selected: pass --model or set agent.model in .bricks/config.json ({})",
                         model_list(cfg)
                     )
                 })?;
@@ -919,6 +922,7 @@ impl Controller {
             profiles: parking_lot::RwLock::new(profiles),
             spawner: parking_lot::RwLock::new(spawner.clone()),
             skills: parking_lot::RwLock::new(skills),
+            active_controls: parking_lot::Mutex::new(None),
             provider_revision: AtomicU64::new(revision),
             last_run_succeeded: std::sync::atomic::AtomicBool::new(false),
         });
@@ -954,6 +958,13 @@ impl Controller {
     /// The current agent (read-only uses: history, context, tools).
     pub fn agent(&self) -> Arc<Agent> {
         self.inner.agent.read().clone()
+    }
+
+    /// Active run id and stream controls of the currently executing run, if any.
+    pub(crate) fn active_stream_controls(
+        &self,
+    ) -> Option<(String, Arc<crate::events::StreamControls>)> {
+        self.inner.active_controls.lock().clone()
     }
 
     pub fn models(&self) -> Vec<ModelChoice> {
@@ -1379,66 +1390,71 @@ impl Controller {
         tokio::spawn(async move { q.push(None, ev, None).await });
     }
 
-    /// The workspace's shared engine (the one the agents' CodeScout uses).
-    pub fn semantic_engine(&self) -> Arc<bricks_semantic::SemanticEngine> {
-        let wd = self.agent().working_dir().to_path_buf();
-        bricks_semantic::SemanticRegistry::global().engine_for(&wd, &self.project().bricks.semantic)
-    }
-
-    /// Text search on the shared engine, answered by `search_results`. It
-    /// never starts a language server and runs beside an active run.
+    /// Text search on `tool_primitives::search`, answered by `search_results`.
+    /// Runs beside an active run without blocking it.
     fn search(&self, text: String, regex: bool) {
-        use bricks_semantic::{CodeQuery, ContextPolicy, Detail, Intent, MatchMode, Requester};
-        let engine = self.semantic_engine();
+        use bricks_tools::tool_primitives::search::{GrepMode, GrepOptions, grep_search};
         let wd = self.agent().working_dir().to_path_buf();
         let q = self.inner.queue.clone();
         tokio::spawn(async move {
-            let mut query = CodeQuery::text(text.clone())
-                .intent(Intent::TextSearch)
-                .context(ContextPolicy::None)
-                .detail(Detail::Compact);
-            if regex {
-                query.mode = MatchMode::Regex;
-            }
-            query.limits.budget_tokens = Some(engine.config().max_budget_tokens);
-            let r = engine
-                .query(query, &Requester::new("frontend", &wd).without_lsp_start())
-                .await;
-            let hits = r
-                .items
-                .iter()
-                .map(|i| {
-                    let col = i
-                        .line_text
-                        .get(..i.range.start.col as usize)
-                        .map(|p| p.chars().count())
-                        .unwrap_or(0);
-                    SearchHit {
-                        path: i.path.clone(),
-                        line: i.range.start.line + 1,
-                        column: col as u32 + 1,
-                        text: i.line_text.clone(),
-                    }
-                })
-                .collect();
-            let mut omitted = 0;
-            let mut notes: Vec<String> = Vec::new();
-            for o in &r.omissions {
-                if let bricks_semantic::Omission::ItemsOmitted { count, .. } = o {
-                    omitted += count;
+            let started = std::time::Instant::now();
+            const SEARCH_LIMIT: usize = 200;
+            let opts = GrepOptions {
+                max_results: Some(SEARCH_LIMIT),
+                literal: !regex,
+                mode: GrepMode::Lines,
+                ..Default::default()
+            };
+            let (status, hits, omitted, notes) = match grep_search(&text, &wd, opts).await {
+                Ok(found) => {
+                    let hits: Vec<SearchHit> = found
+                        .matches
+                        .into_iter()
+                        .map(|m| {
+                            let column = if !regex {
+                                m.line_content
+                                    .find(&text)
+                                    .and_then(|pos| {
+                                        u32::try_from(m.line_content[..pos].chars().count() + 1)
+                                            .ok()
+                                    })
+                                    .unwrap_or(1)
+                            } else {
+                                1
+                            };
+                            SearchHit {
+                                path: m
+                                    .file
+                                    .strip_prefix(&wd)
+                                    .unwrap_or(&m.file)
+                                    .display()
+                                    .to_string(),
+                                line: u32::try_from(m.line_number).unwrap_or(u32::MAX),
+                                column,
+                                text: m.line_content,
+                            }
+                        })
+                        .collect();
+                    let status = if found.more { "partial" } else { "complete" }.to_string();
+                    let notes = if found.more {
+                        vec![format!(
+                            "Showing first {} matches; refine query to see more.",
+                            hits.len()
+                        )]
+                    } else {
+                        Vec::new()
+                    };
+                    (status, hits, usize::from(found.more), notes)
                 }
-                notes.push(bricks_semantic::render::omission_text(o));
-            }
-            if let bricks_semantic::ResultStatus::Error { message } = &r.status {
-                notes.push(message.clone());
-            }
+                Err(e) => ("error".to_string(), Vec::new(), 0, vec![e.to_string()]),
+            };
             let ev = Event::SearchResults {
                 query: text,
-                status: r.status.label().to_string(),
+                status,
                 hits,
                 omitted,
                 notes,
-                elapsed_ms: r.metrics.elapsed_ms,
+                elapsed_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             };
             q.push(None, ev, None).await;
         });
@@ -1921,6 +1937,21 @@ impl Controller {
                 });
                 Ok(())
             }
+            Command::Inject { ref text } => {
+                let Some((run_id, controls)) = self.active_stream_controls() else {
+                    return self.reject(&cmd, "no run is in progress".into());
+                };
+                match controls.try_inject(text.clone()) {
+                    Ok(()) => {
+                        self.inner.queue.push_now(
+                            Some(&run_id),
+                            Event::MessageInjected { text: text.clone() },
+                        );
+                        Ok(())
+                    }
+                    Err(refusal) => self.reject(&cmd, refusal.to_string()),
+                }
+            }
             Command::Compact | Command::ClearContext | Command::Resume { .. } => {
                 let what = match &cmd {
                     Command::Compact => "a compaction",
@@ -2227,6 +2258,14 @@ impl Controller {
         // The orchestrator's queue: its sub-agents' reports and Messagent
         // messages are read between two turns of this run.
         let controls = Arc::new(crate::events::StreamControls::new(token.clone()));
+        *self.inner.active_controls.lock() = Some((run_id.clone(), Arc::clone(&controls)));
+        struct ClearControls<'a>(&'a Inner);
+        impl Drop for ClearControls<'_> {
+            fn drop(&mut self) {
+                *self.0.active_controls.lock() = None;
+            }
+        }
+        let _clear_controls = ClearControls(&self.inner);
         let spawner = self.inner.spawner.read().clone();
         if let Some(sp) = &spawner {
             sp.runtime().set_main_controls(Some(Arc::clone(&controls)));
@@ -2240,6 +2279,7 @@ impl Controller {
             Arc::clone(&agent.permission_policy),
         )
         .await;
+        drop(_clear_controls);
         if let Some(sp) = &spawner {
             sp.runtime().set_main_controls(None);
         }
@@ -2476,15 +2516,19 @@ async fn translate(
                 executed,
                 status,
                 ..
-            } => Event::ToolFinished {
-                tool_call_id: id,
-                name,
-                is_error,
-                duration_ms: duration.as_millis() as u64,
-                output: result,
-                executed: Some(executed),
-                status: Some(tool_status_name(status).into()),
-            },
+            } => {
+                let (output, output_truncated) = cap_text(&result, MAX_TOOL_OUTPUT_BYTES);
+                Event::ToolFinished {
+                    tool_call_id: id,
+                    name,
+                    is_error,
+                    duration_ms: duration.as_millis() as u64,
+                    output,
+                    output_truncated,
+                    executed: Some(executed),
+                    status: Some(tool_status_name(status).into()),
+                }
+            }
             AgentEvent::TurnComplete { usage, .. } => {
                 turns += 1;
                 Event::Usage {

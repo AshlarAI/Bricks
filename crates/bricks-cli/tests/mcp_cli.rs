@@ -120,8 +120,8 @@ fn a_person_server_is_added_listed_tested_switched_and_removed() {
         stdout(&added)
     );
     assert!(
-        f.home.join("mcp.toml").is_file(),
-        "the server is not in mcp.toml"
+        f.home.join("config.json").is_file(),
+        "the server is not in config.json"
     );
 
     let servers = listed(&f);
@@ -208,11 +208,21 @@ fn an_unknown_name_fails_with_exit_1() {
 fn a_project_server_waits_for_approval_and_does_not_run_before_it() {
     let f = fixture();
     let server = f.server.display().to_string();
+    let proj_cfg = f.project.join(".bricks").join("config.json");
+    std::fs::create_dir_all(proj_cfg.parent().unwrap()).unwrap();
     std::fs::write(
-        f.project.join("bricks.toml"),
-        format!(
-            "[agent]\nmodel = \"local/m\"\n\n[[mcp.servers]]\nname = \"repo\"\ncommand = \"python3\"\nargs = [\"{server}\"]\n"
-        ),
+        &proj_cfg,
+        serde_json::json!({
+            "agent": { "model": "local/m" },
+            "mcp": {
+                "servers": [{
+                    "name": "repo",
+                    "command": "python3",
+                    "args": [server]
+                }]
+            }
+        })
+        .to_string(),
     )
     .unwrap();
 
