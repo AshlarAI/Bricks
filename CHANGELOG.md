@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 238 (2026/11/27)
+
+- Initialize the run cancellation token eagerly in `Controller::send`, add `Script::wait_requests` to synchronize hanging scripted provider cancel tests, and add a regression test for immediate cancellation after submit.
+
 ### Commit 237 (2026/11/27)
 
 - Format the Rust workspace with `cargo fmt` and shorten the fake key test literal in `apps/bricks-desktop/src-tauri/src/commands/inspect.rs` so release formatting and secret-scanning checks pass.

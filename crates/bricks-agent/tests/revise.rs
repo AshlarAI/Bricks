@@ -293,6 +293,9 @@ async fn a_revision_during_a_run_is_refused_and_the_run_goes_on() {
         })
         .unwrap();
     until(&mut env.events, "run_started").await;
+    tokio::time::timeout(Duration::from_secs(10), env.script.wait_requests(1))
+        .await
+        .expect("first run reaches the scripted provider");
 
     let err = env
         .ctl

@@ -183,6 +183,9 @@ async fn commands_during_a_run_follow_the_rules() {
         })
         .unwrap();
     until(&mut env.events, "run_started").await;
+    tokio::time::timeout(Duration::from_secs(10), env.script.wait_requests(1))
+        .await
+        .expect("first run reaches the scripted provider");
     for cmd in [
         Command::Submit {
             prompt: Prompt::text("second"),
@@ -819,4 +822,21 @@ async fn agent_and_frontend_share_the_workspace_search() {
         })
         .is_err()
     );
+}
+
+#[tokio::test]
+async fn cancel_immediately_after_submit_never_hangs() {
+    let mut env = open(vec![Reply::hang()]).await;
+    until(&mut env.events, "session_opened").await;
+    env.ctl
+        .send(Command::Submit {
+            prompt: Prompt::text("long"),
+        })
+        .unwrap();
+    env.ctl.send(Command::Cancel).unwrap();
+    let evs = tokio::time::timeout(Duration::from_secs(5), until_finished(&mut env.events))
+        .await
+        .expect("immediate cancel finishes the run promptly");
+    assert_eq!(outcome(evs.last().unwrap()), RunOutcome::Cancelled);
+    env.ctl.wait_idle().await;
 }

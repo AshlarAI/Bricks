@@ -1852,6 +1852,7 @@ impl Controller {
                         run_id: run_id.clone(),
                     };
                 }
+                let token = self.agent().begin_run();
                 // A revision replaces a message that must still be there, as shown.
                 let revision = match &cmd {
                     Command::Revise {
@@ -1933,7 +1934,7 @@ impl Controller {
                     {
                         return;
                     }
-                    this.run(run_id, converted).await
+                    this.run(run_id, converted, token).await
                 });
                 Ok(())
             }
@@ -2191,7 +2192,7 @@ impl Controller {
         Ok(())
     }
 
-    async fn run(&self, run_id: String, converted: attach::Converted) {
+    async fn run(&self, run_id: String, converted: attach::Converted, token: CancellationToken) {
         let agent = self.agent();
         let q = self.inner.queue.clone();
         let rid = Some(run_id.as_str());
@@ -2236,7 +2237,6 @@ impl Controller {
                 ..RunMemory::default()
             },
         };
-        let token = agent.begin_run();
         // Small: the run feels the consumer's pace through the bounded
         // queue instead of filling a large buffer first.
         let (tx, rx) = mpsc::channel::<AgentEvent>(16);

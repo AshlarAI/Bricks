@@ -74,6 +74,7 @@ impl Reply {
 pub struct Script {
     replies: parking_lot::Mutex<VecDeque<Reply>>,
     seen: parking_lot::Mutex<Vec<(String, CompletionRequest)>>,
+    requested: tokio::sync::Notify,
 }
 
 impl Script {
@@ -81,6 +82,7 @@ impl Script {
         Arc::new(Self {
             replies: parking_lot::Mutex::new(replies.into()),
             seen: parking_lot::Mutex::new(Vec::new()),
+            requested: tokio::sync::Notify::new(),
         })
     }
 
@@ -90,6 +92,17 @@ impl Script {
 
     pub fn requests(&self) -> Vec<(String, CompletionRequest)> {
         self.seen.lock().clone()
+    }
+
+    /// Wait until at least `count` requests have entered [`ScriptedProvider::complete`].
+    pub async fn wait_requests(&self, count: usize) {
+        loop {
+            let notified = self.requested.notified();
+            if self.seen.lock().len() >= count {
+                return;
+            }
+            notified.await;
+        }
     }
 }
 
@@ -141,6 +154,7 @@ impl Provider for ScriptedProvider {
             .lock()
             .pop_front()
             .unwrap_or_else(|| Reply::text("(no more scripted replies)"));
+        self.script.requested.notify_waiters();
         if let Some(e) = reply.error {
             return Err(BricksError::Provider(e));
         }
