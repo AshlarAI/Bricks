@@ -695,7 +695,7 @@ async fn a_refused_submit_leaves_no_label_for_the_next_run() {
     let wd = std::fs::canonicalize(wd_dir.path()).unwrap();
     let (state, project) = state_with_project(home.path(), &wd);
     let script = Script::new(vec![Reply::hang(), Reply::text("ok")]);
-    let entry = open_scripted(&state, &project, &wd, script).await;
+    let entry = open_scripted(&state, &project, &wd, Arc::clone(&script)).await;
     let id = entry.session_id.clone();
 
     // A run that hangs: a second submit is refused while it runs.
@@ -710,18 +710,14 @@ async fn a_refused_submit_leaves_no_label_for_the_next_run() {
         .expect_err("refused while a run is active");
     assert_eq!(refused.code, IpcErrorCode::Rejected);
 
-    // A cancel that arrives before the run has begun is not kept by the
-    // engine: it is sent again until the run is over.
-    for _ in 0..200 {
-        if !entry.is_busy() {
-            break;
-        }
-        // Refused once the run is over: that is the end of the loop.
-        let _ = state
-            .send_command(&id, serde_json::to_value(Command::Cancel).unwrap(), None)
-            .await;
-        tokio::time::sleep(Duration::from_millis(15)).await;
-    }
+    tokio::time::timeout(Duration::from_secs(10), script.wait_requests(1))
+        .await
+        .expect("first run reaches the scripted provider");
+    state
+        .send_command(&id, serde_json::to_value(Command::Cancel).unwrap(), None)
+        .await
+        .expect("cancel active run");
+    entry.controller.wait_idle().await;
     let cancelled = run_consumed(&entry, None).await;
     let hung = last_run_started(&cancelled)["run_id"]
         .as_str()
@@ -1256,7 +1252,7 @@ async fn a_message_to_a_busy_conversation_waits_then_gets_its_own_answer() {
     let (state, project) = state_with_project(home.path(), &wd);
     register_sender(&state, &wd);
     let script = Script::new(vec![Reply::hang(), Reply::text("réponse de B")]);
-    let b = open_scripted(&state, &project, &wd, script).await;
+    let b = open_scripted(&state, &project, &wd, Arc::clone(&script)).await;
     let b_id = b.session_id.clone();
 
     // B works on something of its own.
@@ -1281,6 +1277,9 @@ async fn a_message_to_a_busy_conversation_waits_then_gets_its_own_answer() {
     assert_eq!(early.state, MailState::Sent, "still waiting while B works");
 
     // B's own run ends; the message is delivered, and only its run answers.
+    tokio::time::timeout(Duration::from_secs(10), script.wait_requests(1))
+        .await
+        .expect("first run reaches the scripted provider");
     b.controller.send(Command::Cancel).unwrap();
     let done = state
         .mail
@@ -1518,7 +1517,7 @@ async fn two_messages_to_a_busy_conversation_each_get_their_own_answer() {
         Reply::text("réponse 1"),
         Reply::text("réponse 2"),
     ]);
-    let b = open_scripted(&state, &project, &wd, script).await;
+    let b = open_scripted(&state, &project, &wd, Arc::clone(&script)).await;
     let b_id = b.session_id.clone();
     b.controller
         .send(Command::Submit {
@@ -1536,6 +1535,9 @@ async fn two_messages_to_a_busy_conversation_each_get_their_own_answer() {
         .await
         .expect("second sent");
     assert_ne!(one.id, two.id);
+    tokio::time::timeout(Duration::from_secs(10), script.wait_requests(1))
+        .await
+        .expect("first run reaches the scripted provider");
     b.controller.send(Command::Cancel).unwrap();
 
     let one = state

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 239 (2026/11/27)
+
+- Synchronize the remaining hanging scripted-provider cancellation tests in `bricks-desktop` and `bricks-agent` with `Script::wait_requests` before sending cancel commands.
+
 ### Commit 238 (2026/11/27)
 
 - Initialize the run cancellation token eagerly in `Controller::send`, add `Script::wait_requests` to synchronize hanging scripted provider cancel tests, and add a regression test for immediate cancellation after submit.

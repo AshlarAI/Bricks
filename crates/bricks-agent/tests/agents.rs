@@ -784,6 +784,9 @@ async fn with_one_slot_the_second_delegation_waits_for_the_first() {
         }
     };
     let cancel_at = evs.len();
+    tokio::time::timeout(Duration::from_secs(10), env.script.wait_requests(2))
+        .await
+        .expect("first child reaches the scripted provider");
     env.ctl
         .send(Command::AgentControl {
             action: "cancel".into(),
