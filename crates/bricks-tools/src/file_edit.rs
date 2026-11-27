@@ -1302,9 +1302,7 @@ mod tests {
             .await;
         assert!(r2.content.starts_with("[file_unchanged]"), "{}", r2.content);
 
-        let edit_memoed = FileEditTool
-            .execute(one(&memoed, "one", "uno"), &ctx)
-            .await;
+        let edit_memoed = FileEditTool.execute(one(&memoed, "one", "uno"), &ctx).await;
         assert!(!edit_memoed.is_error, "{}", edit_memoed.content);
 
         let r3 = crate::file_read::FileReadTool

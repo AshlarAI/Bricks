@@ -123,7 +123,8 @@ impl Tool for GrepTool {
         }
         let before = input.before_context.unwrap_or(input.context);
         let after = input.after_context.unwrap_or(input.context);
-        if (input.context > 0 || before > 0 || after > 0) && input.output_mode != OutputMode::Content
+        if (input.context > 0 || before > 0 || after > 0)
+            && input.output_mode != OutputMode::Content
         {
             return ToolResult::error(
                 "`context`/`before_context`/`after_context` applies to output_mode \"content\" only; drop it or use content.",
@@ -619,8 +620,16 @@ mod tests {
         )
         .await;
         assert!(!rust_only.is_error, "{}", rust_only.content);
-        assert!(rust_only.content.contains("main.rs"), "{}", rust_only.content);
-        assert!(!rust_only.content.contains("script.py"), "{}", rust_only.content);
+        assert!(
+            rust_only.content.contains("main.rs"),
+            "{}",
+            rust_only.content
+        );
+        assert!(
+            !rust_only.content.contains("script.py"),
+            "{}",
+            rust_only.content
+        );
 
         // Single-file path with non-matching type yields no matches.
         let single_mismatch = grep(
@@ -651,7 +660,11 @@ mod tests {
     #[tokio::test]
     async fn multiline_matches_across_line_breaks() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join("a.txt"), "start\nfn foo(\n    x: i32,\n)\nend\n").unwrap();
+        fs::write(
+            tmp.path().join("a.txt"),
+            "start\nfn foo(\n    x: i32,\n)\nend\n",
+        )
+        .unwrap();
 
         let off = grep(
             tmp.path(),
@@ -698,8 +711,16 @@ mod tests {
         )
         .await;
         assert!(!content.is_error, "{}", content.content);
-        assert!(content.content.contains("a.rs:2:HIT 2"), "{}", content.content);
-        assert!(content.content.contains("b.rs:1:HIT 3"), "{}", content.content);
+        assert!(
+            content.content.contains("a.rs:2:HIT 2"),
+            "{}",
+            content.content
+        );
+        assert!(
+            content.content.contains("b.rs:1:HIT 3"),
+            "{}",
+            content.content
+        );
         assert!(!content.content.contains("HIT 1"), "{}", content.content);
         assert!(
             content
@@ -708,7 +729,11 @@ mod tests {
             "{}",
             content.content
         );
-        assert!(content.content.contains("`offset: 3`"), "{}", content.content);
+        assert!(
+            content.content.contains("`offset: 3`"),
+            "{}",
+            content.content
+        );
 
         // files_with_matches mode
         let files = grep(
@@ -754,7 +779,11 @@ mod tests {
         )
         .await;
         assert!(!past.is_error);
-        assert!(past.content.contains("No matches found"), "{}", past.content);
+        assert!(
+            past.content.contains("No matches found"),
+            "{}",
+            past.content
+        );
     }
 
     #[tokio::test]

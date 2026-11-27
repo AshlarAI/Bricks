@@ -66,10 +66,7 @@ pub fn announced_tools(bricks: &BricksConfig) -> Vec<String> {
 
 impl ProjectLoader for Projects {
     fn load(&self, wd: &Path) -> Result<ProjectContext, String> {
-        let home = self
-            .home
-            .clone()
-            .unwrap_or_else(crate::paths::bricks_home);
+        let home = self.home.clone().unwrap_or_else(crate::paths::bricks_home);
         let bricks = BricksConfig::load_in_home(&home, wd);
         let memory = if self.project_memory {
             long_term_memory(wd)?

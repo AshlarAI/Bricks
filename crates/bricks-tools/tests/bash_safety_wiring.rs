@@ -63,7 +63,10 @@ fn bash_permission_level_for_classifies_readonly_forbidden_and_execute() {
     }
 
     // Missing or non-string command defaults conservatively to Execute.
-    assert_eq!(tool.permission_level_for(&json!({})), PermissionLevel::Execute);
+    assert_eq!(
+        tool.permission_level_for(&json!({})),
+        PermissionLevel::Execute
+    );
     assert_eq!(
         tool.permission_level_for(&json!({ "command": 42 })),
         PermissionLevel::Execute

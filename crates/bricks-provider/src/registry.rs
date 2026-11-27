@@ -418,8 +418,10 @@ mod tests {
     #[test]
     fn protocol_override_gets_its_own_path_auth_and_headers() {
         let text = mutate(|v| {
-            v["providers"][0]["models"].as_array_mut().unwrap().push(
-                serde_json::json!({
+            v["providers"][0]["models"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
                     "id": "claude",
                     "protocol": "anthropic_messages",
                     "name": "C",
@@ -427,8 +429,7 @@ mod tests {
                     "input_modalities": ["text"],
                     "output_modalities": ["text"],
                     "limits": { "max_input_tokens": 10, "max_output_tokens": 10 }
-                }),
-            );
+                }));
         });
         let r = ProviderRegistry::from_json_str(&text, "t").unwrap();
         let c = r.resolve("custom/claude").unwrap();
@@ -507,10 +508,7 @@ mod tests {
     #[test]
     fn the_shipped_example_loads_resolves_and_holds_no_secret() {
         let text = include_str!("../../../docs/providers.example.json");
-        assert!(
-            !text.contains("\"api_key\""),
-            "the example holds no key"
-        );
+        assert!(!text.contains("\"api_key\""), "the example holds no key");
         let reg = ProviderRegistry::from_json_str(text, "providers.example.json").unwrap();
 
         // Every model resolves and builds once its key reference is satisfied.
@@ -653,10 +651,13 @@ mod tests {
             m.count_url.unwrap().as_str(),
             "https://gw.example.com/team/v1/responses/input_tokens?x=1"
         );
-        let m = reg("responses", Some(serde_json::json!({ "path": "custom/count" })))
-            .unwrap()
-            .resolve("p/m")
-            .unwrap();
+        let m = reg(
+            "responses",
+            Some(serde_json::json!({ "path": "custom/count" })),
+        )
+        .unwrap()
+        .resolve("p/m")
+        .unwrap();
         assert_eq!(
             m.count_url.unwrap().as_str(),
             "https://gw.example.com/team/v1/custom/count?x=1"

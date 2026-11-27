@@ -630,7 +630,7 @@ mod tests {
 
     #[tokio::test]
     async fn configuration_reports_the_settings_without_quoting_diagnostics() {
-        const SECRET: &str = "sk-FAKE-IN-CONFIG-JSON-9";
+        const SECRET: &str = "sk-FAKE-CONFIG-99";
         let fx = fixture();
         // A misspelt key next to a value that looks like a secret: the table
         // falls back to its defaults (the engine's rule), the diagnostic
@@ -648,7 +648,9 @@ mod tests {
         let info = config_of(&ctl, None).await.unwrap();
         assert!(info.agents_enabled);
         assert!(
-            info.sources.iter().any(|s| s.ends_with(".bricks/config.json") || s.ends_with(".bricks\\config.json")),
+            info.sources
+                .iter()
+                .any(|s| s.ends_with(".bricks/config.json") || s.ends_with(".bricks\\config.json")),
             "{:?}",
             info.sources
         );
@@ -812,7 +814,9 @@ mod tests {
         let got = config_sources(Some(&providers), &wd, Some(&rules));
         assert_eq!(got.len(), 4, "{got:?}");
         assert!(got[0].ends_with("config.json"));
-        assert!(got[1].ends_with(".bricks/config.json") || got[1].ends_with(".bricks\\config.json"));
+        assert!(
+            got[1].ends_with(".bricks/config.json") || got[1].ends_with(".bricks\\config.json")
+        );
 
         assert_eq!(
             config_sources(None, &wd, None).len(),

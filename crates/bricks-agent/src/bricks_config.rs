@@ -66,13 +66,8 @@ impl Default for BricksConfig {
 }
 
 /// Top-level keys allowed inside a project's `.bricks/config.json`.
-const PROJECT_ALLOWED_SECTIONS: &[&str] = &[
-    "schema_version",
-    "agent",
-    "compression",
-    "mcp",
-    "memory",
-];
+const PROJECT_ALLOWED_SECTIONS: &[&str] =
+    &["schema_version", "agent", "compression", "mcp", "memory"];
 
 /// Keys allowed inside a project's `agent` object.
 const PROJECT_ALLOWED_AGENT_KEYS: &[&str] = &["model", "reasoning"];
@@ -179,11 +174,7 @@ impl BricksConfig {
         )
     }
 
-    fn assemble(
-        user: Option<(&str, &str)>,
-        project: Option<(&str, &str)>,
-        rules: RuleSet,
-    ) -> Self {
+    fn assemble(user: Option<(&str, &str)>, project: Option<(&str, &str)>, rules: RuleSet) -> Self {
         let mut c = Self::default();
         for d in rules.diagnostics() {
             c.diagnostics.push(d.to_string());
@@ -214,9 +205,14 @@ impl BricksConfig {
 
         // Unknown keys in these objects are stripped and reported individually
         // so the remaining valid keys in the object still apply.
-        let mut unknown = without_unknown_keys::<crate::control::settings::FileAgent>(&mut doc, "agent");
-        unknown.extend(without_unknown_keys::<crate::agents::DelegationSettings>(&mut doc, "agents"));
-        unknown.extend(without_unknown_keys::<bricks_tools::shell::BashSettings>(&mut doc, "bash"));
+        let mut unknown =
+            without_unknown_keys::<crate::control::settings::FileAgent>(&mut doc, "agent");
+        unknown.extend(without_unknown_keys::<crate::agents::DelegationSettings>(
+            &mut doc, "agents",
+        ));
+        unknown.extend(without_unknown_keys::<bricks_tools::shell::BashSettings>(
+            &mut doc, "bash",
+        ));
         for key in unknown {
             self.diagnostics
                 .push(format!("{name}: unknown key ignored: {key}"));
@@ -320,9 +316,8 @@ impl BricksConfig {
         if let Some(sv) = root.get("schema_version")
             && sv.as_u64() != Some(1)
         {
-            self.diagnostics.push(format!(
-                "{name}: unsupported schema_version (expected 1)"
-            ));
+            self.diagnostics
+                .push(format!("{name}: unsupported schema_version (expected 1)"));
         }
 
         // Report every top-level section outside the strict project whitelist.
@@ -349,9 +344,9 @@ impl BricksConfig {
             && !agent_val.is_null()
         {
             match agent_val.as_object() {
-                None => self.diagnostics.push(format!(
-                    "{name}: agent must be a JSON object (ignored)"
-                )),
+                None => self
+                    .diagnostics
+                    .push(format!("{name}: agent must be a JSON object (ignored)")),
                 Some(map) => {
                     let mut akeys: Vec<&String> = map.keys().collect();
                     akeys.sort();
@@ -372,9 +367,9 @@ impl BricksConfig {
                             Some(s) => self.diagnostics.push(format!(
                                 "{name}: agent.model `{s}` must be `provider_id/model_id` (ignored)"
                             )),
-                            None => self.diagnostics.push(format!(
-                                "{name}: agent.model must be a string (ignored)"
-                            )),
+                            None => self
+                                .diagnostics
+                                .push(format!("{name}: agent.model must be a string (ignored)")),
                         }
                     }
                     if let Some(r) = map.get("reasoning")

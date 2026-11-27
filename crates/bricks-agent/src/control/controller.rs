@@ -1943,10 +1943,9 @@ impl Controller {
                 };
                 match controls.try_inject(text.clone()) {
                     Ok(()) => {
-                        self.inner.queue.push_now(
-                            Some(&run_id),
-                            Event::MessageInjected { text: text.clone() },
-                        );
+                        self.inner
+                            .queue
+                            .push_now(Some(&run_id), Event::MessageInjected { text: text.clone() });
                         Ok(())
                     }
                     Err(refusal) => self.reject(&cmd, refusal.to_string()),

@@ -823,7 +823,11 @@ mod tests {
         assert_eq!(parsed["providers"][0]["models"][0]["enabled"], false);
         let back = apply(&off, &set(true), "test").unwrap();
         let parsed_back: Value = serde_json::from_str(&back).unwrap();
-        assert!(parsed_back["providers"][0]["models"][0].get("enabled").is_none());
+        assert!(
+            parsed_back["providers"][0]["models"][0]
+                .get("enabled")
+                .is_none()
+        );
     }
 
     #[test]

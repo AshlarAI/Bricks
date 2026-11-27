@@ -576,7 +576,11 @@ mod tests {
             protocol_support(Protocol::AnthropicMessages).inputs,
             &[Text, Image, Document]
         );
-        assert!(protocol_support(Protocol::ChatCompletions).inputs.contains(&Video));
+        assert!(
+            protocol_support(Protocol::ChatCompletions)
+                .inputs
+                .contains(&Video)
+        );
         for p in [Protocol::Responses, Protocol::AnthropicMessages] {
             assert_eq!(protocol_support(p).outputs, &[Text]);
             assert!(

@@ -187,24 +187,17 @@ mod tests {
 
     #[test]
     fn unknown_fields_and_zero_limits_are_errors() {
-        let e = CompressionSection::from_config_json(
-            r#"{"compression":{"max_eror_lines":1}}"#,
-        )
-        .unwrap_err();
+        let e = CompressionSection::from_config_json(r#"{"compression":{"max_eror_lines":1}}"#)
+            .unwrap_err();
         assert!(e.contains("max_eror_lines"), "{e}");
-        let s = CompressionSection::from_config_json(
-            r#"{"compression":{"max_lines":0}}"#,
-        )
-        .unwrap();
+        let s = CompressionSection::from_config_json(r#"{"compression":{"max_lines":0}}"#).unwrap();
         assert!(s.apply(&CompressionConfig::default()).is_err());
     }
 
     #[test]
     fn missing_section_is_default() {
-        let s = CompressionSection::from_config_json(
-            r#"{"context":{"safety_margin_tokens":1}}"#,
-        )
-        .unwrap();
+        let s = CompressionSection::from_config_json(r#"{"context":{"safety_margin_tokens":1}}"#)
+            .unwrap();
         assert!(s.level.is_none());
     }
 }

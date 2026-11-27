@@ -23,11 +23,11 @@ pub(super) const MAX_CONCURRENT_TOOL_CALLS: usize = 8;
 
 #[cfg(test)]
 use context::MIN_TOOL_RESULT_BUDGET;
-pub use context::{apply_tool_result_budget, apply_tool_result_budget_with};
 use context::{
     MediaWeights, apply_tool_result_budget_protected, ensure_budget, model_view, raw_tool_result,
     run_compaction, tool_definitions, tool_result_budget,
 };
+pub use context::{apply_tool_result_budget, apply_tool_result_budget_with};
 pub(crate) use context::{compact_now, context_status};
 pub(crate) use history::{clear_context, load_session_history, revise_context, save_session};
 use history::{inject_pending, push_message, repair_interrupted};
@@ -913,11 +913,7 @@ async fn run_loop(
                 match agent.instruction_files.lock().collect(&agent.working_dir) {
                     crate::instruction_files::InstructionUpdate::Full(text)
                     | crate::instruction_files::InstructionUpdate::Delta(text) => {
-                        append_user_context_note(
-                            agent,
-                            text,
-                            "project instruction files updated",
-                        );
+                        append_user_context_note(agent, text, "project instruction files updated");
                     }
                     crate::instruction_files::InstructionUpdate::Unchanged => {}
                 }
@@ -2375,13 +2371,10 @@ mod dispatch_tests {
             msgs.push(Message::user(format!("recent {i}")));
         }
 
-        let changed = apply_tool_result_budget_protected(
-            &mut msgs,
-            1_000,
-            weights,
-            &[],
-            |id, len| format!("[removed {id} ({len})]"),
-        );
+        let changed =
+            apply_tool_result_budget_protected(&mut msgs, 1_000, weights, &[], |id, len| {
+                format!("[removed {id} ({len})]")
+            });
         assert!(changed);
         assert!(
             matches!(
@@ -2737,7 +2730,8 @@ mod wave_b_integration_tests {
             .next()
             .unwrap();
         assert!(
-            post_clear_read.contains("hello wave b") && !post_clear_read.contains("[file_unchanged]"),
+            post_clear_read.contains("hello wave b")
+                && !post_clear_read.contains("[file_unchanged]"),
             "{post_clear_read}"
         );
     }

@@ -134,10 +134,7 @@ fn is_media_marker(text: &str) -> bool {
 }
 
 fn extract_media_path(text: &str) -> Option<String> {
-    for mark in [
-        bricks_tools::TOOL_IMAGE_MARK,
-        bricks_tools::TOOL_VIDEO_MARK,
-    ] {
+    for mark in [bricks_tools::TOOL_IMAGE_MARK, bricks_tools::TOOL_VIDEO_MARK] {
         if let Some(rest) = text.strip_prefix(mark)
             && let Some((_, after_id)) = rest.split_once("] ")
             && let Some((path, _)) = after_id.split_once(", ")

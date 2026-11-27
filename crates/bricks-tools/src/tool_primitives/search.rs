@@ -208,7 +208,10 @@ impl grep::searcher::Sink for FileSink<'_> {
             let mut find_err: Option<std::io::Error> = None;
             let res = self.matcher.find_iter(haystack, |m| {
                 let extra_lines = if self.multiline {
-                    haystack[..m.start()].iter().filter(|&&b| b == b'\n').count()
+                    haystack[..m.start()]
+                        .iter()
+                        .filter(|&&b| b == b'\n')
+                        .count()
                 } else {
                     0
                 };
@@ -429,9 +432,9 @@ fn grep_blocking(
     }
 
     // One match (or file) past `offset + limit` proves that more exist.
-    let wanted = opts
-        .max_results
-        .map_or(usize::MAX, |m| opts.offset.saturating_add(m).saturating_add(1));
+    let wanted = opts.max_results.map_or(usize::MAX, |m| {
+        opts.offset.saturating_add(m).saturating_add(1)
+    });
     let mode = opts.mode;
     let multiline = opts.multiline;
     let only_matching = opts.only_matching;
@@ -601,9 +604,7 @@ fn paginate_lines(
         // (excluding any skipped same-line matches) plus `first_match_idx..`.
         let mut kept = Vec::with_capacity(lines.len() - keep_ctx_from);
         for (idx, item) in std::mem::take(lines).into_iter().enumerate() {
-            if idx >= first_match_idx
-                || (idx >= keep_ctx_from && !drop_indices.contains(&idx))
-            {
+            if idx >= first_match_idx || (idx >= keep_ctx_from && !drop_indices.contains(&idx)) {
                 kept.push(item);
             }
         }

@@ -76,7 +76,12 @@ async fn open_controller(
 ) -> (Controller, EventStream, Arc<Script>) {
     let script = Script::new(replies);
     let catalog = ScriptedCatalog::new(&["a"], script.clone());
-    let mut cfg = EngineConfig::new(dir.path(), catalog, bricks_config(), dir.path().join(".sessions"));
+    let mut cfg = EngineConfig::new(
+        dir.path(),
+        catalog,
+        bricks_config(),
+        dir.path().join(".sessions"),
+    );
     cfg.permissions = policy.map(|p| common::default_store(dir.path(), &p));
     if let Some(factory) = tools {
         cfg.tools = factory;
@@ -133,7 +138,8 @@ async fn forbidden_bash_calls_are_denied_without_asking_in_engine_and_controller
             assert_eq!(level, PermissionLevel::Forbidden, "{label} {input}");
 
             let approver = Arc::new(RecordingApprover::default());
-            let engine = PermissionEngine::new(PolicyCell::new(policy.clone(), 0), approver.clone());
+            let engine =
+                PermissionEngine::new(PolicyCell::new(policy.clone(), 0), approver.clone());
             let req = PermissionRequest {
                 tool_name: "Bash".into(),
                 tool_input: input.clone(),
@@ -595,12 +601,7 @@ async fn non_concurrent_safe_tools_execute_strictly_sequentially() {
     assert_eq!(
         *recorder.events.lock(),
         vec![
-            "start:w1",
-            "end:w1",
-            "start:w2",
-            "end:w2",
-            "start:w3",
-            "end:w3",
+            "start:w1", "end:w1", "start:w2", "end:w2", "start:w3", "end:w3",
         ]
     );
     let results: Vec<&str> = out
@@ -702,13 +703,7 @@ async fn mixed_wave_batch_runs_waves_in_order_and_preserves_result_order() {
         .collect();
     assert_eq!(
         results,
-        vec![
-            "safe:c0",
-            "safe:c1",
-            "serial:n2",
-            "serial:n3",
-            "safe:c4"
-        ]
+        vec!["safe:c0", "safe:c1", "serial:n2", "serial:n3", "safe:c4"]
     );
 
     let reqs = script.requests();
@@ -719,9 +714,7 @@ async fn mixed_wave_batch_runs_waves_in_order_and_preserves_result_order() {
         .iter()
         .flat_map(|m| m.content_blocks())
         .filter_map(|b| match b {
-            bricks_types::ContentBlock::ToolResult { tool_use_id, .. } => {
-                Some(tool_use_id.clone())
-            }
+            bricks_types::ContentBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.clone()),
             _ => None,
         })
         .collect();

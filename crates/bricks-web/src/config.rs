@@ -693,8 +693,7 @@ mod tests {
 
     #[test]
     fn a_key_in_the_file_is_refused() {
-        let json =
-            r#"{"web":{"search":{"provider":"exa","exa":{"api_key_env":"sk-123abc"}}}}"#;
+        let json = r#"{"web":{"search":{"provider":"exa","exa":{"api_key_env":"sk-123abc"}}}}"#;
         let e = WebConfig::from_config_json_with_env(json, env_none).unwrap_err();
         assert!(e.contains("environment variable name"), "{e}");
         assert!(!e.contains("sk-123abc"));
@@ -708,16 +707,16 @@ mod tests {
                 "api_key_env is not set",
             ),
             (r#"{"web":{"fetch":{"per_host":9}}}"#, "per_host"),
-            (r#"{"web":{"fetch":{"max_page_bytes":0}}}"#, "max_page_bytes"),
+            (
+                r#"{"web":{"fetch":{"max_page_bytes":0}}}"#,
+                "max_page_bytes",
+            ),
             (r#"{"web":{"passages":{"min_chars":2000}}}"#, "min_chars"),
             (
                 r#"{"web":{"search":{"brave":{"endpoint":"http://search.example.com/","api_key_env":"K"}}}}"#,
                 "https",
             ),
-            (
-                r#"{"web":{"search":{"fallback":["exa","exa"]}}}"#,
-                "twice",
-            ),
+            (r#"{"web":{"search":{"fallback":["exa","exa"]}}}"#, "twice"),
             (r#"{"web":{"fetch":{"bogus":1}}}"#, "unknown field"),
         ] {
             let e = WebConfig::from_config_json_with_env(json, env_none).unwrap_err();

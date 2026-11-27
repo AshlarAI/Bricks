@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Commit 237 (2026/11/27)
+
+- Format the Rust workspace with `cargo fmt` and shorten the fake key test literal in `apps/bricks-desktop/src-tauri/src/commands/inspect.rs` so release formatting and secret-scanning checks pass.
+
 ### Commit 236 (2026/11/26)
 
 - Breaking change: unify user (`~/.bricks/config.json`) and project (`.bricks/config.json`) configuration into JSON with a strict project-config whitelist, remove `toml_edit` from the desktop backend, and migrate built-in compression rules and example configs from TOML to JSON.

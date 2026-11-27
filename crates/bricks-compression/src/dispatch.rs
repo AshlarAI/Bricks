@@ -298,7 +298,13 @@ impl Compressor {
 
     // ── read ──
 
-    fn read(&self, input: &Value, content: &str, level: CompressionLevel, is_error: bool) -> Outcome {
+    fn read(
+        &self,
+        input: &Value,
+        content: &str,
+        level: CompressionLevel,
+        is_error: bool,
+    ) -> Outcome {
         let path = input
             .get("file_path")
             .or_else(|| input.get("path"))

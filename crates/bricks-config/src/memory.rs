@@ -51,8 +51,8 @@ pub(crate) fn long_term_memory(wd: &Path) -> Result<Option<MemoryAndLabel>, Stri
         Ok(t) => t,
         Err(_) => return Ok(None),
     };
-    let cfg = MemoryConfig::from_config_json(&text)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let cfg =
+        MemoryConfig::from_config_json(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     if !cfg.enabled {
         return Ok(None);
     }

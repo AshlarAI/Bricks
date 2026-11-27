@@ -684,7 +684,13 @@ mod tests {
         let delta = env.git_delta(dir.path()).await.unwrap();
         assert!(delta.contains("<git_status_delta>"));
         assert!(delta.contains("?? b.txt"));
-        assert!(env.initial_git(dir.path()).await.unwrap().status_lines.is_empty());
+        assert!(
+            env.initial_git(dir.path())
+                .await
+                .unwrap()
+                .status_lines
+                .is_empty()
+        );
 
         // Stale again without new changes -> no delta.
         env.mark_git_stale();

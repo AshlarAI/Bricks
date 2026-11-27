@@ -1567,8 +1567,7 @@ mod tests {
         });
         assert!(err(&rm).field.ends_with(".remove"));
         let rp = mutate(|v| {
-            v["providers"][0]["models"][0]["remove_parameters"] =
-                serde_json::json!(["/messages"]);
+            v["providers"][0]["models"][0]["remove_parameters"] = serde_json::json!(["/messages"]);
         });
         assert_eq!(err(&rp).field, "remove_parameters");
         let bad_ptr = mutate(|v| {

@@ -219,7 +219,10 @@ fn compact(entry: &ServerEntry) -> Result<Value, String> {
         });
         // An HTTP server needs its type; a stdio one is the default.
         if entry.config.server_type != "stdio" {
-            map.insert("type".into(), Value::String(entry.config.server_type.clone()));
+            map.insert(
+                "type".into(),
+                Value::String(entry.config.server_type.clone()),
+            );
         }
     }
     Ok(value)
@@ -279,7 +282,10 @@ fn unique_tmp_path(dir: &Path, name: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    dir.join(format!(".{name}.{}.{nanos:x}.{seq}.tmp", std::process::id()))
+    dir.join(format!(
+        ".{name}.{}.{nanos:x}.{seq}.tmp",
+        std::process::id()
+    ))
 }
 
 fn write_atomic_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {

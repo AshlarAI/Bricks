@@ -47,9 +47,7 @@ fn headless_sends_the_foundation_with_the_bullets_its_tools_decide() {
     assert!(!s.contains("Cersei SDK"));
     assert!(!s.contains("## Your role"));
 
-    let (s, tools) = first_request(
-        r#"{"agents":{"enabled":false}}"#,
-    );
+    let (s, tools) = first_request(r#"{"agents":{"enabled":false}}"#);
     assert!(!tools.iter().any(|t| t == "Agent" || t == "Messagent"));
     assert!(s.starts_with(&reference()), "{s}");
     assert!(!s.contains("## Delegation"));

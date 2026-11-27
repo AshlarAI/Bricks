@@ -179,8 +179,11 @@ mod tests {
     use crate::contract::{AskTimerMode, AskTimerPrefs, Theme};
 
     fn write_prefs(file: &std::path::Path, prefs_json: &str) {
-        std::fs::write(file, format!(r#"{{"schema_version":1,"preferences":{prefs_json}}}"#))
-            .unwrap();
+        std::fs::write(
+            file,
+            format!(r#"{{"schema_version":1,"preferences":{prefs_json}}}"#),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -361,7 +364,10 @@ mod tests {
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
         assert_eq!(saved["preferences"]["left_width"], 300);
-        assert_eq!(saved["preferences"]["terminal_ratio"], serde_json::Value::Null);
+        assert_eq!(
+            saved["preferences"]["terminal_ratio"],
+            serde_json::Value::Null
+        );
     }
     #[test]
     fn diagrams_default_to_the_requested_sandbox_configuration() {

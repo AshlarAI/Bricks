@@ -35,7 +35,10 @@ pub fn parse_env_nul(bytes: &[u8]) -> HashMap<String, String> {
 }
 
 fn is_valid_env_key(key: &str) -> bool {
-    !key.is_empty() && !key.chars().any(|c| c.is_whitespace() || c.is_control() || c == '=')
+    !key.is_empty()
+        && !key
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == '=')
 }
 
 /// Return the user's login-shell environment if already captured in this

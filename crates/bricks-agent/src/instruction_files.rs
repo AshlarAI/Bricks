@@ -175,25 +175,20 @@ fn display_path(path: &Path, working_dir: &Path) -> String {
         .to_string()
 }
 
-fn render_full(
-    files: &BTreeMap<PathBuf, ([u8; 32], String)>,
-    working_dir: &Path,
-) -> String {
+fn render_full(files: &BTreeMap<PathBuf, ([u8; 32], String)>, working_dir: &Path) -> String {
     let mut out = String::from("<project_instructions>");
     for (path, (_, content)) in files {
         let label = escape_data(&display_path(path, working_dir));
         let body = neutralize_boundary(content.trim_end());
-        out.push_str(&format!("\n<instruction_file path=\"{label}\">\n{body}\n</instruction_file>"));
+        out.push_str(&format!(
+            "\n<instruction_file path=\"{label}\">\n{body}\n</instruction_file>"
+        ));
     }
     out.push_str("\n</project_instructions>");
     out
 }
 
-fn render_delta(
-    changed: &[(&Path, &str)],
-    removed: &[&Path],
-    working_dir: &Path,
-) -> String {
+fn render_delta(changed: &[(&Path, &str)], removed: &[&Path], working_dir: &Path) -> String {
     let mut out = String::from("<project_instructions delta=\"true\">");
     for &(path, content) in changed {
         let label = escape_data(&display_path(path, working_dir));

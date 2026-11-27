@@ -551,9 +551,18 @@ async fn a_safe_command_runs_readonly_while_mutative_asks_and_forbidden_is_denie
         let _ = a.run("go").await;
         let results = tool_results(&a);
         assert_eq!(results.len(), 2, "ask: {results:?}");
-        assert!(!results[0].contains("Permission denied"), "ask safe: {results:?}");
-        assert!(results[1].contains("Permission denied"), "ask mutative: {results:?}");
-        assert!(!work.path().join("ran").exists(), "ask: mutative command ran");
+        assert!(
+            !results[0].contains("Permission denied"),
+            "ask safe: {results:?}"
+        );
+        assert!(
+            results[1].contains("Permission denied"),
+            "ask mutative: {results:?}"
+        );
+        assert!(
+            !work.path().join("ran").exists(),
+            "ask: mutative command ran"
+        );
         let asked = broker.unsatisfied();
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].tool, "Bash");
@@ -581,7 +590,10 @@ async fn a_safe_command_runs_readonly_while_mutative_asks_and_forbidden_is_denie
         let _ = a.run("go").await;
         let results = tool_results(&a);
         assert_eq!(results.len(), 1);
-        assert!(results[0].contains("Permission denied"), "deny_bash: {results:?}");
+        assert!(
+            results[0].contains("Permission denied"),
+            "deny_bash: {results:?}"
+        );
     }
 
     // Under EXECUTE: a `Forbidden` command is still denied without asking.
@@ -600,7 +612,10 @@ async fn a_safe_command_runs_readonly_while_mutative_asks_and_forbidden_is_denie
         let _ = a.run("go").await;
         let results = tool_results(&a);
         assert_eq!(results.len(), 1);
-        assert!(results[0].contains("Permission denied"), "forbidden: {results:?}");
+        assert!(
+            results[0].contains("Permission denied"),
+            "forbidden: {results:?}"
+        );
         assert!(broker.unsatisfied().is_empty(), "forbidden must never ask");
     }
 }

@@ -150,7 +150,9 @@ pub(super) fn tool_result_with_media(
                 }
             }
             ImageTransport::None => {
-                text.push_str("\n[the image was not shown: the current model does not accept images]");
+                text.push_str(
+                    "\n[the image was not shown: the current model does not accept images]",
+                );
             }
         }
     }

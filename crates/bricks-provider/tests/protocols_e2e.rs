@@ -758,11 +758,12 @@ fn the_key_is_the_one_written_in_the_file() {
         assert!(e.to_string().contains("Bricks settings"), "{e}");
     }
     // A variable is never read.
-    let reg = ProviderRegistry::from_json_str(&make(json!({ "api_key_env": "PATH" })), "t").unwrap();
+    let reg =
+        ProviderRegistry::from_json_str(&make(json!({ "api_key_env": "PATH" })), "t").unwrap();
     assert!(reg.resolve("p/m").unwrap().provider().build().is_err());
     // The key written in the file.
-    let reg =
-        ProviderRegistry::from_json_str(&make(json!({ "api_key": " sk-file-1111 " })), "t").unwrap();
+    let reg = ProviderRegistry::from_json_str(&make(json!({ "api_key": " sk-file-1111 " })), "t")
+        .unwrap();
     let p = reg.resolve("p/m").unwrap().provider().build().unwrap();
     assert!(!format!("{p:?}").contains("sk-file-1111"));
 }
